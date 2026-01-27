@@ -1,0 +1,260 @@
+{
+  "correct": 27,
+  "incorrect": 2,
+  "unknown": 2,
+  "timeout": 0,
+  "details": [
+    {
+      "file": "sql_injection_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Direct string concatenation in SQL query"
+    },
+    {
+      "file": "sql_injection_002.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Interprocedural flow through helper function"
+    },
+    {
+      "file": "sql_injection_interprocedural_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Complex 4-hop interprocedural taint flow"
+    },
+    {
+      "file": "sql_injection_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Parameterized query - no injection possible"
+    },
+    {
+      "file": "command_injection_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Direct os.system with user input"
+    },
+    {
+      "file": "command_injection_002.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "subprocess.run with shell=True"
+    },
+    {
+      "file": "command_injection_interprocedural_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Taint flow through CommandBuilder class"
+    },
+    {
+      "file": "command_injection_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "subprocess without shell - no injection"
+    },
+    {
+      "file": "path_injection_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Direct file open with user input"
+    },
+    {
+      "file": "path_injection_002.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Path traversal through os.path.join"
+    },
+    {
+      "file": "path_injection_interprocedural_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Multi-level recursive path building"
+    },
+    {
+      "file": "cleartext_logging_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Password logged in plaintext"
+    },
+    {
+      "file": "cleartext_logging_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Password not included in logs"
+    },
+    {
+      "file": "cleartext_storage_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Password stored without hashing"
+    },
+    {
+      "file": "cleartext_storage_safe_001.py",
+      "expected": "SAFE",
+      "actual": "BUG",
+      "correct": false,
+      "bugs_found": [],
+      "description": "Password hashed before storage"
+    },
+    {
+      "file": "weak_crypto_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "MD5 used for password hashing"
+    },
+    {
+      "file": "weak_crypto_safe_001.py",
+      "expected": "SAFE",
+      "actual": "BUG",
+      "correct": false,
+      "bugs_found": [],
+      "description": "bcrypt used for password hashing"
+    },
+    {
+      "file": "xxe_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "XML parsing without XXE protection"
+    },
+    {
+      "file": "xxe_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "defusedxml used for safe parsing"
+    },
+    {
+      "file": "insecure_cookie_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Cookie without Secure flag"
+    },
+    {
+      "file": "insecure_cookie_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Cookie with Secure and HttpOnly flags"
+    },
+    {
+      "file": "cookie_injection_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Tainted user input in cookie value"
+    },
+    {
+      "file": "regex_injection_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "User input used as regex pattern"
+    },
+    {
+      "file": "regex_injection_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "User input escaped before use in regex"
+    },
+    {
+      "file": "flask_debug_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Debug mode enabled in production"
+    },
+    {
+      "file": "flask_debug_safe_001.py",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Debug mode disabled"
+    },
+    {
+      "file": "tarslip_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Unsafe tar extraction"
+    },
+    {
+      "file": "tarslip_safe_001.py",
+      "expected": "SAFE",
+      "actual": "UNKNOWN",
+      "correct": false,
+      "bugs_found": [],
+      "description": "Validated tar extraction"
+    },
+    {
+      "file": "zipslip_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Unsafe zip extraction"
+    },
+    {
+      "file": "zipslip_safe_001.py",
+      "expected": "SAFE",
+      "actual": "UNKNOWN",
+      "correct": false,
+      "bugs_found": [],
+      "description": "Validated zip extraction"
+    },
+    {
+      "file": "combined_sql_logging_001.py",
+      "expected": "BUG",
+      "actual": "BUG",
+      "correct": true,
+      "bugs_found": [],
+      "description": "Multiple bugs: SQL injection AND cleartext logging"
+    }
+  ],
+  "tp": 20,
+  "tn": 7,
+  "fp": 2,
+  "fn": 0
+}

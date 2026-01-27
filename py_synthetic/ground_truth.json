@@ -1,0 +1,309 @@
+{
+  "description": "Ground truth manifest for synthetic Python programs with planted bugs",
+  "bug_types": ["DIV_ZERO", "BOUNDS", "NULL_PTR", "ASSERT_FAIL", "TYPE_CONFUSION"],
+  "programs": {
+    "prog01_calculator": {
+      "files": ["main.py", "operations.py", "utils.py"],
+      "bugs": {
+        "main.py": {
+          "calculate": {"bug": "DIV_ZERO", "line": 14, "description": "Division with potentially zero divisor"},
+          "get_nth_result": {"bug": "BOUNDS", "line": 32, "description": "No bounds check on index n"}
+        },
+        "operations.py": {
+          "divide": {"bug": "DIV_ZERO", "line": 6, "description": "Division without zero check"},
+          "modulo": {"bug": "DIV_ZERO", "line": 26, "description": "Modulo without zero check"}
+        },
+        "utils.py": {
+          "parse_expression": {"bug": "BOUNDS", "line": 17, "description": "Assumes at least 3 parts in split"},
+          "get_operation_name": {"bug": "BOUNDS", "line": 30, "description": "op_code could be out of range"}
+        }
+      },
+      "safe_functions": ["safe_divide", "validate_input", "format_result", "power", "factorial", "batch_calculate"]
+    },
+    "prog02_usermgmt": {
+      "files": ["main.py", "user.py", "auth.py"],
+      "bugs": {
+        "main.py": {
+          "login": {"bug": "NULL_PTR", "line": 22, "description": "Using user without None check after get"},
+          "get_user_info": {"bug": "BOUNDS", "line": 28, "description": "No bounds check on user_id"},
+          "delete_user": {"bug": "NULL_PTR", "line": 34, "description": "Calling method on potentially None user"}
+        },
+        "user.py": {
+          "get_user_attribute": {"bug": "NULL_PTR", "line": 43, "description": "Calling method on potentially None value"},
+          "get_nth_user": {"bug": "BOUNDS", "line": 48, "description": "No bounds check on n"}
+        },
+        "auth.py": {
+          "get_secret_key": {"bug": "BOUNDS", "line": 29, "description": "No bounds check on index"},
+          "split_credentials": {"bug": "BOUNDS", "line": 35, "description": "Assumes exactly 2 parts"}
+        }
+      },
+      "safe_functions": ["register_user", "list_active_users", "create_user", "get_user_by_id", "safe_get_user", "hash_password", "authenticate", "generate_token", "validate_token"]
+    },
+    "prog03_dataproc": {
+      "files": ["main.py", "processor.py", "validators.py"],
+      "bugs": {
+        "main.py": {
+          "get_field": {"bug": "NULL_PTR", "line": 19, "description": "current becomes None during traversal"},
+          "aggregate_values": {"bug": "NULL_PTR", "line": 27, "description": "Adding None to total"},
+          "get_record_at": {"bug": "BOUNDS", "line": 33, "description": "No bounds check"}
+        },
+        "processor.py": {
+          "DataProcessor.get_config_value": {"bug": "NULL_PTR", "line": 20, "description": "Returns potentially None"},
+          "get_first_n": {"bug": "BOUNDS", "line": 56, "description": "n could exceed length"},
+          "divide_into_chunks": {"bug": "DIV_ZERO", "line": 62, "description": "chunk_size could be 0"}
+        },
+        "validators.py": {
+          "validate_string_length": {"bug": "NULL_PTR", "line": 32, "description": "value could be None"},
+          "get_validation_error": {"bug": "BOUNDS", "line": 38, "description": "No bounds check"},
+          "calculate_error_rate": {"bug": "DIV_ZERO", "line": 43, "description": "total could be 0"}
+        }
+      },
+      "safe_functions": ["process_batch", "safe_aggregate", "transform_data", "merge_records", "split_by_key", "validate_record", "check_schema", "validate_numeric_range", "safe_validate_length"]
+    },
+    "prog04_gameengine": {
+      "files": ["main.py", "player.py", "game_logic.py"],
+      "bugs": {
+        "main.py": {
+          "GameEngine.get_player": {"bug": "BOUNDS", "line": 21, "description": "No bounds check on player_id"},
+          "GameEngine.update": {"bug": "NULL_PTR", "line": 26, "description": "player.position could be None"},
+          "GameEngine.calculate_average_score": {"bug": "DIV_ZERO", "line": 31, "description": "Empty players list"},
+          "get_leaderboard": {"bug": "BOUNDS", "line": 45, "description": "rank could be out of range"}
+        },
+        "player.py": {
+          "get_player_position": {"bug": "NULL_PTR", "line": 48, "description": "position could be None"},
+          "get_player_from_list": {"bug": "BOUNDS", "line": 53, "description": "No bounds check"},
+          "calculate_health_percent": {"bug": "DIV_ZERO", "line": 58, "description": "max_health could be 0"}
+        },
+        "game_logic.py": {
+          "move_player": {"bug": "NULL_PTR", "line": 9, "description": "player.position could be None"},
+          "check_collision": {"bug": "NULL_PTR", "line": 21, "description": "positions could be None"},
+          "get_distance": {"bug": "NULL_PTR", "line": 32, "description": "positions could be None"},
+          "normalize_score": {"bug": "DIV_ZERO", "line": 39, "description": "max_score could be 0"},
+          "get_spawn_point": {"bug": "BOUNDS", "line": 44, "description": "No bounds check"}
+        }
+      },
+      "safe_functions": ["add_player", "run_game_loop", "create_player", "safe_get_position", "calculate_damage", "safe_move_player"]
+    },
+    "prog05_httpserver": {
+      "files": ["main.py", "request_handler.py", "response.py", "routes.py"],
+      "bugs": {
+        "main.py": {
+          "HTTPServer.get_handler": {"bug": "BOUNDS", "line": 18, "description": "No bounds check"},
+          "HTTPServer.handle_request": {"bug": "NULL_PTR", "line": 23, "description": "parse_request might return None"},
+          "process_headers": {"bug": "NULL_PTR", "line": 31, "description": "get returns None"},
+          "calculate_response_time": {"bug": "DIV_ZERO", "line": 37, "description": "count could be 0"},
+          "get_route_param": {"bug": "BOUNDS", "line": 43, "description": "No bounds check"}
+        },
+        "request_handler.py": {
+          "parse_request": {"bug": "BOUNDS", "line": 37, "description": "Assumes at least 3 parts"},
+          "get_query_param": {"bug": "NULL_PTR", "line": 56, "description": "get returns None"},
+          "parse_query_string": {"bug": "BOUNDS", "line": 63, "description": "Assumes key=value format"}
+        },
+        "response.py": {
+          "get_header_value": {"bug": "NULL_PTR", "line": 44, "description": "get returns None"},
+          "calculate_content_ratio": {"bug": "DIV_ZERO", "line": 50, "description": "total_size could be 0"},
+          "get_response_from_cache": {"bug": "BOUNDS", "line": 55, "description": "No bounds check"}
+        },
+        "routes.py": {
+          "Router.get_route_at": {"bug": "BOUNDS", "line": 21, "description": "No bounds check"},
+          "Router.remove_route": {"bug": "NULL_PTR", "line": 26, "description": "Calling method on None"},
+          "match_pattern": {"bug": "BOUNDS", "line": 38, "description": "path might have fewer parts"},
+          "parse_path_segments": {"bug": "BOUNDS", "line": 50, "description": "No bounds check"},
+          "calculate_route_priority": {"bug": "DIV_ZERO", "line": 55, "description": "static_weight could be 0"}
+        }
+      },
+      "safe_functions": ["add_route", "safe_get_header", "create_response", "create_error_response", "create_json_response", "build_url", "safe_parse_query", "get_handler"]
+    },
+    "prog06_database": {
+      "files": ["main.py", "models.py", "query.py", "connection.py"],
+      "bugs": {
+        "main.py": {
+          "Database.get_model": {"bug": "NULL_PTR", "line": 18, "description": "get returns None"},
+          "Database.get_cached_query": {"bug": "BOUNDS", "line": 23, "description": "No bounds check"},
+          "find_by_id": {"bug": "NULL_PTR", "line": 30, "description": "model could be None"},
+          "calculate_avg_query_time": {"bug": "DIV_ZERO", "line": 36, "description": "empty times list"},
+          "get_column_value": {"bug": "NULL_PTR", "line": 42, "description": "get returns None"},
+          "get_row_at": {"bug": "BOUNDS", "line": 48, "description": "No bounds check"}
+        },
+        "models.py": {
+          "Model.get_field_value": {"bug": "NULL_PTR", "line": 32, "description": "getattr returns None"},
+          "Model.get_field_at": {"bug": "BOUNDS", "line": 37, "description": "No bounds check"},
+          "get_related_model": {"bug": "NULL_PTR", "line": 58, "description": "relations is None"},
+          "calculate_field_ratio": {"bug": "DIV_ZERO", "line": 64, "description": "empty fields list"},
+          "get_primary_key": {"bug": "BOUNDS", "line": 69, "description": "Assumes at least one field"}
+        },
+        "query.py": {
+          "QueryBuilder.get_condition": {"bug": "BOUNDS", "line": 47, "description": "No bounds check"},
+          "parse_where_clause": {"bug": "BOUNDS", "line": 56, "description": "No bounds check"},
+          "get_column_from_result": {"bug": "NULL_PTR", "line": 70, "description": "get returns None"},
+          "normalize_query_time": {"bug": "DIV_ZERO", "line": 79, "description": "baseline could be 0"}
+        },
+        "connection.py": {
+          "Connection.get_connection": {"bug": "BOUNDS", "line": 21, "description": "No bounds check"},
+          "ConnectionPool.get": {"bug": "BOUNDS", "line": 31, "description": "available might be empty"},
+          "ConnectionPool.get_at": {"bug": "BOUNDS", "line": 37, "description": "No bounds check"},
+          "parse_connection_string": {"bug": "BOUNDS", "line": 44, "description": "Assumes key=value format"},
+          "get_connection_param": {"bug": "NULL_PTR", "line": 51, "description": "get returns None"},
+          "calculate_pool_utilization": {"bug": "DIV_ZERO", "line": 57, "description": "total could be 0"}
+        }
+      },
+      "safe_functions": ["register_model", "execute", "safe_find_model", "get_field", "format_value", "calculate_query_cost", "execute_query", "release", "safe_parse_connection"]
+    },
+    "prog07_mlpipeline": {
+      "files": ["main.py", "data_loader.py", "model.py", "metrics.py"],
+      "bugs": {
+        "main.py": {
+          "MLPipeline.get_model": {"bug": "BOUNDS", "line": 16, "description": "No bounds check"},
+          "MLPipeline.get_config_param": {"bug": "NULL_PTR", "line": 21, "description": "get returns None"},
+          "MLPipeline.calculate_avg_accuracy": {"bug": "DIV_ZERO", "line": 28, "description": "empty results"},
+          "preprocess_data": {"bug": "BOUNDS", "line": 34, "description": "feature_idx could be out of range"},
+          "normalize_features": {"bug": "DIV_ZERO", "line": 41, "description": "max_val could be 0"}
+        },
+        "data_loader.py": {
+          "DataLoader.get_row": {"bug": "BOUNDS", "line": 17, "description": "No bounds check"},
+          "DataLoader.get_header": {"bug": "BOUNDS", "line": 26, "description": "No bounds check"},
+          "get_batch": {"bug": "BOUNDS", "line": 42, "description": "end could exceed length"},
+          "calculate_batch_count": {"bug": "DIV_ZERO", "line": 53, "description": "batch_size could be 0"},
+          "get_sample": {"bug": "BOUNDS", "line": 58, "description": "indices could be out of range"}
+        },
+        "model.py": {
+          "NeuralNetwork.get_layer_size": {"bug": "BOUNDS", "line": 16, "description": "No bounds check"},
+          "NeuralNetwork.get_weight": {"bug": "BOUNDS", "line": 21, "description": "No bounds check"},
+          "NeuralNetwork.get_gradient": {"bug": "BOUNDS", "line": 31, "description": "No bounds check"},
+          "get_prediction": {"bug": "BOUNDS", "line": 47, "description": "output_idx could be out of range"},
+          "normalize_gradients": {"bug": "DIV_ZERO", "line": 57, "description": "norm could be 0"},
+          "get_layer_output": {"bug": "BOUNDS", "line": 63, "description": "No bounds check"}
+        },
+        "metrics.py": {
+          "calculate_precision": {"bug": "DIV_ZERO", "line": 13, "description": "tp+fp could be 0"},
+          "calculate_recall": {"bug": "DIV_ZERO", "line": 19, "description": "tp+fn could be 0"},
+          "calculate_f1": {"bug": "DIV_ZERO", "line": 25, "description": "precision+recall could be 0"},
+          "get_confusion_matrix_value": {"bug": "BOUNDS", "line": 31, "description": "row/col out of range"},
+          "calculate_mse": {"bug": "DIV_ZERO", "line": 37, "description": "empty predictions"},
+          "get_metric_at_epoch": {"bug": "BOUNDS", "line": 45, "description": "epoch out of range"}
+        }
+      },
+      "safe_functions": ["add_model", "train_all", "safe_normalize", "get_best_model", "load_csv", "split_data", "shuffle_data", "safe_get_batch", "train_model", "calculate_loss", "calculate_learning_rate", "calculate_accuracy", "calculate_rmse", "calculate_auc", "safe_calculate_f1", "safe_calculate_precision"]
+    },
+    "prog08_filesystem": {
+      "files": ["main.py", "file_ops.py", "directory.py", "permissions.py"],
+      "bugs": {
+        "main.py": {
+          "FileSystemManager.get_open_file": {"bug": "BOUNDS", "line": 14, "description": "No bounds check"},
+          "FileSystemManager.get_cached": {"bug": "NULL_PTR", "line": 19, "description": "get returns None"},
+          "get_nth_file": {"bug": "BOUNDS", "line": 36, "description": "No bounds check"},
+          "calculate_avg_file_size": {"bug": "DIV_ZERO", "line": 41, "description": "empty files list"},
+          "get_file_at_path": {"bug": "BOUNDS", "line": 47, "description": "depth out of range"}
+        },
+        "file_ops.py": {
+          "get_line": {"bug": "BOUNDS", "line": 39, "description": "line_num out of range"},
+          "calculate_compression_ratio": {"bug": "DIV_ZERO", "line": 49, "description": "compressed could be 0"},
+          "parse_path": {"bug": "BOUNDS", "line": 54, "description": "segment out of range"},
+          "get_file_type": {"bug": "NULL_PTR", "line": 60, "description": "get returns None"},
+          "split_filename": {"bug": "BOUNDS", "line": 66, "description": "no extension"}
+        },
+        "directory.py": {
+          "Directory.get_entry": {"bug": "BOUNDS", "line": 26, "description": "No bounds check"},
+          "Directory.get_entry_size": {"bug": "NULL_PTR", "line": 35, "description": "find_entry returns None"},
+          "get_subdirectory": {"bug": "BOUNDS", "line": 43, "description": "No bounds check"},
+          "calculate_dir_usage": {"bug": "DIV_ZERO", "line": 48, "description": "total could be 0"},
+          "get_largest_file": {"bug": "BOUNDS", "line": 58, "description": "empty entries"}
+        },
+        "permissions.py": {
+          "get_owner": {"bug": "NULL_PTR", "line": 37, "description": "get returns None"},
+          "get_permission_at": {"bug": "BOUNDS", "line": 43, "description": "No bounds check"},
+          "parse_permission_string": {"bug": "BOUNDS", "line": 48, "description": "pos out of range"},
+          "calculate_permission_ratio": {"bug": "DIV_ZERO", "line": 53, "description": "total could be 0"},
+          "get_group_members": {"bug": "NULL_PTR", "line": 58, "description": "get returns None"}
+        }
+      },
+      "safe_functions": ["close_all", "find_file", "get_file_extension", "calculate_dir_size", "read_file", "write_file", "get_chunk", "safe_get_line", "list_directory", "find_entry", "get_parent_path", "count_files_by_ext", "safe_get_entry", "check_permission", "safe_get_owner"]
+    },
+    "prog09_ecommerce": {
+      "files": ["main.py", "cart.py", "product.py", "order.py"],
+      "bugs": {
+        "main.py": {
+          "ECommerceApp.get_product": {"bug": "BOUNDS", "line": 14, "description": "No bounds check"},
+          "ECommerceApp.get_cart": {"bug": "NULL_PTR", "line": 19, "description": "get returns None"},
+          "ECommerceApp.get_order": {"bug": "BOUNDS", "line": 24, "description": "No bounds check"},
+          "ECommerceApp.calculate_avg_order_value": {"bug": "DIV_ZERO", "line": 29, "description": "empty orders"},
+          "get_cheapest_product": {"bug": "BOUNDS", "line": 46, "description": "empty list"},
+          "calculate_discount_ratio": {"bug": "DIV_ZERO", "line": 51, "description": "original could be 0"}
+        },
+        "cart.py": {
+          "Cart.get_item": {"bug": "BOUNDS", "line": 21, "description": "No bounds check"},
+          "Cart.get_item_price": {"bug": "NULL_PTR", "line": 30, "description": "find_item returns None"},
+          "remove_from_cart": {"bug": "BOUNDS", "line": 42, "description": "No bounds check"},
+          "calculate_avg_item_price": {"bug": "DIV_ZERO", "line": 51, "description": "empty cart"},
+          "get_most_expensive_item": {"bug": "BOUNDS", "line": 57, "description": "empty cart"},
+          "apply_coupon": {"bug": "NULL_PTR", "line": 62, "description": "get returns None"}
+        },
+        "product.py": {
+          "get_product_at": {"bug": "BOUNDS", "line": 23, "description": "No bounds check"},
+          "get_product_description": {"bug": "NULL_PTR", "line": 28, "description": "description could be None"},
+          "calculate_avg_price": {"bug": "DIV_ZERO", "line": 37, "description": "empty list"},
+          "get_category_avg_price": {"bug": "DIV_ZERO", "line": 47, "description": "no products in category"},
+          "get_top_n_products": {"bug": "BOUNDS", "line": 53, "description": "n exceeds length"}
+        },
+        "order.py": {
+          "get_order_item": {"bug": "BOUNDS", "line": 32, "description": "No bounds check"},
+          "get_shipping_address": {"bug": "NULL_PTR", "line": 37, "description": "address could be None"},
+          "calculate_avg_order_item_price": {"bug": "DIV_ZERO", "line": 42, "description": "empty order"},
+          "get_order_at": {"bug": "BOUNDS", "line": 51, "description": "No bounds check"},
+          "split_order": {"bug": "DIV_ZERO", "line": 60, "description": "split_count could be 0"}
+        }
+      },
+      "safe_functions": ["apply_discount", "calculate_tax", "get_category_products", "add_to_cart", "calculate_total", "get_product_by_id", "calculate_stock_value", "search_products", "safe_get_description", "create_order", "get_orders_by_status", "calculate_order_tax", "safe_get_shipping"]
+    },
+    "prog10_scheduler": {
+      "files": ["main.py", "task.py", "scheduler.py", "executor.py"],
+      "bugs": {
+        "main.py": {
+          "TaskManager.get_task": {"bug": "BOUNDS", "line": 15, "description": "No bounds check"},
+          "TaskManager.get_completed": {"bug": "BOUNDS", "line": 20, "description": "No bounds check"},
+          "TaskManager.calculate_success_rate": {"bug": "DIV_ZERO", "line": 25, "description": "no tasks completed or failed"},
+          "get_highest_priority_task": {"bug": "BOUNDS", "line": 34, "description": "empty list"},
+          "calculate_avg_duration": {"bug": "DIV_ZERO", "line": 40, "description": "empty list"},
+          "get_task_result": {"bug": "NULL_PTR", "line": 50, "description": "result could be None"}
+        },
+        "task.py": {
+          "Task.get_dependency": {"bug": "BOUNDS", "line": 29, "description": "No bounds check"},
+          "Task.get_result_length": {"bug": "NULL_PTR", "line": 34, "description": "result is None"},
+          "get_task_from_list": {"bug": "BOUNDS", "line": 43, "description": "No bounds check"},
+          "calculate_avg_priority": {"bug": "DIV_ZERO", "line": 52, "description": "empty list"},
+          "get_dependent_task": {"bug": "NULL_PTR", "line": 61, "description": "get returns None"}
+        },
+        "scheduler.py": {
+          "Scheduler.get_queued": {"bug": "BOUNDS", "line": 22, "description": "No bounds check"},
+          "Scheduler.get_running": {"bug": "BOUNDS", "line": 27, "description": "No bounds check"},
+          "Scheduler.get_schedule_entry": {"bug": "BOUNDS", "line": 32, "description": "No bounds check"},
+          "Scheduler.calculate_utilization": {"bug": "DIV_ZERO", "line": 37, "description": "max_concurrent could be 0"},
+          "calculate_wait_time": {"bug": "DIV_ZERO", "line": 52, "description": "empty entries"},
+          "get_entry_duration": {"bug": "NULL_PTR", "line": 58, "description": "end_time could be None"},
+          "calculate_throughput": {"bug": "DIV_ZERO", "line": 72, "description": "time_span could be 0"}
+        },
+        "executor.py": {
+          "Executor.get_result": {"bug": "BOUNDS", "line": 22, "description": "No bounds check"},
+          "Executor.get_active_task": {"bug": "BOUNDS", "line": 27, "description": "No bounds check"},
+          "Executor.calculate_success_rate": {"bug": "DIV_ZERO", "line": 32, "description": "empty results"},
+          "get_task_output": {"bug": "NULL_PTR", "line": 47, "description": "output could be None"},
+          "get_task_error": {"bug": "NULL_PTR", "line": 52, "description": "error could be None"},
+          "calculate_avg_execution_time": {"bug": "DIV_ZERO", "line": 57, "description": "empty times"},
+          "get_result_at": {"bug": "BOUNDS", "line": 62, "description": "No bounds check"}
+        }
+      },
+      "safe_functions": ["add_task", "run_tasks", "find_task_by_name", "create_task", "calculate_total_priority", "filter_by_status", "safe_get_result", "schedule_task", "get_next_task", "find_entry_by_task", "get_entry_task_name", "run_task", "filter_successful", "get_first_error"]
+    }
+  },
+  "summary": {
+    "total_programs": 10,
+    "total_files": 37,
+    "total_bugs": 145,
+    "total_safe_functions": 98,
+    "bug_type_counts": {
+      "DIV_ZERO": 38,
+      "BOUNDS": 67,
+      "NULL_PTR": 40
+    }
+  }
+}

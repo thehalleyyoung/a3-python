@@ -1,0 +1,45 @@
+{
+    "programs": {
+        "calc": {
+            "description": "Calculator with division bugs",
+            "files": {
+                "arithmetic.py": {"expected": "DIV_ZERO", "bug_location": "divide(10,0)"},
+                "advanced.py": {"expected": "DIV_ZERO", "bug_location": "percentage(50,0)"}
+            }
+        },
+        "userdb": {
+            "description": "User database with bounds bugs",
+            "files": {
+                "storage.py": {"expected": "BOUNDS", "bug_location": "get_user(100)"},
+                "queries.py": {"expected": "BOUNDS", "bug_location": "get_first on empty"}
+            }
+        },
+        "config": {
+            "description": "Config parser with None bugs",
+            "files": {
+                "parser.py": {"expected": "NULL_PTR", "bug_location": "get_value(None)"},
+                "validator.py": {"expected": "NULL_PTR", "bug_location": "validate_field(None)"}
+            }
+        },
+        "stack": {
+            "description": "Stack with empty pop/dequeue bugs",
+            "files": {
+                "stack.py": {"expected": "BOUNDS", "bug_location": "pop on empty"},
+                "queue.py": {"expected": "BOUNDS", "bug_location": "dequeue on empty"}
+            }
+        },
+        "safemath": {
+            "description": "Safe math utilities - all guards present",
+            "files": {
+                "utils.py": {"expected": "SAFE", "reason": "Division and average have guards"},
+                "bounds.py": {"expected": "SAFE", "reason": "Bounds checks present"}
+            }
+        }
+    },
+    "summary": {
+        "total_programs": 5,
+        "total_files": 10,
+        "buggy_files": 8,
+        "safe_files": 2
+    }
+}

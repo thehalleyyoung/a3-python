@@ -1,0 +1,32 @@
+{
+  "standalone": {
+    "true_positives": 29,
+    "false_positives": 2,
+    "false_negatives": 0,
+    "true_negatives": 2,
+    "errors": 1,
+    "precision": 0.9354838709677419,
+    "recall": 1.0,
+    "f1_score": 0.9666666666666666
+  },
+  "multifile": {
+    "true_positives": 8,
+    "false_positives": 2,
+    "false_negatives": 0,
+    "true_negatives": 0,
+    "errors": 0,
+    "precision": 0.8,
+    "recall": 1.0,
+    "f1_score": 0.888888888888889
+  },
+  "combined": {
+    "true_positives": 37,
+    "false_positives": 4,
+    "false_negatives": 0,
+    "true_negatives": 2,
+    "errors": 1,
+    "precision": 0.9024390243902439,
+    "recall": 1.0,
+    "f1_score": 0.9487179487179488
+  }
+}

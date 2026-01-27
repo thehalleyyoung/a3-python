@@ -1,0 +1,205 @@
+{
+  "results": {
+    "true_positives": [],
+    "false_positives": [],
+    "false_negatives": [
+      {
+        "file": "div_zero_001.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Direct division by zero"
+      },
+      {
+        "file": "div_zero_002.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Modulo by zero"
+      },
+      {
+        "file": "div_zero_003.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Floor division by zero"
+      },
+      {
+        "file": "div_zero_004.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Average of empty list"
+      },
+      {
+        "file": "div_zero_005.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Ratio with zero denominator"
+      },
+      {
+        "file": "div_zero_006.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Sum of inverses hits i=0"
+      },
+      {
+        "file": "div_zero_007.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Normalize with zero sum"
+      },
+      {
+        "file": "div_zero_008.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Nested div with b-c=0"
+      },
+      {
+        "file": "div_zero_009.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Conditional path div by 0"
+      },
+      {
+        "file": "div_zero_010.py",
+        "expected": "DIV_ZERO",
+        "actual": "SAFE",
+        "description": "Direct division by variable 0"
+      },
+      {
+        "file": "bounds_001.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Empty list index"
+      },
+      {
+        "file": "bounds_002.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Empty string index"
+      },
+      {
+        "file": "bounds_003.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Index too large"
+      },
+      {
+        "file": "bounds_004.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Access past end of list"
+      },
+      {
+        "file": "bounds_005.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Negative index on empty"
+      },
+      {
+        "file": "bounds_006.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Pop from empty list"
+      },
+      {
+        "file": "bounds_007.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Head/tail of empty"
+      },
+      {
+        "file": "bounds_008.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Matrix row out of bounds"
+      },
+      {
+        "file": "bounds_009.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Access past end of list"
+      },
+      {
+        "file": "bounds_010.py",
+        "expected": "BOUNDS",
+        "actual": "SAFE",
+        "description": "Off by one error"
+      },
+      {
+        "file": "null_ptr_001.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Attribute on None"
+      },
+      {
+        "file": "null_ptr_002.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Method call on None"
+      },
+      {
+        "file": "null_ptr_003.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Direct None.upper()"
+      },
+      {
+        "file": "null_ptr_004.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Direct None.upper()"
+      },
+      {
+        "file": "null_ptr_005.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Direct None.upper()"
+      },
+      {
+        "file": "null_ptr_006.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Direct None.strip()"
+      },
+      {
+        "file": "null_ptr_007.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "Direct None.group()"
+      },
+      {
+        "file": "null_ptr_008.py",
+        "expected": "NULL_PTR",
+        "actual": "SAFE",
+        "description": "First or none pattern"
+      },
+      {
+        "file": "assert_001.py",
+        "expected": "ASSERT_FAIL",
+        "actual": "SAFE",
+        "description": "Positive assertion fails"
+      },
+      {
+        "file": "assert_002.py",
+        "expected": "ASSERT_FAIL",
+        "actual": "SAFE",
+        "description": "Sqrt precondition fails"
+      }
+    ],
+    "true_negatives": [
+      "div_zero_safe_001.py",
+      "bounds_safe_001.py",
+      "null_ptr_safe_001.py",
+      "assert_safe_001.py"
+    ],
+    "errors": []
+  },
+  "metrics": {
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 30,
+    "true_negatives": 4,
+    "errors": 0,
+    "precision": 0,
+    "recall": 0.0,
+    "f1_score": 0
+  }
+}

@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.gitmodules
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+test_venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Test and docs
+tests/
+docs/
+*.md
+!README.md
+
+# External tools and results (large directories)
+external_tools/
+results/
+py_synthetic/
+RustFromScratch/
+scripts/
+
+# State files
+*.json
+!pyproject.toml
+
+# Other
+.DS_Store
+*.pdf
+*.tex
+*.log
+.pytest_cache/

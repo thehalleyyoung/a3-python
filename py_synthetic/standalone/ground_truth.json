@@ -1,0 +1,53 @@
+{
+    "files": {
+        "div_zero_001.py": {"expected": "DIV_ZERO", "description": "Direct division by zero"},
+        "div_zero_002.py": {"expected": "DIV_ZERO", "description": "Modulo by zero"},
+        "div_zero_003.py": {"expected": "DIV_ZERO", "description": "Floor division by zero"},
+        "div_zero_004.py": {"expected": "DIV_ZERO", "description": "Average of empty list"},
+        "div_zero_005.py": {"expected": "DIV_ZERO", "description": "Ratio with zero denominator"},
+        "div_zero_safe_001.py": {"expected": "SAFE", "description": "Division with guard"},
+        "div_zero_006.py": {"expected": "DIV_ZERO", "description": "Sum of inverses hits i=0"},
+        "div_zero_007.py": {"expected": "DIV_ZERO", "description": "Normalize with zero sum"},
+        "div_zero_008.py": {"expected": "DIV_ZERO", "description": "Nested div with b-c=0"},
+        "div_zero_009.py": {"expected": "DIV_ZERO", "description": "Conditional path div by 0"},
+        "div_zero_010.py": {"expected": "DIV_ZERO", "description": "Direct division by variable 0"},
+        
+        "bounds_001.py": {"expected": "BOUNDS", "description": "Empty list index"},
+        "bounds_002.py": {"expected": "BOUNDS", "description": "Empty string index"},
+        "bounds_003.py": {"expected": "BOUNDS", "description": "Index too large"},
+        "bounds_004.py": {"expected": "BOUNDS", "description": "Access past end of list"},
+        "bounds_005.py": {"expected": "BOUNDS", "description": "Negative index on empty"},
+        "bounds_safe_001.py": {"expected": "SAFE", "description": "Bounds check with guard"},
+        "bounds_006.py": {"expected": "BOUNDS", "description": "Pop from empty list"},
+        "bounds_007.py": {"expected": "BOUNDS", "description": "Head/tail of empty"},
+        "bounds_008.py": {"expected": "BOUNDS", "description": "Matrix row out of bounds"},
+        "bounds_009.py": {"expected": "BOUNDS", "description": "Access past end of list"},
+        "bounds_010.py": {"expected": "BOUNDS", "description": "Off by one error"},
+        
+        "null_ptr_001.py": {"expected": "NULL_PTR", "description": "Attribute on None"},
+        "null_ptr_002.py": {"expected": "NULL_PTR", "description": "Method call on None"},
+        "null_ptr_003.py": {"expected": "NULL_PTR", "description": "Direct None.upper()"},
+        "null_ptr_004.py": {"expected": "NULL_PTR", "description": "Direct None.upper()"},
+        "null_ptr_safe_001.py": {"expected": "SAFE", "description": "None check guard"},
+        "null_ptr_005.py": {"expected": "NULL_PTR", "description": "Direct None.upper()"},
+        "null_ptr_006.py": {"expected": "NULL_PTR", "description": "Direct None.strip()"},
+        "null_ptr_007.py": {"expected": "NULL_PTR", "description": "Direct None.group()"},
+        "null_ptr_008.py": {"expected": "NULL_PTR", "description": "First or none pattern"},
+        
+        "assert_001.py": {"expected": "ASSERT_FAIL", "description": "Positive assertion fails"},
+        "assert_002.py": {"expected": "ASSERT_FAIL", "description": "Sqrt precondition fails"},
+        "assert_safe_001.py": {"expected": "SAFE", "description": "Assert after guard"}
+    },
+    "summary": {
+        "total_files": 34,
+        "buggy_files": 30,
+        "safe_files": 4,
+        "by_type": {
+            "DIV_ZERO": 10,
+            "BOUNDS": 10,
+            "NULL_PTR": 8,
+            "ASSERT_FAIL": 2,
+            "SAFE": 4
+        }
+    }
+}

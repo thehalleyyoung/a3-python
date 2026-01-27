@@ -1,0 +1,3 @@
+[submodule "RustFromScratch"]
+	path = RustFromScratch
+	url = https://github.com/thehalleyyoung/RustFromScratch.git

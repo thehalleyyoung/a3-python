@@ -1,0 +1,77 @@
+{
+  "results": {
+    "true_positives": [
+      {
+        "program": "calc",
+        "file": "arithmetic.py",
+        "bug_type": "DIV_ZERO"
+      },
+      {
+        "program": "calc",
+        "file": "advanced.py",
+        "bug_type": "DIV_ZERO"
+      },
+      {
+        "program": "userdb",
+        "file": "storage.py",
+        "bug_type": "BOUNDS"
+      },
+      {
+        "program": "userdb",
+        "file": "queries.py",
+        "bug_type": "BOUNDS"
+      },
+      {
+        "program": "config",
+        "file": "parser.py",
+        "bug_type": "NULL_PTR"
+      },
+      {
+        "program": "config",
+        "file": "validator.py",
+        "bug_type": "NULL_PTR"
+      },
+      {
+        "program": "stack",
+        "file": "stack.py",
+        "expected_type": "BOUNDS",
+        "actual_type": "PANIC",
+        "note": "Different bug type"
+      },
+      {
+        "program": "stack",
+        "file": "queue.py",
+        "expected_type": "BOUNDS",
+        "actual_type": "PANIC",
+        "note": "Different bug type"
+      }
+    ],
+    "false_positives": [
+      {
+        "program": "safemath",
+        "file": "utils.py",
+        "expected": "SAFE",
+        "actual": "TYPE_CONFUSION"
+      },
+      {
+        "program": "safemath",
+        "file": "bounds.py",
+        "expected": "SAFE",
+        "actual": "TYPE_CONFUSION"
+      }
+    ],
+    "false_negatives": [],
+    "true_negatives": [],
+    "errors": []
+  },
+  "metrics": {
+    "true_positives": 8,
+    "false_positives": 2,
+    "false_negatives": 0,
+    "true_negatives": 0,
+    "errors": 0,
+    "precision": 0.8,
+    "recall": 1.0,
+    "f1_score": 0.888888888888889
+  }
+}
