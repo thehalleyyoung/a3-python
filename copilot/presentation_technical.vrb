@@ -1,0 +1,66 @@
+\frametitle{True Positive Example: Division by Zero}
+\vspace{-0.4cm}
+
+\begin{block}{Bug Location}
+\scriptsize
+\textbf{File:} \texttt{deepspeed/runtime/utils.py}\\
+\textbf{Function:} \texttt{partition\_uniform(num\_items, num\_parts)}\\
+\textbf{Line:} 127\\
+\textbf{Confidence:} 0.90 (HIGH)
+\end{block}
+
+\begin{columns}[T]
+\column{0.55\textwidth}
+\begin{block}{Source Code}
+\begin{lstlisting}[language=Python]
+def partition_uniform(num_items, num_parts):
+    parts = [0] * (num_parts + 1)
+
+    # Early return for small inputs
+    if num_items <= num_parts:
+        for i in range(num_items):
+            parts[i + 1] = 1
+        return parts
+
+    # BUG: No check for num_parts == 0!
+    chunksize = num_items // num_parts
+
+    for i in range(num_parts):
+        parts[i + 1] = chunksize
+
+    # Distribute remainder
+    remainder = num_items % num_parts
+    for i in range(remainder):
+        parts[i + 1] += 1
+
+    return parts
+\end{lstlisting}
+\end{block}
+
+\column{0.43\textwidth}
+\begin{block}{Analysis Trace}
+\scriptsize
+\textbf{Symbolic Execution:}
+\begin{enumerate}\itemsep1pt
+    \item Entry: \texttt{num\_parts = $\alpha$} (symbolic)
+    \item Branch: $\alpha \leq 0$ unexplored (implicit assumption)
+    \item Path condition: $\alpha > 0$
+    \item Line 127: \texttt{chunksize = num\_items // $\alpha$}
+    \item Query Z3: $\alpha = 0$ satisfiable?
+    \item Result: SAT $\Rightarrow$ potential DIV\_ZERO
+\end{enumerate}
+
+\vspace{0.2cm}
+\textbf{Barrier Synthesis:}
+\begin{itemize}\itemsep1pt
+    \item Try: $B(\alpha) = \alpha$ (simple linear)
+    \item Check: $B(\alpha) < 0$ for $\alpha = 0$? Yes
+    \item Check: $B(\alpha) \geq 0$ for $\alpha > 0$? No
+    \item Conclusion: No safe barrier $\Rightarrow$ \textbf{BUG}
+\end{itemize}
+
+\vspace{0.2cm}
+\textbf{Fix:} Add \texttt{assert num\_parts > 0}
+\end{block}
+\end{columns}
+

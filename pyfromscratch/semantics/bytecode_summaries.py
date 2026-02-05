@@ -302,8 +302,20 @@ class AbstractValue:
     is_len_result: bool = False
     len_source_emptiness: Emptiness = Emptiness.TOP  # Emptiness of the collection len() was called on
     
+    # NEW: Track collection length bounds for BOUNDS detection
+    # If this collection has length constraints, track them here
+    len_lower_bound: Optional[int] = None  # Minimum length (e.g., len >= 2)
+    len_upper_bound: Optional[int] = None  # Maximum length
+    
     # NEW: Track if value might contain zeros (for array normalization)
     may_contain_zeros: bool = True  # For arrays/lists, can any element be 0?
+    
+    # NEW: Track when a boolean encodes emptiness information about variables
+    # If this bool is True, the sources in empty_when_true are EMPTY
+    # If this bool is False, the sources in empty_when_true are NON_EMPTY
+    empty_when_true_sources: FrozenSet[int] = field(default_factory=frozenset)
+    # Inverse: if bool is True, sources are NON_EMPTY; if False, sources are EMPTY
+    nonempty_when_true_sources: FrozenSet[int] = field(default_factory=frozenset)
     
     def join(self, other: 'AbstractValue') -> 'AbstractValue':
         """Lattice join."""
@@ -320,7 +332,13 @@ class AbstractValue:
             upper_bound=max(self.upper_bound, other.upper_bound) if self.upper_bound is not None and other.upper_bound is not None else None,
             is_len_result=self.is_len_result or other.is_len_result,
             len_source_emptiness=self.len_source_emptiness.join(other.len_source_emptiness),
+            # Join len bounds conservatively: min of lower bounds, max of upper bounds
+            len_lower_bound=min(self.len_lower_bound, other.len_lower_bound) if self.len_lower_bound is not None and other.len_lower_bound is not None else None,
+            len_upper_bound=max(self.len_upper_bound, other.len_upper_bound) if self.len_upper_bound is not None and other.len_upper_bound is not None else None,
             may_contain_zeros=self.may_contain_zeros or other.may_contain_zeros,
+            # For emptiness indicators, take intersection (conservative)
+            empty_when_true_sources=self.empty_when_true_sources & other.empty_when_true_sources,
+            nonempty_when_true_sources=self.nonempty_when_true_sources & other.nonempty_when_true_sources,
         )
     
     def widen(self, other: 'AbstractValue') -> 'AbstractValue':
@@ -394,14 +412,23 @@ class AbstractValue:
             zero = Zeroness.NON_ZERO  # Strings are truthy unless empty
             emptiness = Emptiness.EMPTY if len(value) == 0 else Emptiness.NON_EMPTY
         elif isinstance(value, (list, tuple, set, frozenset)):
-            # NEW: Track collection emptiness
-            emptiness = Emptiness.EMPTY if len(value) == 0 else Emptiness.NON_EMPTY
+            # Track collection emptiness and precise length
+            size = len(value)
+            emptiness = Emptiness.EMPTY if size == 0 else Emptiness.NON_EMPTY
             # Check if any element is 0 (for normalization safety)
             may_contain_zeros = any(v == 0 for v in value if isinstance(v, (int, float)))
         elif isinstance(value, dict):
             # NEW: Track dictionary keys
             emptiness = Emptiness.EMPTY if len(value) == 0 else Emptiness.NON_EMPTY
             dict_keys = DictKeySet.from_keys({str(k) for k in value.keys()}, complete=True)
+        
+        # For collections, track length
+        len_lower = None
+        len_upper = None
+        if isinstance(value, (list, tuple, set, frozenset, str)):
+            size = len(value)
+            len_lower = size
+            len_upper = size
         
         return cls(
             nullability=null,
@@ -414,6 +441,8 @@ class AbstractValue:
             lower_bound=lower,
             upper_bound=upper,
             may_contain_zeros=may_contain_zeros,
+            len_lower_bound=len_lower,
+            len_upper_bound=len_upper,
         )
     
     @classmethod
@@ -582,6 +611,13 @@ class BytecodeSummary:
     # Return value properties
     return_nullability: Nullability = Nullability.TOP
     return_taint: TaintLabel = field(default_factory=TaintLabel.clean)
+    return_emptiness: Emptiness = Emptiness.TOP
+    return_len_lower_bound: Optional[int] = None
+    return_len_upper_bound: Optional[int] = None
+    
+    # Parameter constraints (for preconditions)
+    # Maps param_idx -> (emptiness, len_lower, len_upper)
+    param_constraints: Dict[int, Tuple[Emptiness, Optional[int], Optional[int]]] = field(default_factory=dict)
     
     # Bugs that may be triggered
     potential_bugs: List[BugReport] = field(default_factory=list)
@@ -751,6 +787,10 @@ class BytecodeAbstractInterpreter:
             val = self.const_values[arg] if arg is not None and arg < len(self.const_values) else None
             state.push(AbstractValue.from_const(val))
         
+        elif op == 'LOAD_SMALL_INT':
+            # LOAD_SMALL_INT pushes a small integer constant
+            state.push(AbstractValue.from_const(arg if arg is not None else 0))
+        
         elif op in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_FAST_LOAD_FAST', 
                     'LOAD_FAST_BORROW_LOAD_FAST_BORROW'):
             if op in ('LOAD_FAST_LOAD_FAST', 'LOAD_FAST_BORROW_LOAD_FAST_BORROW'):
@@ -796,12 +836,48 @@ class BytecodeAbstractInterpreter:
         elif op == 'COMPARE_OP':
             right = state.pop()
             left = state.pop()
+            
+            # Track emptiness indicators for len(x) comparisons with 0
+            empty_when_true = frozenset()
+            nonempty_when_true = frozenset()
+            
+            # Check for len(x) == 0 or len(x) != 0 patterns
+            # argval contains the comparison operator
+            cmp_op = argval if argval else ''
+            
+            # len(x) == 0: if true, x is empty; if false, x is non-empty
+            if left.is_len_result and right.zeroness == Zeroness.ZERO:
+                if '==' in str(cmp_op) or 'eq' in str(cmp_op).lower():
+                    empty_when_true = left.param_sources
+                elif '!=' in str(cmp_op) or 'ne' in str(cmp_op).lower():
+                    nonempty_when_true = left.param_sources
+                elif '>' in str(cmp_op) and '=' not in str(cmp_op):
+                    # len(x) > 0: if true, x is non-empty
+                    nonempty_when_true = left.param_sources
+                elif '<=' in str(cmp_op):
+                    # len(x) <= 0: if true (len==0), x is empty
+                    empty_when_true = left.param_sources
+            # Also handle 0 == len(x), 0 < len(x), etc.
+            elif right.is_len_result and left.zeroness == Zeroness.ZERO:
+                if '==' in str(cmp_op) or 'eq' in str(cmp_op).lower():
+                    empty_when_true = right.param_sources
+                elif '!=' in str(cmp_op) or 'ne' in str(cmp_op).lower():
+                    nonempty_when_true = right.param_sources
+                elif '<' in str(cmp_op) and '=' not in str(cmp_op):
+                    # 0 < len(x): if true, x is non-empty
+                    nonempty_when_true = right.param_sources
+                elif '>=' in str(cmp_op):
+                    # 0 >= len(x): if true (len==0), x is empty  
+                    empty_when_true = right.param_sources
+            
             # Result is boolean with combined sources
             result = AbstractValue(
                 nullability=Nullability.NOT_NONE,
                 zeroness=Zeroness.TOP,  # Comparison result may be True or False
                 types=frozenset({'bool'}),
                 param_sources=left.param_sources | right.param_sources,
+                empty_when_true_sources=empty_when_true,
+                nonempty_when_true_sources=nonempty_when_true,
             )
             state.push(result)
         
@@ -836,6 +912,14 @@ class BytecodeAbstractInterpreter:
         elif op == 'POP_TOP':
             state.pop()
         
+        # Handle conditional jumps that pop their condition
+        elif op in ('POP_JUMP_IF_TRUE', 'POP_JUMP_IF_FALSE',
+                    'POP_JUMP_FORWARD_IF_TRUE', 'POP_JUMP_FORWARD_IF_FALSE',
+                    'POP_JUMP_FORWARD_IF_NONE', 'POP_JUMP_IF_NONE',
+                    'POP_JUMP_FORWARD_IF_NOT_NONE', 'POP_JUMP_IF_NOT_NONE'):
+            # These instructions pop the top of stack (the condition)
+            state.pop()
+        
         elif op == 'COPY':
             if state.stack:
                 state.push(state.peek(0))
@@ -856,10 +940,49 @@ class BytecodeAbstractInterpreter:
             result = AbstractValue(
                 nullability=Nullability.NOT_NONE,
                 zeroness=Zeroness.NON_ZERO if count > 0 else Zeroness.ZERO,
+                emptiness=Emptiness.EMPTY if count == 0 else Emptiness.NON_EMPTY,
                 types=frozenset({'list' if 'LIST' in op else 'tuple' if 'TUPLE' in op else 'set'}),
                 param_sources=sources,
+                len_lower_bound=count,
+                len_upper_bound=count,
             )
             state.push(result)
+        
+        elif op in ('LIST_EXTEND', 'TUPLE_EXTEND', 'SET_UPDATE'):
+            # Extends list/tuple/set with iterable on TOS
+            # Stack: list, iterable -> list (extended)
+            iterable = state.pop()
+            collection = state.peek()
+            
+            # If we know both lengths precisely, we can compute new length
+            if (collection.len_lower_bound is not None and 
+                collection.len_upper_bound is not None and
+                collection.len_lower_bound == collection.len_upper_bound and
+                iterable.len_lower_bound is not None and
+                iterable.len_upper_bound is not None and
+                iterable.len_lower_bound == iterable.len_upper_bound):
+                # Precise length: add them
+                new_len = collection.len_lower_bound + iterable.len_lower_bound
+                collection.len_lower_bound = new_len
+                collection.len_upper_bound = new_len
+            else:
+                # Merge bounds: add lower bounds, add upper bounds
+                if collection.len_lower_bound is not None and iterable.len_lower_bound is not None:
+                    collection.len_lower_bound += iterable.len_lower_bound
+                else:
+                    collection.len_lower_bound = None
+                
+                if collection.len_upper_bound is not None and iterable.len_upper_bound is not None:
+                    collection.len_upper_bound += iterable.len_upper_bound
+                else:
+                    collection.len_upper_bound = None
+            
+            # Extending makes it non-empty if iterable is non-empty
+            if iterable.emptiness == Emptiness.NON_EMPTY:
+                collection.emptiness = Emptiness.NON_EMPTY
+            
+            # Merge param sources
+            collection.param_sources = collection.param_sources | iterable.param_sources
         
         elif op == 'BUILD_MAP':
             count = arg or 0
@@ -880,6 +1003,22 @@ class BytecodeAbstractInterpreter:
                 nullability=Nullability.NOT_NONE,
                 types=frozenset({'bool'}),
                 param_sources=val.param_sources,
+            )
+            state.push(result)
+        
+        elif op == 'TO_BOOL':
+            # TO_BOOL converts TOS to a bool - it replaces but doesn't change depth
+            # We preserve the param_sources so we can track the original variable
+            val = state.pop()
+            result = AbstractValue(
+                nullability=Nullability.NOT_NONE,
+                types=frozenset({'bool'}),
+                param_sources=val.param_sources,
+                # Preserve emptiness info for later refinement detection
+                emptiness=val.emptiness,
+                # Preserve emptiness indicator fields from comparisons
+                empty_when_true_sources=val.empty_when_true_sources,
+                nonempty_when_true_sources=val.nonempty_when_true_sources,
             )
             state.push(result)
         
@@ -981,33 +1120,86 @@ class BytecodeAbstractInterpreter:
         
         # Check for subscript
         elif oparg in BINARY_OPS_SUBSCRIPT:
-            # Index access
+            # Index access - check bounds
+            # Extract index value if it's a constant
+            index_val = None
+            if right.lower_bound is not None and right.upper_bound is not None and right.lower_bound == right.upper_bound:
+                index_val = right.lower_bound
+            
+            # Check if index is negative (Python allows but worth noting)
             if right.sign in (Sign.NEGATIVE, Sign.TOP):
                 # Negative index risk (though Python allows it)
                 pass
             
-            # EMPTY_COLLECTION_INDEX is just BOUNDS - if we know the collection is
-            # empty and we're indexing at 0, that's a BOUNDS error. The emptiness
-            # property helps us determine this with higher confidence.
+            # Check for guard on the collection
+            is_guarded = False
+            for src in left.param_sources:
+                if src < len(self.varnames):
+                    var_name = self.varnames[src]
+                    # Check if there's a nonempty guard
+                    if guards.has_nonempty(var_name):
+                        is_guarded = True
+                        break
+            
+            # EMPTY_COLLECTION_INDEX: If we know the collection is definitely empty
             if left.emptiness == Emptiness.EMPTY:
-                # Definitely empty - high confidence BOUNDS
-                self._add_bug('BOUNDS', offset, instr, sources, guards, 0.9, False)
+                # Definitely empty - high confidence BOUNDS (IndexError on x[0] where x is empty)
+                self._add_bug('BOUNDS', offset, instr, sources, guards, 0.95, is_guarded)
                 self.exceptions_raised.add('IndexError')
-            elif left.emptiness != Emptiness.NON_EMPTY:
-                # Might be empty - normal BOUNDS check
-                # (already covered by the general BOUNDS check below)
-                pass
+                # Don't add the generic 0.5 confidence bug since we have definite knowledge
+                result.nullability = Nullability.TOP
+                state.push(result)
+                return  # Exit early - we've handled this case
+            
+            # Use length bounds for more precise analysis
+            # If we know len(left) >= k and accessing index i where i < k, it's safe
+            if left.len_lower_bound is not None and index_val is not None:
+                if index_val >= 0 and index_val < left.len_lower_bound:
+                    # Index is within known bounds - SAFE, no bug to report
+                    result.nullability = Nullability.TOP
+                    state.push(result)
+                    return
+                elif index_val >= left.len_lower_bound:
+                    # Index definitely out of bounds - high confidence bug
+                    self._add_bug('BOUNDS', offset, instr, sources, guards, 0.95, is_guarded)
+                    self.exceptions_raised.add('IndexError')
+                    result.nullability = Nullability.TOP
+                    state.push(result)
+                    return
+            
+            # If non-empty but no specific length bound, could still be out of bounds
+            if left.emptiness == Emptiness.NON_EMPTY:
+                # Non-empty but unknown length - moderate risk if accessing beyond [0]
+                if index_val is not None and index_val > 0:
+                    # Accessing beyond first element, uncertain if safe
+                    conf = 0.3  # Lower confidence since it's non-empty
+                    self._add_bug('BOUNDS', offset, instr, sources, guards, conf, is_guarded)
+                    self.exceptions_raised.add('IndexError')
+                # For x[0] when x is non-empty, it's safe - no bug
+                elif index_val == 0:
+                    result.nullability = Nullability.TOP
+                    state.push(result)
+                    return
+                # Unknown index on non-empty collection - low risk
+                else:
+                    pass  # Fall through to generic check
             
             # DICT_KEY_MISSING is just KeyError, a form of BOUNDS
             # If we know the dict's keys and the accessed key isn't in them, flag it
             if 'dict' in left.types and not left.dict_keys.is_top:
                 if left.dict_keys.is_complete and len(left.dict_keys.known_keys) < 10:
                     # Known dict with limited keys - higher confidence BOUNDS
-                    self._add_bug('BOUNDS', offset, instr, sources, guards, 0.7, False)
+                    self._add_bug('BOUNDS', offset, instr, sources, guards, 0.7, is_guarded)
                     self.exceptions_raised.add('KeyError')
             
-            # Always a BOUNDS risk without static knowledge
-            self._add_bug('BOUNDS', offset, instr, sources, guards, 0.5)
+            # Generic BOUNDS risk without static knowledge
+            # Only add this if:
+            # 1. We don't have specific emptiness knowledge
+            # 2. We don't have guards
+            # 3. We don't have length bounds that prove safety
+            if left.emptiness not in (Emptiness.EMPTY, Emptiness.NON_EMPTY) and not is_guarded:
+                self._add_bug('BOUNDS', offset, instr, sources, guards, 0.5, is_guarded)
+            
             self.exceptions_raised.add('IndexError')
             self.exceptions_raised.add('KeyError')
             
@@ -1116,6 +1308,8 @@ class BytecodeAbstractInterpreter:
             state.push(result)
             return
         
+        # Check for callee summary
+        callee_summary = None
         if callee_name:
             if callee_name in ('eval', 'exec', 'compile'):
                 sources = frozenset().union(*(a.param_sources for a in args))
@@ -1131,17 +1325,34 @@ class BytecodeAbstractInterpreter:
             # Apply callee summary if available
             if callee_name in self.callee_summaries:
                 callee = self.callee_summaries[callee_name]
+                callee_summary = callee
                 # Merge callee's bugs
                 for bug in callee.potential_bugs:
                     self.potential_bugs.append(bug)
         
-        # Result is unknown unless we have summary
+        # Result uses callee summary info if available
         all_sources = frozenset().union(*(a.param_sources for a in args))
-        result = AbstractValue(
-            nullability=Nullability.TOP,
-            param_sources=all_sources,
-            taint=TaintLabel.clean().join(*[a.taint for a in args]) if args else TaintLabel.clean(),
-        )
+        
+        # Join all argument taints
+        combined_taint = TaintLabel.clean()
+        for a in args:
+            combined_taint = combined_taint.join(a.taint)
+        
+        if callee_summary:
+            result = AbstractValue(
+                nullability=callee_summary.return_nullability,
+                emptiness=callee_summary.return_emptiness,
+                len_lower_bound=callee_summary.return_len_lower_bound,
+                len_upper_bound=callee_summary.return_len_upper_bound,
+                param_sources=all_sources,
+                taint=callee_summary.return_taint.join(combined_taint),
+            )
+        else:
+            result = AbstractValue(
+                nullability=Nullability.TOP,
+                param_sources=all_sources,
+                taint=combined_taint,
+            )
         state.push(result)
         
         # Calls may raise
@@ -1155,14 +1366,15 @@ class BytecodeAbstractInterpreter:
             if instr.offset == call_offset:
                 for j in range(i - 1, max(i - 5, -1), -1):
                     prev = self.instructions[j]
-                    if prev.opname in ('LOAD_GLOBAL', 'LOAD_NAME', 'LOAD_BUILTIN'):
+                    if prev.opname in ('LOAD_GLOBAL', 'LOAD_NAME', 'LOAD_BUILTIN', 'LOAD_DEREF', 'LOAD_FAST'):
                         parts.insert(0, prev.argval)
                         break
                     elif prev.opname == 'LOAD_ATTR':
                         parts.insert(0, prev.argval)
                     elif prev.opname == 'LOAD_METHOD':
                         parts.insert(0, prev.argval)
-                    elif prev.opname == 'PUSH_NULL':
+                    elif prev.opname in ('PUSH_NULL', 'LOAD_CONST'):
+                        # Skip PUSH_NULL and LOAD_CONST (arguments)
                         continue
                     else:
                         break
@@ -1176,7 +1388,12 @@ class BytecodeAbstractInterpreter:
         condition: Optional[str],
         block: BasicBlock,
     ) -> AbstractState:
-        """Apply path-sensitive refinement on CFG edge."""
+        """Apply path-sensitive refinement on CFG edge.
+        
+        This handles short-circuit evaluation semantics:
+        - For `if x or x[0]`: on the false branch of `x`, we know x is falsy (empty for sequences)
+        - For `if x and x[0]`: on the true branch of `x`, we know x is truthy (non-empty)
+        """
         if state.is_bottom:
             return state
         
@@ -1213,12 +1430,363 @@ class BytecodeAbstractInterpreter:
                                 nullability=new_null,
                                 zeroness=val.zeroness,
                                 sign=val.sign,
+                                emptiness=val.emptiness,
                                 taint=val.taint,
                                 types=val.types,
                                 param_sources=val.param_sources,
                             )
+            
+            # Look for truthiness test pattern: LOAD_FAST, TO_BOOL, POP_JUMP_IF_xxx
+            # This is critical for detecting `if x or x[0]` bugs
+            self._refine_truthiness_on_edge(result, block, edge_type)
+            
+            # Also look for len comparison patterns: len(x) == 0, len(x) > 0, etc.
+            self._refine_len_comparison_on_edge(result, block, edge_type)
         
         return result
+    
+    def _refine_truthiness_on_edge(
+        self,
+        state: AbstractState,
+        block: BasicBlock,
+        edge_type: EdgeType,
+    ) -> None:
+        """Refine state based on truthiness test in block.
+        
+        For short-circuit evaluation like `if x or x[0]`:
+        - POP_JUMP_IF_TRUE on x: jumps if x truthy, falls through if x falsy
+        - On the fall-through path (COND_FALSE edge), x must be falsy (empty for sequences)
+        
+        For `if x and x[0]`:
+        - POP_JUMP_IF_FALSE on x: jumps if x falsy, falls through if x truthy
+        - On the fall-through path (COND_TRUE edge), x must be truthy (non-empty)
+        """
+        instrs = block.instructions
+        if not instrs:
+            return
+        
+        # Find the pattern: LOAD_FAST var, [TO_BOOL], POP_JUMP_IF_xxx
+        var_idx = None
+        var_name = None
+        jump_type = None
+        
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            
+            if instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_IF_FALSE',
+                               'POP_JUMP_FORWARD_IF_TRUE', 'POP_JUMP_FORWARD_IF_FALSE'):
+                jump_type = instr.opname
+                continue
+            
+            if instr.opname == 'TO_BOOL':
+                continue
+            
+            if instr.opname == 'COPY':
+                continue
+            
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                var_idx = instr.arg
+                var_name = instr.argval
+                break
+        
+        if var_idx is None or jump_type is None:
+            return
+        
+        if var_idx not in state.locals:
+            return
+        
+        val = state.locals[var_idx]
+        
+        # Determine if the edge means truthy or falsy
+        # POP_JUMP_IF_TRUE: COND_TRUE edge = truthy, COND_FALSE edge = falsy
+        # POP_JUMP_IF_FALSE: COND_FALSE edge = truthy, COND_TRUE edge = falsy
+        is_falsy_edge = False
+        is_truthy_edge = False
+        
+        if 'TRUE' in jump_type:
+            # POP_JUMP_IF_TRUE: jumps when condition is truthy
+            if edge_type == EdgeType.COND_TRUE:
+                is_truthy_edge = True
+            else:  # COND_FALSE = fallthrough = falsy
+                is_falsy_edge = True
+        else:
+            # POP_JUMP_IF_FALSE: jumps when condition is falsy
+            if edge_type == EdgeType.COND_FALSE:
+                is_falsy_edge = True
+            else:  # COND_TRUE = fallthrough = truthy
+                is_truthy_edge = True
+        
+        # Update the abstract value based on edge semantics
+        if is_falsy_edge:
+            # Variable is falsy on this edge
+            # For sequences: falsy means EMPTY (len == 0)
+            # For numbers: falsy means ZERO
+            # For objects: falsy could mean None
+            new_emptiness = Emptiness.EMPTY
+            new_zeroness = Zeroness.ZERO  # Falsy could also mean zero for numbers
+            
+            state.locals[var_idx] = AbstractValue(
+                nullability=val.nullability,  # Could still be None (which is also falsy)
+                zeroness=new_zeroness,
+                sign=Sign.ZERO,  # Zero is falsy
+                emptiness=new_emptiness,
+                taint=val.taint,
+                types=val.types,
+                param_sources=val.param_sources,
+            )
+        elif is_truthy_edge:
+            # Variable is truthy on this edge
+            # For sequences: truthy means NON_EMPTY (len >= 1)
+            # For numbers: truthy means NON_ZERO
+            # For objects: truthy means NOT_NONE
+            new_emptiness = Emptiness.NON_EMPTY
+            new_zeroness = Zeroness.NON_ZERO
+            new_nullability = Nullability.NOT_NONE
+            
+            state.locals[var_idx] = AbstractValue(
+                nullability=new_nullability,
+                zeroness=new_zeroness,
+                sign=val.sign if val.sign != Sign.ZERO else Sign.TOP,
+                emptiness=new_emptiness,
+                taint=val.taint,
+                types=val.types,
+                param_sources=val.param_sources,
+            )
+    
+    def _refine_len_comparison_on_edge(
+        self,
+        state: AbstractState,
+        block: BasicBlock,
+        edge_type: EdgeType,
+    ) -> None:
+        """Refine state based on len() comparison patterns.
+        
+        Handles patterns like:
+        - `if len(x) == 0 or x[0]`: on false edge of len(x)==0, x is non-empty
+        - `if len(x) > 0 and x[0]`: on true edge of len(x)>0, x is non-empty
+        
+        The pattern in bytecode looks like:
+        LOAD_GLOBAL len
+        LOAD_FAST x
+        CALL 1
+        LOAD_SMALL_INT 0
+        COMPARE_OP ==
+        [TO_BOOL]
+        POP_JUMP_IF_TRUE/FALSE
+        """
+        instrs = block.instructions
+        if not instrs:
+            return
+        
+        # Find the jump instruction and comparison
+        jump_type = None
+        compare_idx = None
+        compare_op = None
+        
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            
+            if instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_IF_FALSE',
+                               'POP_JUMP_FORWARD_IF_TRUE', 'POP_JUMP_FORWARD_IF_FALSE'):
+                jump_type = instr.opname
+                continue
+            
+            if instr.opname == 'TO_BOOL':
+                continue
+            
+            if instr.opname == 'COMPARE_OP':
+                compare_idx = i
+                compare_op = instr.argval
+                break
+        
+        if jump_type is None or compare_idx is None:
+            return
+        
+        # Look for the pattern: LOAD_GLOBAL len, LOAD_FAST x, CALL, LOAD_SMALL_INT 0, COMPARE_OP
+        # We need at least 4 instructions before COMPARE_OP
+        if compare_idx < 4:
+            return
+        
+        # Check for LOAD_SMALL_INT or LOAD_CONST before COMPARE_OP to get the compared value
+        load_const_instr = instrs[compare_idx - 1]
+        compared_value = None
+        if load_const_instr.opname == 'LOAD_SMALL_INT':
+            compared_value = load_const_instr.arg
+        elif load_const_instr.opname == 'LOAD_CONST':
+            if isinstance(load_const_instr.argval, int):
+                compared_value = load_const_instr.argval
+        
+        if compared_value is None:
+            return
+        
+        # Check for CALL before that
+        call_instr = instrs[compare_idx - 2]
+        if call_instr.opname not in ('CALL', 'CALL_FUNCTION'):
+            return
+        
+        # Check for LOAD_FAST before CALL
+        load_var_instr = instrs[compare_idx - 3]
+        if load_var_instr.opname not in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+            return
+        
+        var_idx = load_var_instr.arg
+        
+        # Check for LOAD_GLOBAL len before LOAD_FAST
+        load_len_instr = instrs[compare_idx - 4]
+        if load_len_instr.opname != 'LOAD_GLOBAL':
+            return
+        # The argval might be 'len' or ('len', None) depending on Python version
+        len_name = load_len_instr.argval
+        if isinstance(len_name, tuple):
+            len_name = len_name[0]
+        if len_name != 'len':
+            return
+        
+        if var_idx not in state.locals:
+            return
+        
+        val = state.locals[var_idx]
+        
+        # Determine what the comparison and edge tell us about emptiness
+        # compare_op could be '==', '!=', '<', '>', '<=', '>='
+        cmp_str = str(compare_op) if compare_op else ''
+        
+        # Determine if the edge means the comparison was true or false
+        # POP_JUMP_IF_TRUE: jumps when TRUE, so COND_TRUE = taken = comparison true
+        # POP_JUMP_IF_FALSE: jumps when FALSE, so COND_FALSE = taken = comparison false
+        # The edge type indicates which branch was taken
+        comparison_true = False
+        comparison_false = False
+        
+        if 'TRUE' in jump_type:
+            # POP_JUMP_IF_TRUE: jumps when condition is TRUE
+            # COND_TRUE edge = jump taken = comparison was TRUE
+            # COND_FALSE edge = fallthrough = comparison was FALSE
+            if edge_type == EdgeType.COND_TRUE:
+                comparison_true = True
+            else:
+                comparison_false = True
+        else:
+            # POP_JUMP_IF_FALSE: jumps when condition is FALSE
+            # COND_FALSE edge = jump taken = comparison was FALSE
+            # COND_TRUE edge = fallthrough = comparison was TRUE
+            if edge_type == EdgeType.COND_TRUE:
+                comparison_true = True
+            else:
+                comparison_false = True
+        
+        # Now determine emptiness and length bounds based on comparison operator and result
+        new_emptiness = None
+        new_len_lower = None
+        new_len_upper = None
+        
+        # len(x) == N
+        if '==' in cmp_str or 'eq' in cmp_str.lower():
+            if comparison_true:
+                # len == N, so both lower and upper bound are N
+                new_len_lower = compared_value
+                new_len_upper = compared_value
+                new_emptiness = Emptiness.EMPTY if compared_value == 0 else Emptiness.NON_EMPTY
+            else:
+                # len != N
+                if compared_value == 0:
+                    new_emptiness = Emptiness.NON_EMPTY
+                    new_len_lower = 1  # At least 1
+        
+        # len(x) != N
+        elif '!=' in cmp_str or 'ne' in cmp_str.lower():
+            if comparison_true:
+                # len != N
+                if compared_value == 0:
+                    new_emptiness = Emptiness.NON_EMPTY
+                    new_len_lower = 1
+            else:
+                # len == N
+                new_len_lower = compared_value
+                new_len_upper = compared_value
+                new_emptiness = Emptiness.EMPTY if compared_value == 0 else Emptiness.NON_EMPTY
+        
+        # len(x) > N
+        elif '>' in cmp_str and '=' not in cmp_str:
+            if comparison_true:
+                # len > N, so len >= N+1
+                new_len_lower = compared_value + 1
+                new_emptiness = Emptiness.NON_EMPTY
+            else:
+                # len <= N
+                new_len_upper = compared_value
+                if compared_value == 0:
+                    new_emptiness = Emptiness.EMPTY
+        
+        # len(x) >= N
+        elif '>=' in cmp_str:
+            if comparison_true:
+                # len >= N
+                new_len_lower = compared_value
+                new_emptiness = Emptiness.NON_EMPTY if compared_value > 0 else Emptiness.TOP
+            else:
+                # len < N, so len <= N-1
+                new_len_upper = compared_value - 1
+                if compared_value <= 1:
+                    new_emptiness = Emptiness.EMPTY
+        
+        # len(x) < N
+        elif '<' in cmp_str and '=' not in cmp_str:
+            if comparison_true:
+                # len < N, so len <= N-1
+                new_len_upper = compared_value - 1
+                if compared_value <= 1:
+                    new_emptiness = Emptiness.EMPTY
+            else:
+                # len >= N
+                new_len_lower = compared_value
+                new_emptiness = Emptiness.NON_EMPTY if compared_value > 0 else Emptiness.TOP
+        
+        # len(x) <= N
+        elif '<=' in cmp_str:
+            if comparison_true:
+                # len <= N
+                new_len_upper = compared_value
+                if compared_value == 0:
+                    new_emptiness = Emptiness.EMPTY
+            else:
+                # len > N, so len >= N+1
+                new_len_lower = compared_value + 1
+                new_emptiness = Emptiness.NON_EMPTY
+        
+        # Apply the refinements if we learned anything
+        if new_emptiness is not None or new_len_lower is not None or new_len_upper is not None:
+            # Merge with existing bounds (take intersection)
+            final_len_lower = new_len_lower
+            if val.len_lower_bound is not None and new_len_lower is not None:
+                final_len_lower = max(val.len_lower_bound, new_len_lower)
+            elif val.len_lower_bound is not None:
+                final_len_lower = val.len_lower_bound
+            
+            final_len_upper = new_len_upper
+            if val.len_upper_bound is not None and new_len_upper is not None:
+                final_len_upper = min(val.len_upper_bound, new_len_upper)
+            elif val.len_upper_bound is not None:
+                final_len_upper = val.len_upper_bound
+            
+            # If we narrowed to empty, set emptiness
+            final_emptiness = new_emptiness if new_emptiness is not None else val.emptiness
+            if final_len_lower is not None and final_len_upper is not None and final_len_upper == 0:
+                final_emptiness = Emptiness.EMPTY
+            elif final_len_lower is not None and final_len_lower > 0:
+                final_emptiness = Emptiness.NON_EMPTY
+            
+            state.locals[var_idx] = AbstractValue(
+                nullability=val.nullability,
+                zeroness=val.zeroness,
+                sign=val.sign,
+                emptiness=final_emptiness,
+                taint=val.taint,
+                types=val.types,
+                param_sources=val.param_sources,
+                len_lower_bound=final_len_lower,
+                len_upper_bound=final_len_upper,
+            )
     
     def _state_changed(self, old: AbstractState, new: AbstractState) -> bool:
         """Check if state changed (for fixpoint detection)."""
@@ -1275,12 +1843,28 @@ class BytecodeAbstractInterpreter:
         # Compute return properties
         return_null = Nullability.BOTTOM
         return_taint = TaintLabel.bottom()
+        return_emptiness = Emptiness.BOTTOM
+        return_len_lower = None
+        return_len_upper = None
         param_to_return: Set[int] = set()
         
         for ret_val in self.return_values:
             return_null = return_null.join(ret_val.nullability)
             return_taint = return_taint.join(ret_val.taint)
+            return_emptiness = return_emptiness.join(ret_val.emptiness)
             param_to_return.update(ret_val.param_sources)
+            
+            # Join length bounds
+            if ret_val.len_lower_bound is not None:
+                if return_len_lower is None:
+                    return_len_lower = ret_val.len_lower_bound
+                else:
+                    return_len_lower = min(return_len_lower, ret_val.len_lower_bound)
+            if ret_val.len_upper_bound is not None:
+                if return_len_upper is None:
+                    return_len_upper = ret_val.len_upper_bound
+                else:
+                    return_len_upper = max(return_len_upper, ret_val.len_upper_bound)
         
         # Compute param bug propagation
         param_bugs: Dict[int, Set[str]] = {}
@@ -1290,6 +1874,9 @@ class BytecodeAbstractInterpreter:
                     param_bugs[src] = set()
                 param_bugs[src].add(bug.bug_type)
         
+        # Extract param constraints from entry state (if we wanted preconditions)
+        # For now, we don't track required preconditions, just document what we return
+        
         return BytecodeSummary(
             function_name=self.func_name,
             qualified_name=self.qualified_name,
@@ -1297,6 +1884,9 @@ class BytecodeAbstractInterpreter:
             param_to_return=param_to_return,
             return_nullability=return_null,
             return_taint=return_taint,
+            return_emptiness=return_emptiness,
+            return_len_lower_bound=return_len_lower,
+            return_len_upper_bound=return_len_upper,
             potential_bugs=self.potential_bugs,
             param_bug_propagation=param_bugs,
             may_raise=self.exceptions_raised,

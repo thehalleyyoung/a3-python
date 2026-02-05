@@ -1200,16 +1200,26 @@ class SymbolicVM:
     def _next_offset(self, frame: SymbolicFrame, instr) -> int:
         """Compute the next instruction offset."""
         code = frame.code
-        instructions = list(dis.get_instructions(code))
         
-        for i, inst in enumerate(instructions):
-            if inst.offset == instr.offset:
+        # Cache instructions to avoid repeated dis.get_instructions calls
+        # This is a major performance optimization for large functions
+        cache_key = id(code)
+        if not hasattr(self, '_instruction_cache'):
+            self._instruction_cache = {}
+        
+        if cache_key not in self._instruction_cache:
+            instructions = list(dis.get_instructions(code))
+            # Build offset -> next_offset map for O(1) lookup
+            offset_map = {}
+            for i, inst in enumerate(instructions):
                 if i + 1 < len(instructions):
-                    return instructions[i + 1].offset
+                    offset_map[inst.offset] = instructions[i + 1].offset
                 else:
-                    return len(code.co_code)
+                    offset_map[inst.offset] = len(code.co_code)
+            self._instruction_cache[cache_key] = offset_map
         
-        return instr.offset + 2
+        offset_map = self._instruction_cache[cache_key]
+        return offset_map.get(instr.offset, instr.offset + 2)
     
     def _set_security_detection_flag(self, state: SymbolicMachineState, violation):
         """

@@ -46,7 +46,7 @@ class LoopInfo:
         return self.modified_variables | self.compared_variables
 
 
-def extract_loops(code_obj) -> List[LoopInfo]:
+def extract_loops(code_obj, *, cfg: Optional[ControlFlowGraph] = None) -> List[LoopInfo]:
     """
     Extract loop information from bytecode.
     
@@ -56,7 +56,8 @@ def extract_loops(code_obj) -> List[LoopInfo]:
     Returns:
         List of LoopInfo for each loop in the code
     """
-    cfg = build_cfg(code_obj)
+    if cfg is None:
+        cfg = build_cfg(code_obj)
     
     loops = []
     
@@ -198,7 +199,12 @@ def _extract_loop_variables(
     # Compared variables: prefer LOAD_* in the loop header that feed a COMPARE_OP.
     load_opnames = (
         'LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_GLOBAL',
-        'LOAD_DEREF', 'LOAD_CLOSURE'
+        'LOAD_DEREF', 'LOAD_CLOSURE',
+        # CPython superinstructions (3.13+): load 2 locals at once
+        'LOAD_FAST_LOAD_FAST',
+        'LOAD_FAST_BORROW_LOAD_FAST_BORROW',
+        'LOAD_FAST_BORROW_LOAD_FAST',
+        'LOAD_FAST_LOAD_FAST_BORROW',
     )
     for i, instr in enumerate(instructions):
         if instr.offset not in compared_offsets:
@@ -212,7 +218,13 @@ def _extract_loop_variables(
         # This avoids treating every LOAD_FAST in the loop body as a bound variable.
         for j in range(i + 1, min(i + 5, len(instructions))):
             if instructions[j].opname == 'COMPARE_OP':
-                compared_vars.add(str(instr.argval))
+                # Superinstructions may carry multiple names in a tuple.
+                if isinstance(instr.argval, tuple):
+                    for name in instr.argval:
+                        if name:
+                            compared_vars.add(str(name))
+                else:
+                    compared_vars.add(str(instr.argval))
                 break
     
     return modified_vars, compared_vars

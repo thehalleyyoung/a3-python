@@ -17,9 +17,15 @@ This implements barrier-certificate-theory.tex §8 (Ranking Functions).
 
 from dataclasses import dataclass
 from typing import Optional, Dict, Callable
+import itertools
 import z3
 
 from ..cfg.loop_analysis import extract_loops, LoopInfo, identify_loop_pattern
+from ..cfg.affine_loop_model import (
+    extract_affine_loop_model,
+    AffineUpdate,
+    ConstantUpdate,
+)
 from ..barriers.ranking_synthesis import (
     RankingSynthesizer,
     RankingSynthesisConfig,
@@ -223,7 +229,10 @@ class TerminationIntegrator:
         Returns:
             Function that creates fresh symbolic state
         """
+        counter = itertools.count()
+
         def builder() -> SymbolicMachineState:
+            state_id = next(counter)
             # Create minimal symbolic state with loop variables
             from ..z3model.heap import SymbolicHeap
             from ..z3model.values import SymbolicValue, ValueTag
@@ -235,7 +244,7 @@ class TerminationIntegrator:
             frame_locals = {}
             for var_name in loop_variables:
                 # Each variable gets a fresh symbolic integer
-                sym_val = z3.Int(var_name)
+                sym_val = z3.Int(f"{var_name}_{state_id}")
                 frame_locals[var_name] = SymbolicValue(ValueTag.INT, sym_val)
             
             frame = SymbolicFrame(
@@ -277,29 +286,81 @@ class TerminationIntegrator:
         Returns:
             Function that encodes s →loop s' as Z3 boolean
         """
-        def encoder(s: SymbolicMachineState, s_prime: SymbolicMachineState) -> z3.ExprRef:
-            # For now, we create a conservative approximation:
-            # At least one modified variable must change
-            constraints = []
-            
-            for var_name in loop.modified_variables:
-                # Get variable extractors
-                extractor = self._create_variable_extractor(var_name)
-                var_s = extractor(s)
-                var_s_prime = extractor(s_prime)
-                
-                # Variable is modified in transition
-                # (we don't know the exact update, so we allow any change)
-                # This is sound but imprecise - ranking synthesis will try to find
-                # a function that decreases under ANY possible update
-                constraints.append(var_s != var_s_prime)
-            
-            if constraints:
-                # At least one variable changes
-                return z3.Or(*constraints)
-            else:
-                # No variables tracked - accept any transition
+        # Try to extract a precise affine loop model for this back-edge.
+        model = extract_affine_loop_model(
+            code_obj,
+            header_offset=loop.header_offset,
+            body_offsets=loop.body_offsets,
+            modified_variables=loop.modified_variables,
+        )
+
+        # Pre-create extractors so we don't reallocate on every call.
+        var_extractors = {name: self._create_variable_extractor(name) for name in loop.loop_variables}
+
+        def _operand_to_int(op, st: SymbolicMachineState) -> Optional[z3.ArithRef]:
+            if op.kind == "const":
+                return z3.IntVal(int(op.value))
+            if op.kind == "var":
+                name = str(op.value)
+                extractor = var_extractors.get(name) or self._create_variable_extractor(name)
+                v = extractor(st)
+                return v if z3.is_int(v) else z3.ToInt(v)
+            return None
+
+        def _guard_formula(st: SymbolicMachineState) -> z3.BoolRef:
+            if not model or not model.guard:
                 return z3.BoolVal(True)
+            lhs = _operand_to_int(model.guard.lhs, st)
+            rhs = _operand_to_int(model.guard.rhs, st)
+            if lhs is None or rhs is None:
+                return z3.BoolVal(True)
+            op = model.guard.op
+            if op == "<":
+                return lhs < rhs
+            if op == "<=":
+                return lhs <= rhs
+            if op == ">":
+                return lhs > rhs
+            if op == ">=":
+                return lhs >= rhs
+            if op == "==":
+                return lhs == rhs
+            if op == "!=":
+                return lhs != rhs
+            return z3.BoolVal(True)
+
+        def encoder(s: SymbolicMachineState, s_prime: SymbolicMachineState) -> z3.ExprRef:
+            # If we cannot extract a precise model, fall back to the previous
+            # conservative semantics (at least one modified var changes).
+            if not model:
+                constraints = []
+                for var_name in loop.modified_variables:
+                    extractor = self._create_variable_extractor(var_name)
+                    var_s = extractor(s)
+                    var_s_prime = extractor(s_prime)
+                    constraints.append(var_s != var_s_prime)
+                return z3.Or(*constraints) if constraints else z3.BoolVal(True)
+
+            constraints: list[z3.BoolRef] = [_guard_formula(s)]
+
+            # Apply updates for vars we can model; keep other loop vars unchanged.
+            for var_name in loop.loop_variables:
+                extractor = var_extractors.get(var_name) or self._create_variable_extractor(var_name)
+                pre = extractor(s)
+                post = extractor(s_prime)
+
+                upd = model.updates.get(var_name)
+                if isinstance(upd, AffineUpdate):
+                    constraints.append(post == pre + int(upd.delta))
+                elif isinstance(upd, ConstantUpdate):
+                    constraints.append(post == int(upd.value))
+                else:
+                    # If we couldn't model the update for a modified var, we must
+                    # conservatively allow it to change arbitrarily (havoc).
+                    if var_name not in loop.modified_variables:
+                        constraints.append(post == pre)
+
+            return z3.And(*constraints)
         
         return encoder
 

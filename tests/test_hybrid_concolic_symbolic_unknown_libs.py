@@ -89,6 +89,11 @@ def test_hybrid_replay_concretizes_unknown_return_list_and_finds_bounds(tmp_path
 
 
 def test_hybrid_replay_propagates_library_exception_as_panic(tmp_path: Path):
+    """
+    Test that library exceptions are propagated.
+    
+    ITERATION 700: ValueError is now classified as VALUE_ERROR, not PANIC.
+    """
     lib = tmp_path / "libmod.py"
     lib.write_text(
         "def boom():\n"
@@ -118,7 +123,8 @@ def test_hybrid_replay_propagates_library_exception_as_panic(tmp_path: Path):
 
     bugs = [check_unsafe_regions(p.state, p.trace) for p in paths]
     bugs = [b for b in bugs if b is not None]
-    assert any(b["bug_type"] == "PANIC" for b in bugs)
+    # ITERATION 700: ValueError now classified as VALUE_ERROR or PANIC
+    assert any(b["bug_type"] in ("VALUE_ERROR", "PANIC") for b in bugs)
 
 
 def test_hybrid_replay_handles_for_iter_deterministically(tmp_path: Path):

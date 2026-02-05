@@ -1,0 +1,1502 @@
+[
+  {
+    "id": 1,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "accelerator.hpu_accelerator.HPU_Accelerator.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/accelerator/hpu_accelerator.py:17",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "accelerator.hpu_accelerator.HPU_Accelerator.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      12: from .abstract_accelerator import DeepSpeedAccelerator\n      13: \n      14: \n      15: class HPU_Accelerator(DeepSpeedAccelerator):\n      16: \n>>>   17:     def __init__(self):\n      18:         self._name = 'hpu'\n      19:         self._communication_backend_name = 'hccl'\n      20:         self._compile_backend = \"hpu_backend\"\n      21:         self.apply_hpu_workarounds()\n      22:         try:"
+  },
+  {
+    "id": 2,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "accelerator.real_accelerator.is_current_accelerator_supported",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/accelerator/real_accelerator.py:47",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "accelerator.real_accelerator.is_current_accelerator_supported"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      42:     # TODO: turn off is_available test since this breaks tests\n      43:     # assert accel_obj.is_available(), \\\n      44:     #    f'{accel_obj.__class__.__name__} accelerator fails is_available() test'\n      45: \n      46: \n>>>   47: def is_current_accelerator_supported():\n      48:     return get_accelerator().device_name() in SUPPORTED_ACCELERATOR_LIST\n      49: \n      50: \n      51: def get_accelerator():\n      52:     global ds_accelerator"
+  },
+  {
+    "id": 3,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "accelerator.real_accelerator.get_accelerator",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/accelerator/real_accelerator.py:51",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "accelerator.real_accelerator.get_accelerator"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      46: \n      47: def is_current_accelerator_supported():\n      48:     return get_accelerator().device_name() in SUPPORTED_ACCELERATOR_LIST\n      49: \n      50: \n>>>   51: def get_accelerator():\n      52:     global ds_accelerator\n      53:     if ds_accelerator is not None:\n      54:         return ds_accelerator\n      55: \n      56:     accelerator_name = None"
+  },
+  {
+    "id": 4,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.aio_bench_perf_sweep.async_io_setup",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/aio_bench_perf_sweep.py:242",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.aio_bench_perf_sweep.async_io_setup"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     237: \n     238: def script_path():\n     239:     return os.path.dirname(os.path.realpath(sys.argv[0]))\n     240: \n     241: \n>>>  242: def async_io_setup():\n     243:     return AsyncIOBuilder().is_compatible()\n     244: \n     245: \n     246: def remove_folder(folder):\n     247:     assert os.path.isdir(folder), f\"Error: cannot remove {folder} - folder not found\""
+  },
+  {
+    "id": 5,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.io_engine.post_operation",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/io_engine.py:40",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.io_engine.post_operation"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      35: def prepare_write(pool_params):\n      36:     args, tid = pool_params\n      37:     return prepare_operation(args, tid, False)\n      38: \n      39: \n>>>   40: def post_operation(pool_params):\n      41:     _, _, io_engine = pool_params\n      42:     io_engine.fini()\n      43: \n      44: \n      45: def read_operation(pool_params):"
+  },
+  {
+    "id": 6,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.io_engine.read_operation",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/io_engine.py:45",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.io_engine.read_operation"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      40: def post_operation(pool_params):\n      41:     _, _, io_engine = pool_params\n      42:     io_engine.fini()\n      43: \n      44: \n>>>   45: def read_operation(pool_params):\n      46:     args, tid, loop_id, io_engine = pool_params\n      47:     return io_engine.read(args, tid, loop_id)\n      48: \n      49: \n      50: def write_operation(pool_params):"
+  },
+  {
+    "id": 7,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.io_engine.write_operation",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/io_engine.py:50",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.io_engine.write_operation"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      45: def read_operation(pool_params):\n      46:     args, tid, loop_id, io_engine = pool_params\n      47:     return io_engine.read(args, tid, loop_id)\n      48: \n      49: \n>>>   50: def write_operation(pool_params):\n      51:     args, tid, loop_id, io_engine = pool_params\n      52:     return io_engine.write(args, tid, loop_id)\n      53: \n      54: \n      55: def get_schedule(args, read_op):"
+  },
+  {
+    "id": 8,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.parse_aio_stats.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/parse_aio_stats.py:135",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.parse_aio_stats.main"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     130:     result_keys = list(results.keys())\n     131:     sorted_keys = sorted(result_keys)\n     132:     return sorted_keys, results\n     133: \n     134: \n>>>  135: def main():\n     136:     print(\"Parsing aio statistics\")\n     137:     args = parse_arguments()\n     138: \n     139:     if not validate_args(args):\n     140:         quit()"
+  },
+  {
+    "id": 9,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.default_inference_config",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/__init__.py:295",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.default_inference_config"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     290:     parser = _add_core_arguments(parser)\n     291: \n     292:     return parser\n     293: \n     294: \n>>>  295: def default_inference_config():\n     296:     \"\"\"\n     297:         Return a default DeepSpeed inference configuration dictionary.\n     298:     \"\"\"\n     299:     return DeepSpeedInferenceConfig().dict()\n     300: "
+  },
+  {
+    "id": 10,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.autotuner.Autotuner._generate_experiments",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/autotuner.py:304",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.autotuner.Autotuner._generate_experiments"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     299: \n     300:         mem_per_gpu = (params_mem + gradients_mem + optimizer_mem) / self.mp_size()\n     301: \n     302:         return mem_per_gpu\n     303: \n>>>  304:     def _generate_experiments(self, tuning_space, max_train_batch_size_per_gpu):\n     305:         \"\"\"Generates a list of autotuning experiments given a tuning_space.\n     306:             The corresponding parameter values are replaced by user-defined values in the DeepSpeed configuration file.\n     307:         Args:\n     308:             tuning_space ([dict]): A DeepSpeed configuration dictionary where a value can be a list (called a tuning parameter). For example,\n     309:                 {"
+  },
+  {
+    "id": 11,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.autotuner.Autotuner.get_plateau_mbs",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/autotuner.py:640",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.autotuner.Autotuner.get_plateau_mbs"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     635:             best_mbs = fast_best_mbs\n     636: \n     637:         logger.info(f\"End tuning for space: {tuning_space_name}\")\n     638:         return max_micro_batch_size, best_mbs, best_metric_val\n     639: \n>>>  640:     def get_plateau_mbs(self, tuning_space_name):\n     641:         if tuning_space_name not in self.records:\n     642:             return 0\n     643:         space_records = self.records[tuning_space_name]\n     644:         sorted_space_records = sorted(space_records, key=lambda x: x[0][DS_CONFIG][TRAIN_MICRO_BATCH_SIZE_PER_GPU])\n     645:         prev_metric_val = None"
+  },
+  {
+    "id": 12,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.tuner.cost_model.XGBoostCostModel.fit",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/tuner/cost_model.py:51",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.tuner.cost_model.XGBoostCostModel.fit"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      46: \n      47:         self.xgb_params[\"verbosity\"] = 0\n      48:         if num_threads:\n      49:             self.xgb_params[\"nthread\"] = num_threads\n      50: \n>>>   51:     def fit(self, xs, ys):\n      52:         x_train = np.array(xs, dtype=np.float32)\n      53:         y_train = np.array(ys, dtype=np.float32)\n      54:         y_max = np.max(y_train)\n      55:         y_train = y_train / max(y_max, 1e-9)\n      56: "
+  },
+  {
+    "id": 13,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.tuner.utils.dict_to_feature",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/tuner/utils.py:66",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.tuner.utils.dict_to_feature"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      61:         else:\n      62:             items.append((new_key, v))\n      63:     return dict(items)\n      64: \n      65: \n>>>   66: def dict_to_feature(feature_dict, keys, max_value=None):\n      67:     \"\"\"Extract values from dict\"\"\"\n      68:     feature = []\n      69:     for key, val in feature_dict.items():  # First level\n      70:         if key not in keys:\n      71:             continue"
+  },
+  {
+    "id": 14,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.backend.make_backend",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/backend.py:217",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.backend.make_backend"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     212:             get_accelerator().synchronize()\n     213:             gc.collect()\n     214:             get_accelerator().empty_cache()\n     215: \n     216: \n>>>  217: def make_backend(backend, compile_config, compile_kwargs={}):\n     218: \n     219:     register_custom_ops()\n     220: \n     221:     # Extract values from compile_config\n     222:     debug_log = compile_config.debug_log"
+  },
+  {
+    "id": 15,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.fx.get_output_node",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/fx.py:15",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.compile.fx.get_output_node"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      10: from torch.fx import Node, Graph\n      11: \n      12: from .util import get_last_uses\n      13: \n      14: \n>>>   15: def get_output_node(graph: Graph):\n      16:     for v in graph.nodes:\n      17:         if v.target == \"output\":\n      18:             return v\n      19:     raise ValueError(\"No output node found\")\n      20: "
+  },
+  {
+    "id": 16,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.init_z1.init_z1",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/init_z1.py:18",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.compile.init_z1.init_z1"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      13: from .util import get_deepcompile_handle, add_pre_backward_hook\n      14: \n      15: WARMUP = 5\n      16: \n      17: \n>>>   18: def init_z1(engine, backend, compile_config, compile_kwargs, schedule=None, use_z2=False):\n      19: \n      20:     optimizer = engine.optimizer\n      21:     optimizer.contiguous_gradients = False  # Avoid creating unnecessary buffer\n      22:     for hook in optimizer._grad_acc_hooks:\n      23:         hook.remove()"
+  },
+  {
+    "id": 17,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.input_storage.InputStorage.get",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/input_storage.py:165",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.compile.input_storage.InputStorage.get"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     160:         \"\"\"\n     161:         stored_inputs = self._store_value(real_inputs)\n     162:         self._stored_inputs = stored_inputs\n     163:         self._has_data = True\n     164: \n>>>  165:     def get(self) -> Any:\n     166:         \"\"\"\n     167:         Retrieve and materialize stored real inputs\n     168: \n     169:         Returns:\n     170:             Materialized real inputs with actual tensors"
+  },
+  {
+    "id": 18,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.passes.offload_adam_states.update_max_memory",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/passes/offload_adam_states.py:235",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.passes.offload_adam_states.update_max_memory"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     230:                 move_back_key(state, task[2], reload_key_events[task[1]])\n     231: \n     232:     return run_reload_task\n     233: \n     234: \n>>>  235: def update_max_memory(name):\n     236: \n     237:     global max_memory\n     238:     mem = get_accelerator().max_memory_allocated()\n     239:     max_memory = max(max_memory, mem)\n     240: "
+  },
+  {
+    "id": 19,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.passes.offload_adam_states.empty_cache",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/passes/offload_adam_states.py:242",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.passes.offload_adam_states.empty_cache"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     237:     global max_memory\n     238:     mem = get_accelerator().max_memory_allocated()\n     239:     max_memory = max(max_memory, mem)\n     240: \n     241: \n>>>  242: def empty_cache():\n     243:     get_accelerator().empty_cache()\n     244: \n     245: \n     246: offload_tasks = []\n     247: offload_tasks_remaining = []"
+  },
+  {
+    "id": 20,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.passes.offload_adam_states.lazy_init",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/passes/offload_adam_states.py:47",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.passes.offload_adam_states.lazy_init"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      42: reload_key_events = {}\n      43: \n      44: max_memory = 0\n      45: \n      46: \n>>>   47: def lazy_init():\n      48:     global copy_stream\n      49:     global offload_event\n      50:     global reload_event\n      51: \n      52:     if copy_stream is None:"
+  },
+  {
+    "id": 21,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.profilers.comm_profile.create_predictor",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/profilers/comm_profile.py:126",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.compile.profilers.comm_profile.create_predictor"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     121: \n     122: \n     123: profile_results = None\n     124: \n     125: \n>>>  126: def create_predictor():\n     127:     global profile_results\n     128:     if profile_results is None:\n     129:         with unset_fake_temporarily():\n     130:             device = get_accelerator().current_device()\n     131:             profile_results = run_all_gather(device, torch.bfloat16, 31)"
+  },
+  {
+    "id": 22,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.profilers.comm_profile.get_bw",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/profilers/comm_profile.py:25",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.compile.profilers.comm_profile.get_bw"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      20: def sync_all():\n      21:     get_accelerator().synchronize()\n      22:     dist.barrier()\n      23: \n      24: \n>>>   25: def get_bw(comm_op, size, duration):\n      26:     n = dist.get_world_size()\n      27:     tput = 0\n      28:     busbw = 0\n      29: \n      30:     if duration == 0:"
+  },
+  {
+    "id": 23,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.profilers.graph_profile.ProfilingInterpreter.run_node",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/profilers/graph_profile.py:119",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compile.profilers.graph_profile.ProfilingInterpreter.run_node"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     114:         finally:\n     115:             self.nz3.clear_all_gathered_params()\n     116:             self.nz3.enable_profiling(False)\n     117:         return return_val\n     118: \n>>>  119:     def run_node(self, n: torch.fx.Node) -> Any:\n     120: \n     121:         if n.op in {\"placeholder\", \"output\"}:\n     122:             n.meta[\"device_time\"] = 0.0\n     123:             n.meta[\"wall_time\"] = 0.0\n     124:             n.meta[\"alloc_mem\"] = 0"
+  },
+  {
+    "id": 24,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.util.is_deepcompile_supported",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/util.py:27",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.util.is_deepcompile_supported"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      22: from deepspeed.accelerator import get_accelerator\n      23: from deepspeed.utils.torch import required_torch_version\n      24: from deepspeed.ops.op_builder.dc import DeepCompileBuilder\n      25: \n      26: \n>>>   27: def is_deepcompile_supported() -> bool:\n      28:     return required_torch_version(min_version=2.6, max_version=2.9) and get_accelerator().device_name() == \"cuda\"\n      29: \n      30: \n      31: dc_handle = None\n      32: "
+  },
+  {
+    "id": 25,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.util.get_deepcompile_handle",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/util.py:46",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.util.get_deepcompile_handle"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      41:         torch.ops.aten.sym_size.int,\n      42:         operator.getitem,\n      43:     }\n      44: \n      45: \n>>>   46: def get_deepcompile_handle():\n      47:     global dc_handle\n      48:     if dc_handle is None:\n      49:         dc_handle = DeepCompileBuilder().load()\n      50:     return dc_handle\n      51: "
+  },
+  {
+    "id": 26,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.util.deepcompile_backward_prologue",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/util.py:65",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.util.deepcompile_backward_prologue"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      60: \n      61: def add_pre_backward_hook(hook):\n      62:     pre_backward_hooks.append(hook)\n      63: \n      64: \n>>>   65: def deepcompile_backward_prologue(is_gradient_accumulation_boundary):\n      66: \n      67:     for hook in pre_backward_hooks:\n      68:         hook()\n      69: \n      70:     dc = get_deepcompile_handle()"
+  },
+  {
+    "id": 27,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.LinearLayer_Compress.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:364",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.LinearLayer_Compress.forward"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     359: \n     360:     def head_pruning_reshape(self, w, mask):\n     361:         shape = w.shape\n     362:         return (w.t().reshape(self.num_heads, -1) * mask.view(-1, 1)).reshape(shape[1], shape[0]).t()\n     363: \n>>>  364:     def forward(self, input, skip_bias_add=False):\n     365: \n     366:         if self.weight_quantization_enabled_in_forward and self.weight_quantization_enabled:\n     367:             weight = self.weight_quantizer(self.weight, self.weight.target_bits, None, None,\n     368:                                            self.weight_quantize_num_groups)\n     369:             bias = self.bias"
+  },
+  {
+    "id": 28,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.Conv2dLayer_Compress.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:581",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.Conv2dLayer_Compress.forward"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     576:             if quantization_type == 'symmetric':\n     577:                 self.activation_quantizer = SymQuantizer.apply\n     578:             else:\n     579:                 self.activation_quantizer = AsymQuantizer.apply\n     580: \n>>>  581:     def forward(self, input):\n     582: \n     583:         if self.weight_quantization_enabled_in_forward and self.weight_quantization_enabled:\n     584:             weight = self.weight_quantizer(self.weight, self.weight.target_bits, None, None,\n     585:                                            self.weight_quantize_num_groups)\n     586:             bias = self.bias"
+  },
+  {
+    "id": 29,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.ColumnParallelLinear_Compress.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:769",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.ColumnParallelLinear_Compress.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     764:     return _GatherFromModelParallelRegion.apply(input_)\n     765: \n     766: \n     767: class ColumnParallelLinear_Compress(LinearLayer_Compress):\n     768: \n>>>  769:     def __init__(self, mpu, input_size, output_size, bias=True, gather_output=True, skip_bias_add=False):\n     770:         # Keep input parameters\n     771:         global g_mpu\n     772:         g_mpu = mpu\n     773:         self.input_size = input_size\n     774:         self.output_size = output_size"
+  },
+  {
+    "id": 30,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.RowParallelLinear_Compress.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:804",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.RowParallelLinear_Compress.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     799:         return output, bias\n     800: \n     801: \n     802: class RowParallelLinear_Compress(LinearLayer_Compress):\n     803: \n>>>  804:     def __init__(self, mpu, input_size, output_size, bias=True, input_is_parallel=False, skip_bias_add=False):\n     805:         # Keep input parameters\n     806:         global g_mpu\n     807:         g_mpu = mpu\n     808:         self.input_size = input_size\n     809:         self.output_size = output_size"
+  },
+  {
+    "id": 31,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.utils.TernaryQuantizer.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/utils.py:154",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.utils.TernaryQuantizer.forward"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     149:     \"\"\"\n     150:     Ternary quantization\n     151:     \"\"\"\n     152: \n     153:     @staticmethod\n>>>  154:     def forward(ctx, input, num_bits, min_value=None, max_value=None, num_groups=1):\n     155:         \"\"\"\n     156:         Args:\n     157:             inputs (`torch.FloatTensor`)\n     158:                 The input which needs to be quantized\n     159:             num_bits (int)"
+  },
+  {
+    "id": 32,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.elasticity.elasticity.get_microbatch",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/elasticity/elasticity.py:146",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.elasticity.elasticity.get_microbatch"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     141:         raise ElasticityError(\n     142:             f\"In Elasticity v0.2, number of GPUs per node:\" \\\n     143:             f\"{num_gpus_per_node} should be divisible by \" \\\n     144:             f\"model parallel size {model_parallel_size}\")\n     145: \n>>>  146:     def get_microbatch(final_batch_size):\n     147:         candidate_microbatch = None\n     148: \n     149:         for micro_batch in micro_batches:\n     150:             if final_batch_size // current_num_gpus % micro_batch == 0:\n     151:                 if candidate_microbatch is None:"
+  },
+  {
+    "id": 33,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.elasticity.elasticity._get_compatible_gpus_v01",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/elasticity/elasticity.py:83",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.elasticity.elasticity._get_compatible_gpus_v01"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      78:             final_batch_size = batch_size\n      79: \n      80:     return final_batch_size, valid_gpus\n      81: \n      82: \n>>>   83: def _get_compatible_gpus_v01(micro_batches,\n      84:                              max_acceptable_batch_size,\n      85:                              min_gpus=None,\n      86:                              max_gpus=None,\n      87:                              prefer_larger=True):\n      88:     '''We use two heuristics to compute the batch size"
+  },
+  {
+    "id": 34,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.env_report.cli_main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/env_report.py:182",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.env_report.cli_main"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "     177:     if not hide_operator_status:\n     178:         op_report(verbose=not hide_errors_and_warnings)\n     179:     debug_report()\n     180: \n     181: \n>>>  182: def cli_main():\n     183:     args = parse_arguments()\n     184:     main(hide_operator_status=args.hide_operator_status, hide_errors_and_warnings=args.hide_errors_and_warnings)\n     185: \n     186: \n     187: if __name__ == \"__main__\":"
+  },
+  {
+    "id": 35,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.engine.InferenceEngine._create_ep_parallel_group",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/engine.py:260",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.engine.InferenceEngine._create_ep_parallel_group"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     255:             self.mp_group = dist.new_group(ranks)\n     256:             InferenceEngine.inference_mp_group = self.mp_group\n     257:         else:\n     258:             self.mp_group = InferenceEngine.inference_mp_group\n     259: \n>>>  260:     def _create_ep_parallel_group(self, moe_experts):\n     261:         # Call the init process\n     262:         self.ep_group = {}\n     263:         self.expert_mp_group = {}\n     264:         moe_experts = moe_experts if type(moe_experts) is list else [moe_experts]\n     265:         for e in moe_experts:"
+  },
+  {
+    "id": 36,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.engine.InferenceEngine._load_checkpoint",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/engine.py:413",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.engine.InferenceEngine._load_checkpoint"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     408:             checkpoints_path,\n     409:             \"mp_rank_\" + mp_rank_str + \"_model_states.pt\",\n     410:         )\n     411:         return ckpt_name\n     412: \n>>>  413:     def _load_checkpoint(self, load_dir, load_module_strict=True, tag=None):\n     414:         is_pipe_parallel = isinstance(self.module, PipelineModule)\n     415:         if is_pipe_parallel:\n     416:             raise RuntimeError('pipeline parallelism is currently not supported in inference.')\n     417:         if not isinstance(load_dir, dict) and os.path.isdir(load_dir):\n     418:             if tag is None:"
+  },
+  {
+    "id": 37,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.engine.InferenceEngine.compile",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/engine.py:610",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.engine.InferenceEngine.compile"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     605:                         f\"Input with size {tensor_length} exceeds maximum length of {self._config.max_out_tokens}. Please increase max_tokens in the DeepSpeed Inference Config.\"\n     606:                     )\n     607: \n     608:         return self.module.generate(*inputs, **kwargs)\n     609: \n>>>  610:     def compile(self, backend=get_accelerator().get_compile_backend(), compile_kwargs={}) -> None:\n     611:         \"\"\"\n     612:         Compile the module using the specified backend and kwargs.\n     613:         \"\"\"\n     614:         if not is_compile_supported():\n     615:             raise RuntimeError(\"compile is not supported in your version of PyTorch.\")"
+  },
+  {
+    "id": 38,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.quantization.utils.Quantizer._quantize_int8",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/quantization/utils.py:73",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.quantization.utils.Quantizer._quantize_int8"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      68:         if self.config['num_bits'] == 8:\n      69:             return quantized_tensor, scale, min_value\n      70: \n      71:         assert False, 'Unsupported quantization bits {}'.format(self.config['num_bits'])\n      72: \n>>>   73:     def _quantize_int8(self, tensor: Tensor) -> Tuple[Tensor, Tensor, Tensor]:\n      74:         q_range = 2**self.config['num_bits'] - 1\n      75:         min_value = tensor.amin(dim=self.config['group_dim'] + 1, keepdim=True)\n      76:         max_value = tensor.amax(dim=self.config['group_dim'] + 1, keepdim=True)\n      77: \n      78:         scale = q_range / (max_value - min_value)"
+  },
+  {
+    "id": 39,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.allocator.Allocator.empty_from",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/allocator.py:17",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.allocator.Allocator.empty_from"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      12: \n      13: \n      14: class Allocator:\n      15:     cache = defaultdict(dict)\n      16: \n>>>   17:     def empty_from(tensor: torch.Tensor, shape: Iterable[int]) -> torch.Tensor:\n      18:         try:\n      19:             return Allocator.cache[tensor][shape]\n      20:         except KeyError:\n      21:             shape_size = reduce(lambda x, y: x * y, shape)\n      22:             if shape_size == 0:"
+  },
+  {
+    "id": 40,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.engine_factory.build_hf_engine",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/engine_factory.py:69",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.engine_factory.build_hf_engine"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      64:     policy = policy_cls(model_config, inf_checkpoint_path=path)\n      65: \n      66:     return InferenceEngineV2(policy, engine_config)\n      67: \n      68: \n>>>   69: def build_hf_engine(path: str,\n      70:                     engine_config: RaggedInferenceEngineConfig,\n      71:                     debug_level: int = logging.INFO) -> InferenceEngineV2:\n      72:     \"\"\"\n      73:     Build an InferenceV2 engine for HuggingFace models. This can accept both a HuggingFace\n      74:     model name or a path to an Inference-V2 checkpoint."
+  },
+  {
+    "id": 41,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.engine_v2.InferenceEngineV2._initialize_tp_group",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/engine_v2.py:93",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.engine_v2.InferenceEngineV2._initialize_tp_group"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "      88:         self._state_manager = DSStateManager(self._config.state_manager,\n      89:                                              self._model.kv_cache_config(),\n      90:                                              base_mp_group=self._base_mp_group)\n      91:         self._model.set_state_manager(self._state_manager)\n      92: \n>>>   93:     def _initialize_tp_group(self):\n      94:         \"\"\"\n      95:         Implementation of our TP group initialization.\n      96:         \"\"\"\n      97:         init_distributed()\n      98:         local_rank = int(os.getenv(\"LOCAL_RANK\", 0))"
+  },
+  {
+    "id": 42,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.bias_activations.bias_activation.CUDABiasActivation.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/bias_activations/bias_activation.py:24",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.bias_activations.bias_activation.CUDABiasActivation.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      19:     \"\"\"\n      20: \n      21:     supported_dtypes = [DtypeEnum.fp16, DtypeEnum.bf16]\n      22:     supported_act_fns = [ActivationType.IDENTITY, ActivationType.GELU, ActivationType.RELU, ActivationType.SILU]\n      23: \n>>>   24:     def __init__(self, channels: int, dtype: DtypeEnum, act_fn: ActivationType) -> None:\n      25:         \"\"\"\n      26:         Compile and validate for the fused bias-activation kernel.\n      27: \n      28:         Parameters:\n      29:             channels (int): Number of channels to expect in the activation."
+  },
+  {
+    "id": 43,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.cuda_layer_norm.cuda_fp_ln_base.CUDAFPLNBase.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/cuda_layer_norm/cuda_fp_ln_base.py:21",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.cuda_layer_norm.cuda_fp_ln_base.CUDAFPLNBase.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      16:     so we can share it here.\n      17:     \"\"\"\n      18: \n      19:     supported_dtypes = [torch.float16, torch.bfloat16, torch.float32]\n      20: \n>>>   21:     def __init__(self, channels: int, fp_dtype: torch.dtype, epsilon: float = 1e-5):\n      22:         \"\"\"\n      23:         Parameters:\n      24:             channels (int): Number of channels in the input tensor. Must be divisible to align\n      25:                 to 16 bytes.\n      26:             fp_dtype (torch.dtype): Data type for the input/output/gamma. Supported values"
+  },
+  {
+    "id": 44,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.cuda_linear.cuda_linear.CUDAWf6Af16Linear.__call__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/cuda_linear/cuda_linear.py:164",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.cuda_linear.cuda_linear.CUDAWf6Af16Linear.__call__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     159:                 28672: 1,\n     160:                 57344: 1\n     161:             }\n     162:         ]\n     163: \n>>>  164:     def __call__(self, output: torch.Tensor, hidden_states: torch.Tensor, weights_2bit: torch.Tensor,\n     165:                  weights_4bit: torch.Tensor, scale: torch.Tensor, out_channels, tokens, in_channels) -> torch.Tensor:\n     166:         \"\"\"\n     167:         Matmul kernel of FP6 weight-only quantized linear. All inputs should be contiguous.\n     168:         It does not support batched-matmul.\n     169: "
+  },
+  {
+    "id": 45,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.cuda_rms_norm.rms_norm_base.CUDARMSNormBase.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/cuda_rms_norm/rms_norm_base.py:21",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.cuda_rms_norm.rms_norm_base.CUDARMSNormBase.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      16:     so we can share it here.\n      17:     \"\"\"\n      18: \n      19:     supported_dtypes = [torch.float16, torch.bfloat16, torch.float32]\n      20: \n>>>   21:     def __init__(self, channels: int, fp_dtype: torch.dtype, epsilon: float = 1e-5):\n      22:         \"\"\"\n      23:         Parameters:\n      24:             channels (int): Number of channels in the input tensor. Must be divisible to align\n      25:                 to 16 bytes.\n      26:             fp_dtype (torch.dtype): Data type for the input/output/gamma. Supported values"
+  },
+  {
+    "id": 46,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.gated_activations.gated_activation.CUDAGatedActivation.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/gated_activations/gated_activation.py:25",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.gated_activations.gated_activation.CUDAGatedActivation.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      20:     \"\"\"\n      21: \n      22:     supported_dtypes = [torch.float16, torch.bfloat16, torch.float32]\n      23:     supported_act_fns = [ActivationType.GEGLU, ActivationType.ReGLU, ActivationType.SiGLU]\n      24: \n>>>   25:     def __init__(self, channels: int, fp_dtype: torch.dtype, act_fn: ActivationType) -> None:\n      26:         \"\"\"\n      27:         Compile and validate for the gated activation function.\n      28: \n      29:         Args:\n      30:             channels (int): Number of columns in the output tensor. Must be divisible to align"
+  },
+  {
+    "id": 47,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.ragged_ops.atom_builder.atom_builder.AtomBuilder.__call__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/ragged_ops/atom_builder/atom_builder.py:28",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.ragged_ops.atom_builder.atom_builder.AtomBuilder.__call__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "      23:         Triggers compilation of the C++ implementation.\n      24:         \"\"\"\n      25:         inf_module = RaggedOpsBuilder().load()\n      26:         self.kernel = inf_module.build_atoms\n      27: \n>>>   28:     def __call__(self, atoms: torch.Tensor, ragged_batch: RaggedBatchWrapper, q_block_size: int,\n      29:                  kv_block_size: int) -> Tuple[torch.Tensor, int]:\n      30:         \"\"\"\n      31:         Populates the attention atoms for the blocked attention kernel.\n      32: \n      33:         Args:"
+  },
+  {
+    "id": 48,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_q_block_size",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/ragged_ops/blocked_flash/blocked_flash.py:15",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_q_block_size"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "      10: from deepspeed.ops.op_builder import RaggedOpsBuilder\n      11: \n      12: from ... import DSKernelBase\n      13: \n      14: \n>>>   15: def get_q_block_size(head_size: int) -> int:\n      16:     \"\"\"\n      17:     Returns the query block size required by the kernel given a head size.\n      18:     \"\"\"\n      19:     cc_major, cc_minor = torch.cuda.get_device_capability(get_accelerator().current_device())  #ignore-cuda\n      20: "
+  },
+  {
+    "id": 49,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_kv_block_size",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/ragged_ops/blocked_flash/blocked_flash.py:45",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_kv_block_size"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "      40:             return 128\n      41:         else:\n      42:             return 64\n      43: \n      44: \n>>>   45: def get_kv_block_size(head_size: int) -> int:\n      46:     \"\"\"\n      47:     Return preferred granulatity for blocked KV-cache implementation.\n      48:     \"\"\"\n      49:     cc_major, cc_minor = torch.cuda.get_device_capability(get_accelerator().current_device())  #ignore-cuda\n      50: "
+  },
+  {
+    "id": 50,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.inference_policy_base.InferenceV2Policy.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/inference_policy_base.py:111",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.inference_policy_base.InferenceV2Policy.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     106:     The InferenceV2Policy is the base class for all inference policies. An inference policy\n     107:     is responsible for instantiating the inference model and mapping the parameters from the\n     108:     checkpoint engine to the model itself.\n     109:     \"\"\"\n     110: \n>>>  111:     def __init__(\n     112:         self,\n     113:         model_config: Any,\n     114:         checkpoint_engine: Optional[CheckpointEngineBase] = None,\n     115:         inf_checkpoint_path: Optional[str] = None,\n     116:     ) -> None:"
+  },
+  {
+    "id": 51,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.inference_policy_base.ContainerMap.validate",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/inference_policy_base.py:85",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.inference_policy_base.ContainerMap.validate"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "      80:             # Catch the ValueError here from the non_transformer_params because we are knowingly\n      81:             # calling it with something that may not match. This should allow us to raise a slightly more\n      82:             # informative error message.\n      83:             raise ValueError(f\"Cannot find container for {name}, please double check the Containers/ContainerMap\")\n      84: \n>>>   85:     def validate(self) -> None:\n      86:         if not self._non_transformer_params.is_initialized:\n      87:             raise RuntimeError(\"Non-transformer parameters not fully initialized after checkpoint load.\")\n      88: \n      89:         for layer_idx, container in enumerate(self._transformer_params):\n      90:             if not container.is_initialized:"
+  },
+  {
+    "id": 52,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.layer_container_base.LayerMetaclass.__new__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/layer_container_base.py:50",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.layer_container_base.LayerMetaclass.__new__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      45:     of the class that correspond to `ParameterBase` and create None initializers for each\n      46:     as well as a finalization callback that for when each `ParameterBase` is finalized\n      47:     and should be replaced with a Tensor.\n      48:     \"\"\"\n      49: \n>>>   50:     def __new__(cls, clsname, bases, attrs):\n      51: \n      52:         annotations = attrs.get(\"__annotations__\", {})\n      53: \n      54:         for base in bases:\n      55:             # We'll pick up all annotations on any base classes. This will allow us to"
+  },
+  {
+    "id": 53,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.parameter_base.ParametrizedList.__setitem__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/parameter_base.py:222",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.parameter_base.ParametrizedList.__setitem__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     217:         self._params = [None] * n_params\n     218: \n     219:     def __getitem__(self, index):\n     220:         return self._params[index]\n     221: \n>>>  222:     def __setitem__(self, index, value):\n     223:         if self._params[index] is not None:\n     224:             raise ValueError(\"Cannot set a parameter twice.\")\n     225: \n     226:         self._params[index] = value\n     227:         self.set_params += 1"
+  },
+  {
+    "id": 54,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.parameter_base.paramlist_setter",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/parameter_base.py:49",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.parameter_base.paramlist_setter"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      44: def make_readonly_setter():\n      45:     \"\"\"\n      46:     Setter implementation that will raise an error if called.\n      47:     \"\"\"\n      48: \n>>>   49:     def paramlist_setter(self, value):\n      50:         raise ValueError(\"Cannot set a ParametrizedList directly.\")\n      51: \n      52:     return paramlist_setter\n      53: \n      54: "
+  },
+  {
+    "id": 55,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.attn.get_local_heads",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/attn.py:9",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.attn.get_local_heads"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "       4: # DeepSpeed Team\n       5: \n       6: from typing import Optional, Tuple\n       7: \n       8: \n>>>    9: def get_local_heads(shard_rank: int,\n      10:                     num_shards: int,\n      11:                     n_heads_q: int,\n      12:                     n_heads_kv: Optional[int] = None) -> Tuple[int, int]:\n      13:     \"\"\"\n      14:     Helper to determine the number of local heads of a given shard."
+  },
+  {
+    "id": 56,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.qkv.qkv_out_features",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/qkv.py:116",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.qkv.qkv_out_features"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     111:                                   granularity=head_size)\n     112: \n     113:             return torch.cat([q_param, k_param, v_param], dim=0)\n     114: \n     115: \n>>>  116: def qkv_out_features(in_features: int,\n     117:                      shard_rank: int,\n     118:                      num_shards: int,\n     119:                      head_size: int,\n     120:                      n_heads_q: Optional[int] = None,\n     121:                      n_heads_kv: Optional[int] = None) -> int:"
+  },
+  {
+    "id": 57,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.qkv.shard_qkv_param",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/qkv.py:14",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.qkv.shard_qkv_param"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "       9: \n      10: from .types import ShardingType\n      11: from .utils import shard_param, get_shard_endpoints\n      12: \n      13: \n>>>   14: def shard_qkv_param(param: torch.Tensor,\n      15:                     shard_rank: int,\n      16:                     num_shards: int,\n      17:                     head_size: int,\n      18:                     n_heads_q: Optional[int] = None,\n      19:                     n_heads_kv: Optional[int] = None) -> Optional[torch.Tensor]:"
+  },
+  {
+    "id": 58,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.utils.shard_param",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/utils.py:43",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.utils.shard_param"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      38:     end_chunk_id = start_chunk_id + base_chunks_per_rank + (1 if shard_rank < remainder_chunks else 0)\n      39: \n      40:     return start_chunk_id * granularity, end_chunk_id * granularity\n      41: \n      42: \n>>>   43: def shard_param(param: Optional[torch.Tensor],\n      44:                 shard_mode: ShardingType,\n      45:                 shard_rank: int,\n      46:                 num_shards: int,\n      47:                 num_concatenated_matrices: int = 1,\n      48:                 granularity: int = 32,"
+  },
+  {
+    "id": 59,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.utils.get_matrices",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/utils.py:85",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.utils.get_matrices"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      80:         # Trivial case of no sharding.\n      81:         return param\n      82: \n      83:     if shard_mode == ShardingType.OUTER_DIMENSION:\n      84: \n>>>   85:         def get_matrices(dim_idx: int) -> torch.Tensor:\n      86:             dim_size = param.size(dim_idx) // num_concatenated_matrices\n      87:             start_channel_id, end_channel_id = get_shard_endpoints(dim_size, shard_rank, num_shards, granularity)\n      88:             return torch.chunk(param, num_concatenated_matrices, dim=dim_idx), start_channel_id, end_channel_id\n      89: \n      90:         if param.ndim == bias_dims:"
+  },
+  {
+    "id": 60,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.modules.heuristics.instantiate_linear",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/modules/heuristics.py:75",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.modules.heuristics.instantiate_linear"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      70:     # Currently, we only have one implementation, so we just return it.\n      71:     config = ConfigBundle(name=\"ragged_embedding\", config=embed_config)\n      72:     return DSEmbeddingRegistry.instantiate_config(config)\n      73: \n      74: \n>>>   75: def instantiate_linear(linear_config: DSLinearConfig, engine_config: RaggedInferenceEngineConfig) -> DSLinearBase:\n      76:     \"\"\"\n      77:     Choose an appropriate linear implementation based on the given configurations. This\n      78:     method is currently a stub, but as more implementations may be developed  we can centralize\n      79:     the logic for choosing between them here.\n      80: "
+  },
+  {
+    "id": 61,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.modules.implementations.linear.quantized_linear.fp_quantize",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/modules/implementations/linear/quantized_linear.py:25",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.modules.implementations.linear.quantized_linear.fp_quantize"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      20: from ...interfaces import DSLinearBase, DSLinearRegistry\n      21: from ...configs import DSLinearConfig\n      22: from ....inference_parameter import InferenceParameter\n      23: \n      24: \n>>>   25: def fp_quantize(input: torch.FloatTensor,\n      26:                 num_bits: int = 6,\n      27:                 exp_bits: int = 3,\n      28:                 min_value: torch.FloatTensor = None,\n      29:                 max_value: torch.FloatTensor = None,\n      30:                 group_size: int = -1):"
+  },
+  {
+    "id": 62,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.modules.implementations.unembed.ragged_unembed.DSRaggedUnembed.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/modules/implementations/unembed/ragged_unembed.py:83",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.modules.implementations.unembed.ragged_unembed.DSRaggedUnembed.forward"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      78: \n      79:     @property\n      80:     def output(self) -> torch.Tensor:\n      81:         return self._output\n      82: \n>>>   83:     def forward(self,\n      84:                 hidden_states: torch.Tensor,\n      85:                 vocab_embedding: torch.Tensor,\n      86:                 ragged_metadata: RaggedBatchWrapper,\n      87:                 bias: Optional[torch.Tensor] = None,\n      88:                 gamma: Optional[torch.Tensor] = None,"
+  },
+  {
+    "id": 63,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.ragged.kv_cache.BlockedKVCache.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/ragged/kv_cache.py:60",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.ragged.kv_cache.BlockedKVCache.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      55:     Configuration of the KV cache(s). See ``KVCacheConfig`` for more details. This enables the support\n      56:     for different types/shapes of KV-caches (i.e. the alternating local and global attention in\n      57:     GPT-Neo).\n      58:     \"\"\"\n      59: \n>>>   60:     def __init__(self,\n      61:                  configs: Tuple[KVCacheConfig, ...],\n      62:                  memory_config: MemoryConfig,\n      63:                  mp_group: Optional[Any] = None,\n      64:                  offload: bool = False) -> None:\n      65:         \"\"\""
+  },
+  {
+    "id": 64,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.base_io_buffer.Base_IO_Buffer.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/base_io_buffer.py:11",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.base_io_buffer.Base_IO_Buffer.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "       6: import torch\n       7: \n       8: \n       9: class Base_IO_Buffer(object):\n      10: \n>>>   11:     def __init__(self, pinned_tensor, dnvme_handle):\n      12:         assert pinned_tensor.numel() % dnvme_handle.get_alignment() == 0\n      13:         self._dnvme_handle = dnvme_handle\n      14:         self._pinned_tensor = pinned_tensor\n      15: \n      16:     def fill(self, src_tensor, src_offset):"
+  },
+  {
+    "id": 65,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.base_io_buffer.Base_IO_Buffer._drain",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/base_io_buffer.py:46",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.base_io_buffer.Base_IO_Buffer._drain"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      41:         pass\n      42: \n      43:     def complete_ongoing_drain(self):\n      44:         pass\n      45: \n>>>   46:     def _drain(self, num_bytes, fd, file_offset, blocking=False):\n      47:         assert num_bytes <= self.get_offset()\n      48:         assert num_bytes % self._dnvme_handle.get_alignment() == 0\n      49:         buffer = self.get_buffer()\n      50:         r = self._dnvme_handle.async_pwrite(torch.narrow(buffer, 0, 0, num_bytes), fd, file_offset)\n      51:         assert 0 == r"
+  },
+  {
+    "id": 66,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:15",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.__init__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      10: INVALID_BUFFER_INDEX = -1\n      11: \n      12: \n      13: class Double_IO_Buffer(Base_IO_Buffer):\n      14: \n>>>   15:     def __init__(self, pinned_tensor, dnvme_handle):\n      16:         super(Double_IO_Buffer, self).__init__(pinned_tensor, dnvme_handle)\n      17:         assert self._pinned_tensor.numel() % (NUM_BUFFERS * self._dnvme_handle.get_alignment()) == 0\n      18:         self._buffers = self._split_buffer()\n      19:         self._fill_index = 0\n      20:         self._drain_index = INVALID_BUFFER_INDEX"
+  },
+  {
+    "id": 67,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.drain",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:30",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.drain"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      25:         copy_bytes = Base_IO_Buffer.fill_buffer(src_tensor, src_offset, self._buffers[self._fill_index],\n      26:                                                 self._buffer_offset)\n      27:         self._buffer_offset += copy_bytes\n      28:         return copy_bytes\n      29: \n>>>   30:     def drain(self, num_bytes, fd, file_offset):\n      31:         self._validate_buffer_index(self._fill_index)\n      32:         self.complete_ongoing_drain()\n      33:         assert self._drain_index == INVALID_BUFFER_INDEX\n      34:         self._drain(num_bytes, fd, file_offset, blocking=False)\n      35:         self._drain_index = self._fill_index"
+  },
+  {
+    "id": 68,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_aligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:47",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_aligned_num_bytes"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      42: \n      43:     def get_offset(self):\n      44:         self._validate_buffer_index(self._fill_index)\n      45:         return self._buffer_offset\n      46: \n>>>   47:     def get_aligned_num_bytes(self):\n      48:         self._validate_buffer_index(self._fill_index)\n      49:         aligned_size = self._dnvme_handle.get_alignment()\n      50:         return (self._buffer_offset // aligned_size) * aligned_size\n      51: \n      52:     def get_unaligned_num_bytes(self):"
+  },
+  {
+    "id": 69,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_unaligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:52",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_unaligned_num_bytes"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      47:     def get_aligned_num_bytes(self):\n      48:         self._validate_buffer_index(self._fill_index)\n      49:         aligned_size = self._dnvme_handle.get_alignment()\n      50:         return (self._buffer_offset // aligned_size) * aligned_size\n      51: \n>>>   52:     def get_unaligned_num_bytes(self):\n      53:         self._validate_buffer_index(self._fill_index)\n      54:         return self._buffer_offset % self._dnvme_handle.get_alignment()\n      55: \n      56:     def is_full(self):\n      57:         self._validate_buffer_index(self._fill_index)"
+  },
+  {
+    "id": 70,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer._split_buffer",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:71",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer._split_buffer"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      66: \n      67:     def complete_ongoing_drain(self):\n      68:         if self._is_ongoing_drain():\n      69:             self._wait_for_drain()\n      70: \n>>>   71:     def _split_buffer(self):\n      72:         buffer_size = self._pinned_tensor.numel() // NUM_BUFFERS\n      73:         return [torch.narrow(self._pinned_tensor, 0, (i * buffer_size), buffer_size) for i in range(NUM_BUFFERS)]\n      74: \n      75:     def _validate_buffer_index(self, index):\n      76:         assert index in [0, 1]"
+  },
+  {
+    "id": 71,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.fast_file_writer.FastFileWriter.write",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/fast_file_writer.py:62",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.fast_file_writer.FastFileWriter.write"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      57:         self._global_rank = config.global_rank\n      58: \n      59:         for k in FASTIO_STAT_KEYS:\n      60:             self._stats[k] = 0\n      61: \n>>>   62:     def write(self, buffer):\n      63:         assert self._file_offset % self._dnvme_handle.get_alignment() == 0\n      64:         buffer_num_bytes = len(buffer)\n      65:         num_written_bytes = self._write_from_tensor(bytes_to_tensor(buffer))\n      66:         assert buffer_num_bytes == num_written_bytes\n      67:         return buffer_num_bytes"
+  },
+  {
+    "id": 72,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.fast_file_writer.FastFileWriter.save_torch_storage_object_list",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/fast_file_writer.py:89",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.fast_file_writer.FastFileWriter.save_torch_storage_object_list"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      84:                 split_counter += 1\n      85:         if split_list[num_splits - 1] == -1:\n      86:             split_list[num_splits - 1] = len(tensor_bytes_list)\n      87:         return split_list\n      88: \n>>>   89:     def save_torch_storage_object_list(self, storage_obj_list, save_size):\n      90:         assert self._file_offset % self._dnvme_handle.get_alignment() == 0\n      91:         num_bytes_written = self._save_storage_list(storage_obj_list, save_size)\n      92:         return num_bytes_written\n      93: \n      94:     def close(self):"
+  },
+  {
+    "id": 73,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_aligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/single_io_buffer.py:30",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_aligned_num_bytes"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      25:         return self._pinned_tensor\n      26: \n      27:     def get_offset(self):\n      28:         return self._pinned_offset\n      29: \n>>>   30:     def get_aligned_num_bytes(self):\n      31:         aligned_size = self._dnvme_handle.get_alignment()\n      32:         return (self._pinned_offset // aligned_size) * aligned_size\n      33: \n      34:     def get_unaligned_num_bytes(self):\n      35:         return self._pinned_offset % self._dnvme_handle.get_alignment()"
+  },
+  {
+    "id": 74,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_unaligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/single_io_buffer.py:34",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_unaligned_num_bytes"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      29: \n      30:     def get_aligned_num_bytes(self):\n      31:         aligned_size = self._dnvme_handle.get_alignment()\n      32:         return (self._pinned_offset // aligned_size) * aligned_size\n      33: \n>>>   34:     def get_unaligned_num_bytes(self):\n      35:         return self._pinned_offset % self._dnvme_handle.get_alignment()\n      36: \n      37:     def is_full(self):\n      38:         return self._pinned_offset == self._pinned_tensor.numel()\n      39: "
+  },
+  {
+    "id": 75,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.utils._new_obj_serialization_details",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/utils.py:44",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.utils._new_obj_serialization_details"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      39:     nbytes = storage_obj.element_size() * storage_obj.size()\n      40:     return serialize_details(obj=storage_obj, dtype=storage_obj.dtype, size=nbytes, nbytes=nbytes)\n      41: \n      42: \n      43: # torch >= 1.12\n>>>   44: def _new_obj_serialization_details(storage_obj):\n      45:     obj, dtype = storage_obj\n      46:     return serialize_details(obj=obj,\n      47:                              dtype=dtype,\n      48:                              size=obj.size() // torch._utils._element_size(dtype),\n      49:                              nbytes=obj.size())"
+  },
+  {
+    "id": 76,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.launch.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/launch.py:145",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.launcher.launch.main"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     140:     gone, alive = psutil.wait_procs(children, timeout=30)\n     141:     for p in alive:\n     142:         p.kill()\n     143: \n     144: \n>>>  145: def main():\n     146:     args = parse_args()\n     147:     current_env = os.environ.copy()\n     148: \n     149:     if args.quiet:\n     150:         args.log_level = \"error\""
+  },
+  {
+    "id": 77,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.launch.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/launch.py:145",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.launch.main"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     140:     gone, alive = psutil.wait_procs(children, timeout=30)\n     141:     for p in alive:\n     142:         p.kill()\n     143: \n     144: \n>>>  145: def main():\n     146:     args = parse_args()\n     147:     current_env = os.environ.copy()\n     148: \n     149:     if args.quiet:\n     150:         args.log_level = \"error\""
+  },
+  {
+    "id": 78,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.launcher.launch.parse_args",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/launch.py:35",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.launcher.launch.parse_args"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      30: from .constants import ELASTIC_TRAINING_ID_DEFAULT\n      31: \n      32: PID_FILE_BASEPATH = \"/tmp\"\n      33: \n      34: \n>>>   35: def parse_args():\n      36:     parser = ArgumentParser(description=\"DeepSpeed distributed training launch\"\n      37:                             \" utility that creates multiple distributed\"\n      38:                             \" processes on a single node\")\n      39: \n      40:     # Optional arguments for the launch helper"
+  },
+  {
+    "id": 79,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.MPICHRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:211",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.MPICHRunner.get_cmd"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     206:             raise ValueError(f\"{self.name} backend does not support worker include/exclusion\")\n     207: \n     208:         if self.args.num_nodes != -1 or self.args.num_gpus != -1:\n     209:             raise ValueError(f\"{self.name} backend does not support limiting num nodes/gpus\")\n     210: \n>>>  211:     def get_cmd(self, environment, active_resources):\n     212:         devices_per_node = self.resource_pool.values()\n     213:         total_process_count = sum(devices_per_node)\n     214:         process_per_node = list(devices_per_node)[0]\n     215:         if not all([n == process_per_node for n in devices_per_node]):\n     216:             raise ValueError(\"MPICH requires same number of devices per node\")"
+  },
+  {
+    "id": 80,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:283",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     278:             raise ValueError(f\"{self.name} backend does not support worker include/exclusion\")\n     279: \n     280:         if self.args.num_nodes != -1 or self.args.num_gpus != -1:\n     281:             raise ValueError(f\"{self.name} backend does not support limiting num nodes/gpus\")\n     282: \n>>>  283:     def get_cmd(self, environment, active_resources):\n     284:         devices_per_node = self.resource_pool.values()\n     285:         total_process_count = sum(devices_per_node)\n     286:         process_per_node = list(devices_per_node)[0]\n     287:         if not all([n == process_per_node for n in devices_per_node]):\n     288:             raise ValueError(\"Intel MPI requires same number of devices per node\")"
+  },
+  {
+    "id": 81,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:283",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     278:             raise ValueError(f\"{self.name} backend does not support worker include/exclusion\")\n     279: \n     280:         if self.args.num_nodes != -1 or self.args.num_gpus != -1:\n     281:             raise ValueError(f\"{self.name} backend does not support limiting num nodes/gpus\")\n     282: \n>>>  283:     def get_cmd(self, environment, active_resources):\n     284:         devices_per_node = self.resource_pool.values()\n     285:         total_process_count = sum(devices_per_node)\n     286:         process_per_node = list(devices_per_node)[0]\n     287:         if not all([n == process_per_node for n in devices_per_node]):\n     288:             raise ValueError(\"Intel MPI requires same number of devices per node\")"
+  },
+  {
+    "id": 82,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.MVAPICHRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:446",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.MVAPICHRunner.get_cmd"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     441:         if self.args.include != \"\" or self.args.exclude != \"\":\n     442:             raise ValueError(f\"{self.name} backend does not support worker include/exclusion\")\n     443:         if self.args.num_nodes != -1 or self.args.num_gpus != -1:\n     444:             raise ValueError(f\"{self.name} backend does not support limiting num nodes/gpus\")\n     445: \n>>>  446:     def get_cmd(self, environment, active_resources):\n     447:         devices_per_node = self.resource_pool.values()\n     448:         total_process_count = sum(devices_per_node)\n     449:         process_per_node = list(devices_per_node)[0]\n     450:         if not all([n == process_per_node for n in devices_per_node]):\n     451:             raise ValueError(\"mvapich requires same number of devices per node\")"
+  },
+  {
+    "id": 83,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner._parse_hostfile",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:243",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner._parse_hostfile"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     238:         hostfile_text = fd.readlines()\n     239: \n     240:     return _parse_hostfile(hostfile_text)\n     241: \n     242: \n>>>  243: def _parse_hostfile(hostfile_lines):\n     244:     # Regex matches one or more non-whitespace characters (\\S+) at the start of\n     245:     # the line, followed by one or more whitespace characters (\\s+), followed\n     246:     # by the string \"slots=\", followed by one or more digits (\\d+).\n     247:     pattern = r'^(\\S+)\\s+slots=(\\d+)'\n     248: "
+  },
+  {
+    "id": 84,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.parse_resource_filter",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:310",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.parse_resource_filter"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     305:         node_configs[hostname] += slots\n     306: \n     307:     return {k: sorted(list(set(v))) for k, v in node_configs.items()}\n     308: \n     309: \n>>>  310: def parse_resource_filter(host_info, include_str=\"\", exclude_str=\"\"):\n     311:     '''Parse an inclusion or exclusion string and filter a hostfile dictionary.\n     312: \n     313:     String format is NODE_SPEC[@NODE_SPEC ...], where\n     314:         NODE_SPEC = NAME[:SLOT[,SLOT ...]].\n     315:     If :SLOT is omitted, include/exclude all slots on that host."
+  },
+  {
+    "id": 85,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.parse_num_nodes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:421",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.parse_num_nodes"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     416: \n     417:     if args.autotuning == \"run\":\n     418:         tuner.run_after_tuning()\n     419: \n     420: \n>>>  421: def parse_num_nodes(str_num_nodes: str, elastic_training: bool):\n     422:     node_list = str_num_nodes.split(\":\")\n     423: \n     424:     if len(node_list) == 1:\n     425:         min_nodes, max_nodes = int(node_list[0]), -1\n     426:     elif len(node_list) == 2 and elastic_training:"
+  },
+  {
+    "id": 86,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:436",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.main"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     431:         raise RuntimeError(\"num_nodes {} is not in MIN:MAX format\".format(str_num_nodes))\n     432: \n     433:     return min_nodes, max_nodes\n     434: \n     435: \n>>>  436: def main(args=None):\n     437:     args = parse_args(args)\n     438: \n     439:     if args.quiet:\n     440:         args.log_level = \"error\"\n     441:     set_log_level_from_string(args.log_level)"
+  },
+  {
+    "id": 87,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:436",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.main"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     431:         raise RuntimeError(\"num_nodes {} is not in MIN:MAX format\".format(str_num_nodes))\n     432: \n     433:     return min_nodes, max_nodes\n     434: \n     435: \n>>>  436: def main(args=None):\n     437:     args = parse_args(args)\n     438: \n     439:     if args.quiet:\n     440:         args.log_level = \"error\"\n     441:     set_log_level_from_string(args.log_level)"
+  },
+  {
+    "id": 88,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.linear.optimized_linear.LoRAOptimizedLinear._load_from_state_dict",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/linear/optimized_linear.py:161",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.linear.optimized_linear.LoRAOptimizedLinear._load_from_state_dict"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic RUNTIME_ERROR - context needed",
+    "code_context": "     156:         nn.init.kaiming_uniform_(self.lora_weight_1.weight, a=math.sqrt(5))\n     157:         nn.init.zeros_(self.lora_weight_2.weight)\n     158:         self.lora_weight_1.weight.requires_grad = True\n     159:         self.lora_weight_2.weight.requires_grad = True\n     160: \n>>>  161:     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys,\n     162:                               error_msgs):\n     163:         if not any([target in prefix for target in self.lora_config.target_mods]):\n     164:             # module does not match any target_mods, we must revert to normal nn.Linear via disable\n     165:             self.disable()\n     166:             return super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys,"
+  },
+  {
+    "id": 89,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.linear.quantization.QuantizedParameter.__new__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/linear/quantization.py:37",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.linear.quantization.QuantizedParameter.__new__"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      32:             required since the quantizer is stashed in the Parameter itself, some models\n      33:             may clone the Parameter by passing an attribute __dict__. For an example, see\n      34:             tests/unit/linear/test_quant_param.py::TestQuantParam::test_hf_clone\n      35:     \"\"\"\n      36: \n>>>   37:     def __new__(\n      38:         cls,\n      39:         data: Optional[torch.Tensor] = None,\n      40:         requires_grad: bool = False,  # quantized weights must be frozen\n      41:         quantization_config: QuantizationConfig = None,\n      42:         quantizer: Quantizer = None,"
+  },
+  {
+    "id": 90,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.model_implementations.transformers.ds_transformer.DeepSpeedTransformerInference.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/model_implementations/transformers/ds_transformer.py:107",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.model_implementations.transformers.ds_transformer.DeepSpeedTransformerInference.forward"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     102:     @classmethod\n     103:     def reset_cache(cls):\n     104:         if cls.workspace is not None:\n     105:             cls.workspace.reset_cache()\n     106: \n>>>  107:     def forward(\n     108:             self,\n     109:             input=None,\n     110:             input_mask=None,\n     111:             attention_mask=None,\n     112:             attn_mask=None,"
+  },
+  {
+    "id": 91,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.auto_tp_model_utils.build_mpt_alibi_tensor",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/auto_tp_model_utils.py:92",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.auto_tp_model_utils.build_mpt_alibi_tensor"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      87:         offset = sum(get_shard_size_list(self.config.n_heads, dist.get_world_size())[0:dist.get_rank()])\n      88:         attn_bias = attn_bias[:, offset:num_heads_per_rank + offset, :, :]\n      89:     return attn_bias, attention_mask\n      90: \n      91: \n>>>   92: def build_mpt_alibi_tensor(self, num_heads, sequence_length, alibi_bias_max=8, device=None) -> torch.Tensor:\n      93:     r\"\"\"\n      94:     Link to paper: https://arxiv.org/abs/2108.12409 - Alibi tensor is not causal as the original paper mentions, it\n      95:     relies on a translation invariance of softmax for quick implementation. This implementation has been copied from\n      96:     the alibi implementation of MPT source code that led to slightly different results than the Bloom alibi:\n      97:     https://huggingface.co/mosaicml/mpt-7b/blob/main/attention.py#L292"
+  },
+  {
+    "id": 92,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.fusedqkv_utils._phi3_type_transpose",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/fusedqkv_utils.py:110",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.fusedqkv_utils._phi3_type_transpose"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     105:         kv = input[n_embd:]\n     106:         shape = q.shape\n     107:         split_q = q.split(get_shard_size_list(shape[0], mp_size), dim=0)\n     108:         return torch.cat((split_q[gpu_index], kv), dim=0)\n     109: \n>>>  110:     def _phi3_type_transpose(input, mp_size):\n     111:         num_kv_heads = get_num_kv_heads()\n     112:         num_heads = get_num_attention_heads()\n     113:         hidden_size = input.shape[1]\n     114:         head_dim = hidden_size // num_heads\n     115:         q_pos = input.shape[0] - 2 * num_kv_heads * head_dim"
+  },
+  {
+    "id": 93,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.fusedqkv_utils._transpose_fused_qkvw",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/fusedqkv_utils.py:124",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.module_inject.fusedqkv_utils._transpose_fused_qkvw"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "     119:         split_q = q.split(get_shard_size_list(q.shape[0], mp_size), dim=0)\n     120:         split_k = k.split(get_shard_size_list(k.shape[0], mp_size), dim=0)\n     121:         split_v = v.split(get_shard_size_list(v.shape[0], mp_size), dim=0)\n     122:         return torch.cat((split_q[gpu_index], split_k[gpu_index], split_v[gpu_index]), dim=0)\n     123: \n>>>  124:     def _transpose_fused_qkvw(src, mp_size, fused_qkv_type=None, module=None):\n     125: \n     126:         # suppose num_heads=n, q(n)_w means the n-th q head linear weight, the weight format are as following\n     127:         # bloomtype: [q(1)_w,k(1)_w,v(1)_w,q(2)_w,k(2)_w,v(2)_w,...,q(n)_w,k(n)_w,v(n)_w]\n     128:         # glmtype:  [q(1)_w, q(2)_w,...,q(n)_w,k(1)_w,k(2)_w,...,k(n)_w,v(1)_w,v(2)_w,...,v(n)_w]\n     129:         # codegentype: [q(1)_w,q(2)_w,...,q(n/t)_w,k(1)_w,k(2)_w,...,k(n/t)_w,v(1)_2,v(2)_w,...v(n/t)_w,q(n/t+1)_w,...], where t is a const defined in model file."
+  },
+  {
+    "id": 94,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.fusedqkv_utils._glm_type_transpose",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/fusedqkv_utils.py:67",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.fusedqkv_utils._glm_type_transpose"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      62:         split_fusedqkv = split_by_qkvlist_and_refuse(src_split, get_shard_size(shape[0] // 3, mp_size), 0, 1)\n      63:         tp_fuseqkv_weight = torch.cat(split_fusedqkv, dim=0).reshape(shape[0], -1)\n      64: \n      65:         return tp_fuseqkv_weight[gpu_index * dst_shape:(gpu_index + 1) * dst_shape]\n      66: \n>>>   67:     def _glm_type_transpose(input, mp_size):\n      68:         #input : [3*hidden_dim, hidden_dim](weight) or [3*hidden_dim](bias)\n      69: \n      70:         # For chatglm2 & chatglm3(kv_heads=2), need to special handle.\n      71:         if get_num_kv_heads() == 2:\n      72:             shape = input.shape"
+  },
+  {
+    "id": 95,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.load_checkpoint.load_parameters",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/load_checkpoint.py:70",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.load_checkpoint.load_parameters"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      65:         gc.collect()\n      66: \n      67:     def load_transformer_layer(module, prefix):\n      68:         if ckpt_type == \"tp\":\n      69: \n>>>   70:             def load_parameters(module, prefix):\n      71:                 for n, p in module.named_parameters():\n      72:                     if prefix + n in sd[0] and len(n.split('.')) == 1:\n      73:                         if type(sd[0][prefix + n]) is list:\n      74:                             tmp_data, scale = sd[0][prefix + n]\n      75:                             tmp_data = tmp_data"
+  },
+  {
+    "id": 96,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.replace_module.replace_transformer_layer",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/replace_module.py:189",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.replace_module.replace_transformer_layer"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     184: \n     185: \n     186: container_g = None\n     187: \n     188: \n>>>  189: def replace_transformer_layer(orig_layer_impl, model, checkpoint_dict, config, model_config):\n     190:     \"\"\" Replace bert-style transformer layers with DeepSpeed's transformer layer\n     191:     Arguments:\n     192:         orig_layer_impl (torch.nn.Module): the original transformer layer implementation to look for,\n     193:             e.g., transformers.models.bert.modeling_bert.BertLayer or transformers.BertLayer\n     194:         model (torch.nn.Module): user's nn.module representing their model"
+  },
+  {
+    "id": 97,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.module_inject.replace_module._module_match",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/replace_module.py:80",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.module_inject.replace_module._module_match"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic NULL_PTR warning without specific variable - likely has checks",
+    "code_context": "      75:         out.scale = torch.cat([scale.squeeze().unsqueeze(0), scale1[0], scale1[1]], dim=0).reshape(num_groups,\n      76:                                                                                                    -1).contiguous()\n      77:         return out\n      78: \n      79: \n>>>   80: def _module_match(module):\n      81:     for policy in generic_policies:\n      82:         policy = policy()\n      83:         if policy.match(module):\n      84:             return policy\n      85:     return None"
+  },
+  {
+    "id": 98,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.replace_module.generic_injection",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/replace_module.py:88",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.module_inject.replace_module.generic_injection"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic VALUE_ERROR - likely has proper exception handling",
+    "code_context": "      83:         if policy.match(module):\n      84:             return policy\n      85:     return None\n      86: \n      87: \n>>>   88: def generic_injection(module, dtype=None, enable_cuda_graph=True):\n      89: \n      90:     def replace_attn(child, policy):\n      91:         policy_attn = policy.attention(child)\n      92:         if policy_attn is None:\n      93:             return child"
+  },
+  {
+    "id": 99,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.moe.mappings._drop_tokens",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/moe/mappings.py:56",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.moe.mappings._drop_tokens"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "      51:         output = torch.cat(tensor_list, dim=dim).contiguous()\n      52: \n      53:     return output\n      54: \n      55: \n>>>   56: def _drop_tokens(input_, dim=0):\n      57:     \"\"\"Divide a tensor among the tensor parallel ranks\"\"\"\n      58:     mpu = deepspeed.utils.groups.mpu\n      59: \n      60:     total_chunks = bwc_tensor_model_parallel_world_size(mpu)\n      61:     if total_chunks == 1:"
+  },
+  {
+    "id": 100,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.moe.sharded_moe.top1gating",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/moe/sharded_moe.py:183",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.moe.sharded_moe.top1gating"
+    ],
+    "classification": "LIKELY_FP",
+    "reasoning": "Generic DIV_ZERO warning - likely has validation",
+    "code_context": "     178: @torch.jit.script\n     179: def _one_hot_to_float(x, num_classes):\n     180:     return F.one_hot(x, num_classes=num_classes).float()\n     181: \n     182: \n>>>  183: def top1gating(logits: Tensor,\n     184:                capacity_factor: float,\n     185:                min_capacity: int,\n     186:                used_token: Tensor = None,\n     187:                noisy_gate_policy: Optional[str] = None,\n     188:                drop_tokens: bool = True,"
+  }
+]

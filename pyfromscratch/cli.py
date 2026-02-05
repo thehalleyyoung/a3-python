@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 from .analyzer import analyze, Analyzer
+from .semantics.intent_detector import create_intent_aware_filter, IntentDetector
+from .semantics.ast_guard_analysis import SafetyAnalyzer
 
 
 def main():
@@ -25,6 +27,11 @@ def main():
     )
     parser.add_argument("file", type=Path, help="Python file to analyze")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--kitchensink",
+        action="store_true",
+        help="Enable staged portfolio analysis (kitchen-sink orchestrator)",
+    )
     parser.add_argument(
         "--no-concolic",
         action="store_true",
@@ -53,8 +60,19 @@ def main():
     parser.add_argument(
         "--min-confidence",
         type=float,
-        default=0.0,
-        help="Minimum confidence threshold for reporting bugs (0.0-1.0)",
+        default=0.7,
+        help="Minimum confidence threshold for reporting bugs (0.0-1.0, default: 0.7 for high-confidence only)",
+    )
+    parser.add_argument(
+        "--intent-filter",
+        action="store_true",
+        default=True,
+        help="Enable intent-aware filtering to reduce false positives (default: enabled)",
+    )
+    parser.add_argument(
+        "--no-intent-filter",
+        action="store_true",
+        help="Disable intent-aware filtering (report all bugs regardless of intent)",
     )
     parser.add_argument(
         "--deduplicate",
@@ -83,6 +101,17 @@ def main():
         action="store_true",
         help="Synthesize inductive loop invariants for safety proofs",
     )
+    parser.add_argument(
+        "--dse-verify",
+        action="store_true",
+        help="Verify bugs using DSE with Z3 (reduces false positives, more accurate)",
+    )
+    parser.add_argument(
+        "--max-dse-steps",
+        type=int,
+        default=100,
+        help="Maximum DSE steps per function for --dse-verify (default: 100)",
+    )
     
     args = parser.parse_args()
     
@@ -94,44 +123,55 @@ def main():
     print()
     
     # Run analysis
+    # Determine if intent filtering is enabled
+    use_intent_filter = args.intent_filter and not args.no_intent_filter
+    
     if args.interprocedural:
         # Interprocedural analysis mode with call graph and summaries
-        analyzer = Analyzer(
-            verbose=args.verbose, 
-            enable_concolic=not args.no_concolic,
-            context_depth=args.context_depth,
-            check_termination=args.check_termination,
-            synthesize_invariants=args.synthesize_invariants
-        )
+        # Use InterproceduralBugTracker with intent filtering
+        from .semantics.interprocedural_bugs import InterproceduralBugTracker
         
-        # Parse entry points if provided
-        entry_points = None
-        if args.entry_points:
-            entry_points = [ep.strip() for ep in args.entry_points.split(',')]
+        root_path = args.file if args.file.is_dir() else args.file.parent
         
-        # Run interprocedural analysis
-        results = analyzer.analyze_project_interprocedural(
-            args.file if args.file.is_dir() else args.file.parent,
-            entry_points=entry_points
+        print(f"Building interprocedural analysis...")
+        tracker = InterproceduralBugTracker.from_project(root_path)
+        print(f"Functions: {len(tracker.call_graph.functions)}")
+        print(f"Entry points: {len(tracker.entry_points)}")
+        
+        # Find bugs with intent filtering enabled by default (high confidence only)
+        bugs = tracker.find_all_bugs(
+            apply_fp_reduction=True,
+            apply_intent_filter=use_intent_filter,
+            intent_confidence=args.min_confidence,
+            root_path=root_path,
         )
         
         # Report results
         print(f"\n{'='*60}")
         print("INTERPROCEDURAL ANALYSIS RESULTS")
+        if use_intent_filter:
+            print(f"(High-confidence TPs only, threshold={args.min_confidence})")
         print(f"{'='*60}")
-        print(f"Total entry points analyzed: {len(results['entry_point_results'])}")
-        print(f"Total bugs found: {results['total_bugs']}")
+        print(f"Total bugs found: {len(bugs)}")
         
-        for ep_data in results['entry_point_results']:
-            ep_name = ep_data['entry_point']
-            result = ep_data['result']
-            print(f"\n{ep_name}: {result.verdict}")
-            if result.verdict == 'BUG':
-                print(f"  Bug type: {result.bug_type}")
-                print(f"  Message: {result.message}")
+        # Group bugs by type
+        bugs_by_type = {}
+        for bug in bugs:
+            if bug.bug_type not in bugs_by_type:
+                bugs_by_type[bug.bug_type] = []
+            bugs_by_type[bug.bug_type].append(bug)
+        
+        for bug_type, type_bugs in sorted(bugs_by_type.items()):
+            print(f"\n{bug_type} ({len(type_bugs)})")
+            for bug in type_bugs[:5]:  # Show first 5 of each type
+                print(f"  - {bug.crash_function}")
+                print(f"    {bug.crash_location}")
+                print(f"    Confidence: {bug.confidence:.2f}")
+            if len(type_bugs) > 5:
+                print(f"  ... and {len(type_bugs) - 5} more")
         
         # Return exit code
-        return 1 if results['total_bugs'] > 0 else 0
+        return 1 if bugs else 0
     
     elif args.all_functions:
         # Analyze ALL functions with tainted parameters
@@ -193,13 +233,22 @@ def main():
             return 0 if any_safe else 2
     else:
         # Regular module-level analysis
-        result = analyze(
-            args.file, 
-            verbose=args.verbose, 
-            enable_concolic=not args.no_concolic,
-            check_termination=args.check_termination,
-            synthesize_invariants=args.synthesize_invariants
-        )
+        if args.kitchensink:
+            analyzer = Analyzer(
+                verbose=args.verbose,
+                enable_concolic=not args.no_concolic,
+                check_termination=args.check_termination,
+                synthesize_invariants=args.synthesize_invariants,
+            )
+            result = analyzer.analyze_file_kitchensink(args.file)
+        else:
+            result = analyze(
+                args.file,
+                verbose=args.verbose,
+                enable_concolic=not args.no_concolic,
+                check_termination=args.check_termination,
+                synthesize_invariants=args.synthesize_invariants,
+            )
         
         # Print result summary
         print(result.summary())

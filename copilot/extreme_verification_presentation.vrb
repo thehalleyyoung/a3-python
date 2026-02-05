@@ -1,0 +1,24 @@
+\frametitle{Case Study: State Machine Verification}
+\textbf{Project:} Protocol state machine
+
+\begin{lstlisting}[language=Python, basicstyle=\tiny\ttfamily]
+class Connection:
+    def __init__(self):
+        self.state = 'CLOSED'
+
+    def connect(self):
+        assert self.state == 'CLOSED'
+        self.state = 'CONNECTED'
+
+    def send(self, data):
+        assert self.state == 'CONNECTED'
+
+
+    def close(self):
+        assert self.state in ('CONNECTED', 'ERROR')
+        self.state = 'CLOSED'
+\end{lstlisting}
+
+\textbf{Hybrid Barrier:} Mode-specific invariants
+
+\textbf{Verification:} Prove no assertion failures for valid usage sequences.

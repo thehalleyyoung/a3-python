@@ -1,11 +1,31 @@
 """
-Registry of unsafe regions (20 core + 47 security bug types).
+Registry of unsafe regions (20 core + 47 security + 17 exception + 24 semantic bug types).
 
 Maps bug type names to predicates and counterexample extractors.
+
+ITERATION 700: Added fine-grained exception bug types instead of just PANIC.
+Each exception type now maps to specific kitchensink barrier verification strategy.
+See exception_bugs.py for the full mapping and barrier-theoretic foundation.
+
+ITERATION 701: Added 24 semantic bug types from kitchensink_taxonomy.py:
+- 5 contract bugs (PRECONDITION_VIOLATION, etc.)
+- 6 temporal bugs (USE_BEFORE_INIT, USE_AFTER_CLOSE, etc.)
+- 5 data flow bugs (UNVALIDATED_INPUT, UNCHECKED_RETURN, etc.)
+- 4 protocol bugs (ITERATOR_PROTOCOL, CONTEXT_MANAGER_PROTOCOL, etc.)
+- 4 resource bugs (MEMORY_EXHAUSTION, CPU_EXHAUSTION, etc.)
 """
 
 from typing import Callable, Optional
 from . import assert_fail, div_zero, bounds, null_ptr, type_confusion, panic, stack_overflow, memory_leak, non_termination, iterator_invalid, fp_domain, integer_overflow, use_after_free, double_free, uninit_memory, data_race, deadlock, send_sync, info_leak, timing_channel
+
+# Import fine-grained exception bug types
+from .exception_bugs import (
+    ExceptionBugType,
+    EXCEPTION_PREDICATES,
+    classify_exception,
+    KITCHENSINK_STRATEGIES,
+    verify_exception_with_kitchensink,
+)
 
 # Import security bug modules
 from .security import (
@@ -136,8 +156,70 @@ UNSAFE_PREDICATES: dict[str, tuple[Callable, Callable]] = {
     "WEAK_SENSITIVE_DATA_HASHING": (crypto.is_unsafe_weak_sensitive_data_hashing, crypto.extract_weak_sensitive_data_hashing_counterexample),
     "INSECURE_DEFAULT_PROTOCOL": (crypto.is_unsafe_insecure_default_protocol, crypto.extract_insecure_default_protocol_counterexample),
     
-    # Catch-all (check last)
+    # ========== Fine-Grained Exception Bug Types (from exception_bugs.py) ==========
+    # ITERATION 700: Instead of just PANIC, classify by exception type with
+    # specific kitchensink barrier verification strategies for each.
+    #
+    # Each exception type maps to optimal SOTA papers:
+    # - VALUE_ERROR: Predicate Abstraction (#13) + ICE (#17)
+    # - RUNTIME_ERROR: CEGAR (#12) + Assume-Guarantee (#20)
+    # - FILE_NOT_FOUND: IC3/PDR (#10) + Stochastic (#2)
+    # - PERMISSION_ERROR: Assume-Guarantee (#20) + CHC (#11)
+    # - OS_ERROR: CEGAR (#12) + Spacer/CHC (#11)
+    # - IO_ERROR: Stochastic Barriers (#2)
+    # - IMPORT_ERROR: Houdini (#18) + IC3/PDR (#10)
+    # - NAME_ERROR: Predicate Abstraction (#13) + IMC (#15)
+    # - UNBOUND_LOCAL: SOS-SDP (#6) + IMC (#15)
+    # - TIMEOUT_ERROR: Ranking Functions + Stochastic (#2)
+    # - CONNECTION_ERROR: Stochastic Barriers (#2) + Assume-Guarantee (#20)
+    # - UNICODE_ERROR: Predicate Abstraction (#13) + ICE (#17)
+    # See exception_bugs.py for full documentation.
+    **EXCEPTION_PREDICATES,
+    
+    # Catch-all for truly custom exceptions (check last)
     "PANIC": (panic.is_unsafe_panic, panic.extract_counterexample),
+}
+
+# ============================================================================
+# SEMANTIC BUG TYPES (24 types) - Kitchensink-powered verification
+# ============================================================================
+# These bug types are NOT checked via predicates but via semantic verification
+# using the kitchensink orchestrator. They are listed here for completeness.
+
+SEMANTIC_BUG_TYPES = {
+    # Contract bugs (5)
+    "PRECONDITION_VIOLATION",
+    "POSTCONDITION_VIOLATION",
+    "INVARIANT_VIOLATION",
+    "REPRESENTATION_INVARIANT",
+    "LISKOV_VIOLATION",
+    
+    # Temporal bugs (6)
+    "USE_BEFORE_INIT",
+    "USE_AFTER_CLOSE",
+    "DOUBLE_CLOSE",
+    "MISSING_CLEANUP",
+    "ORDER_VIOLATION",
+    "CONCURRENT_MODIFICATION",
+    
+    # Data flow bugs (5)
+    "UNVALIDATED_INPUT",
+    "UNCHECKED_RETURN",
+    "IGNORED_EXCEPTION",
+    "PARTIAL_INIT",
+    "STALE_VALUE",
+    
+    # Protocol bugs (4)
+    "ITERATOR_PROTOCOL",
+    "CONTEXT_MANAGER_PROTOCOL",
+    "DESCRIPTOR_PROTOCOL",
+    "CALLABLE_PROTOCOL",
+    
+    # Resource bugs (4)
+    "MEMORY_EXHAUSTION",
+    "CPU_EXHAUSTION",
+    "DISK_EXHAUSTION",
+    "HANDLE_EXHAUSTION",
 }
 
 

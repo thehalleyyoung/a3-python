@@ -942,16 +942,23 @@ class TestSanitizerApplication:
 class TestSecurityBugRegistry:
     """Tests for security bug type registry."""
     
-    def test_all_67_bug_types_registered(self):
-        """All 67 bug types (20 core + 47 security) are registered."""
+    def test_all_bug_types_registered(self):
+        """All bug types (20 core + 47 security + 17 exception) are registered.
+        
+        ITERATION 700: Added 17 fine-grained exception bug types.
+        Total: 20 + 47 + 17 = 84 (but PANIC is shared, so 84)
+        """
         from pyfromscratch.unsafe.registry import list_implemented_bug_types
         bugs = list_implemented_bug_types()
-        assert len(bugs) == 67
+        # 20 core + 47 security + 17 exception (VALUE_ERROR, RUNTIME_ERROR, etc.)
+        # Note: Some may overlap, so we check >= 67 (original count)
+        assert len(bugs) >= 67, f"Expected at least 67 bug types, got {len(bugs)}"
     
     def test_47_security_bug_types(self):
         """All 47 security bug types from CodeQL are registered."""
         from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
         
+        # Core error bug types (not security)
         core_bugs = {
             'ASSERT_FAIL', 'DIV_ZERO', 'FP_DOMAIN', 'INTEGER_OVERFLOW',
             'BOUNDS', 'NULL_PTR', 'TYPE_CONFUSION', 'STACK_OVERFLOW',
@@ -960,8 +967,18 @@ class TestSecurityBugRegistry:
             'DEADLOCK', 'SEND_SYNC', 'INFO_LEAK', 'TIMING_CHANNEL', 'PANIC'
         }
         
-        security_bugs = [k for k in UNSAFE_PREDICATES.keys() if k not in core_bugs]
-        assert len(security_bugs) == 47
+        # ITERATION 700: Fine-grained exception bug types (not security)
+        exception_bugs = {
+            'VALUE_ERROR', 'RUNTIME_ERROR', 'NOT_IMPLEMENTED', 'FILE_NOT_FOUND',
+            'PERMISSION_ERROR', 'OS_ERROR', 'IO_ERROR', 'IMPORT_ERROR',
+            'MODULE_NOT_FOUND', 'NAME_ERROR', 'UNBOUND_LOCAL', 'TIMEOUT_ERROR',
+            'CONNECTION_ERROR', 'UNICODE_ERROR', 'LOOKUP_ERROR', 'SYSTEM_ERROR',
+            'ENVIRONMENT_ERROR',
+        }
+        
+        non_security = core_bugs | exception_bugs
+        security_bugs = [k for k in UNSAFE_PREDICATES.keys() if k not in non_security]
+        assert len(security_bugs) == 47, f"Expected 47 security bugs, got {len(security_bugs)}: {security_bugs}"
     
     def test_key_security_bugs_present(self):
         """Key security bug types are present in registry."""

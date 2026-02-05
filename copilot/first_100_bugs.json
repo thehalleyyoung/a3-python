@@ -1,0 +1,1202 @@
+[
+  {
+    "id": 1,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "accelerator.hpu_accelerator.HPU_Accelerator.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/accelerator/hpu_accelerator.py:17",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "accelerator.hpu_accelerator.HPU_Accelerator.__init__"
+    ]
+  },
+  {
+    "id": 2,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "accelerator.real_accelerator.is_current_accelerator_supported",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/accelerator/real_accelerator.py:47",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "accelerator.real_accelerator.is_current_accelerator_supported"
+    ]
+  },
+  {
+    "id": 3,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "accelerator.real_accelerator.get_accelerator",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/accelerator/real_accelerator.py:51",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "accelerator.real_accelerator.get_accelerator"
+    ]
+  },
+  {
+    "id": 4,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.aio_bench_perf_sweep.async_io_setup",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/aio_bench_perf_sweep.py:242",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.aio_bench_perf_sweep.async_io_setup"
+    ]
+  },
+  {
+    "id": 5,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.io_engine.post_operation",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/io_engine.py:40",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.io_engine.post_operation"
+    ]
+  },
+  {
+    "id": 6,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.io_engine.read_operation",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/io_engine.py:45",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.io_engine.read_operation"
+    ]
+  },
+  {
+    "id": 7,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.io_engine.write_operation",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/io_engine.py:50",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.io_engine.write_operation"
+    ]
+  },
+  {
+    "id": 8,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "csrc.aio.py_test.parse_aio_stats.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/csrc/aio/py_test/parse_aio_stats.py:135",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "csrc.aio.py_test.parse_aio_stats.main"
+    ]
+  },
+  {
+    "id": 9,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.default_inference_config",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/__init__.py:295",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.default_inference_config"
+    ]
+  },
+  {
+    "id": 10,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.autotuner.Autotuner._generate_experiments",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/autotuner.py:304",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.autotuner.Autotuner._generate_experiments"
+    ]
+  },
+  {
+    "id": 11,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.autotuner.Autotuner.get_plateau_mbs",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/autotuner.py:640",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.autotuner.Autotuner.get_plateau_mbs"
+    ]
+  },
+  {
+    "id": 12,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.tuner.cost_model.XGBoostCostModel.fit",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/tuner/cost_model.py:51",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.tuner.cost_model.XGBoostCostModel.fit"
+    ]
+  },
+  {
+    "id": 13,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.autotuning.tuner.utils.dict_to_feature",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/autotuning/tuner/utils.py:66",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.autotuning.tuner.utils.dict_to_feature"
+    ]
+  },
+  {
+    "id": 14,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.backend.make_backend",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/backend.py:217",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.backend.make_backend"
+    ]
+  },
+  {
+    "id": 15,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.fx.get_output_node",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/fx.py:15",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.compile.fx.get_output_node"
+    ]
+  },
+  {
+    "id": 16,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.init_z1.init_z1",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/init_z1.py:18",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.compile.init_z1.init_z1"
+    ]
+  },
+  {
+    "id": 17,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.input_storage.InputStorage.get",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/input_storage.py:165",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.compile.input_storage.InputStorage.get"
+    ]
+  },
+  {
+    "id": 18,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.passes.offload_adam_states.update_max_memory",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/passes/offload_adam_states.py:235",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.passes.offload_adam_states.update_max_memory"
+    ]
+  },
+  {
+    "id": 19,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.passes.offload_adam_states.empty_cache",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/passes/offload_adam_states.py:242",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.passes.offload_adam_states.empty_cache"
+    ]
+  },
+  {
+    "id": 20,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.passes.offload_adam_states.lazy_init",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/passes/offload_adam_states.py:47",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.passes.offload_adam_states.lazy_init"
+    ]
+  },
+  {
+    "id": 21,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.profilers.comm_profile.create_predictor",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/profilers/comm_profile.py:126",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.compile.profilers.comm_profile.create_predictor"
+    ]
+  },
+  {
+    "id": 22,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.profilers.comm_profile.get_bw",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/profilers/comm_profile.py:25",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.compile.profilers.comm_profile.get_bw"
+    ]
+  },
+  {
+    "id": 23,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compile.profilers.graph_profile.ProfilingInterpreter.run_node",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/profilers/graph_profile.py:119",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compile.profilers.graph_profile.ProfilingInterpreter.run_node"
+    ]
+  },
+  {
+    "id": 24,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.util.is_deepcompile_supported",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/util.py:27",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.util.is_deepcompile_supported"
+    ]
+  },
+  {
+    "id": 25,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.util.get_deepcompile_handle",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/util.py:46",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.util.get_deepcompile_handle"
+    ]
+  },
+  {
+    "id": 26,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.compile.util.deepcompile_backward_prologue",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compile/util.py:65",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.compile.util.deepcompile_backward_prologue"
+    ]
+  },
+  {
+    "id": 27,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.LinearLayer_Compress.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:364",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.LinearLayer_Compress.forward"
+    ]
+  },
+  {
+    "id": 28,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.Conv2dLayer_Compress.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:581",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.Conv2dLayer_Compress.forward"
+    ]
+  },
+  {
+    "id": 29,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.ColumnParallelLinear_Compress.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:769",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.ColumnParallelLinear_Compress.__init__"
+    ]
+  },
+  {
+    "id": 30,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.basic_layer.RowParallelLinear_Compress.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/basic_layer.py:804",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.basic_layer.RowParallelLinear_Compress.__init__"
+    ]
+  },
+  {
+    "id": 31,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.compression.utils.TernaryQuantizer.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/compression/utils.py:154",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.compression.utils.TernaryQuantizer.forward"
+    ]
+  },
+  {
+    "id": 32,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.elasticity.elasticity.get_microbatch",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/elasticity/elasticity.py:146",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.elasticity.elasticity.get_microbatch"
+    ]
+  },
+  {
+    "id": 33,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.elasticity.elasticity._get_compatible_gpus_v01",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/elasticity/elasticity.py:83",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.elasticity.elasticity._get_compatible_gpus_v01"
+    ]
+  },
+  {
+    "id": 34,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.env_report.cli_main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/env_report.py:182",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.env_report.cli_main"
+    ]
+  },
+  {
+    "id": 35,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.engine.InferenceEngine._create_ep_parallel_group",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/engine.py:260",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.engine.InferenceEngine._create_ep_parallel_group"
+    ]
+  },
+  {
+    "id": 36,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.engine.InferenceEngine._load_checkpoint",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/engine.py:413",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.engine.InferenceEngine._load_checkpoint"
+    ]
+  },
+  {
+    "id": 37,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.engine.InferenceEngine.compile",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/engine.py:610",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.engine.InferenceEngine.compile"
+    ]
+  },
+  {
+    "id": 38,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.quantization.utils.Quantizer._quantize_int8",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/quantization/utils.py:73",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.quantization.utils.Quantizer._quantize_int8"
+    ]
+  },
+  {
+    "id": 39,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.allocator.Allocator.empty_from",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/allocator.py:17",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.allocator.Allocator.empty_from"
+    ]
+  },
+  {
+    "id": 40,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.engine_factory.build_hf_engine",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/engine_factory.py:69",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.engine_factory.build_hf_engine"
+    ]
+  },
+  {
+    "id": 41,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.engine_v2.InferenceEngineV2._initialize_tp_group",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/engine_v2.py:93",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.engine_v2.InferenceEngineV2._initialize_tp_group"
+    ]
+  },
+  {
+    "id": 42,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.bias_activations.bias_activation.CUDABiasActivation.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/bias_activations/bias_activation.py:24",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.bias_activations.bias_activation.CUDABiasActivation.__init__"
+    ]
+  },
+  {
+    "id": 43,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.cuda_layer_norm.cuda_fp_ln_base.CUDAFPLNBase.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/cuda_layer_norm/cuda_fp_ln_base.py:21",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.cuda_layer_norm.cuda_fp_ln_base.CUDAFPLNBase.__init__"
+    ]
+  },
+  {
+    "id": 44,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.cuda_linear.cuda_linear.CUDAWf6Af16Linear.__call__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/cuda_linear/cuda_linear.py:164",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.cuda_linear.cuda_linear.CUDAWf6Af16Linear.__call__"
+    ]
+  },
+  {
+    "id": 45,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.cuda_rms_norm.rms_norm_base.CUDARMSNormBase.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/cuda_rms_norm/rms_norm_base.py:21",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.cuda_rms_norm.rms_norm_base.CUDARMSNormBase.__init__"
+    ]
+  },
+  {
+    "id": 46,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.core_ops.gated_activations.gated_activation.CUDAGatedActivation.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/core_ops/gated_activations/gated_activation.py:25",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.core_ops.gated_activations.gated_activation.CUDAGatedActivation.__init__"
+    ]
+  },
+  {
+    "id": 47,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.ragged_ops.atom_builder.atom_builder.AtomBuilder.__call__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/ragged_ops/atom_builder/atom_builder.py:28",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.ragged_ops.atom_builder.atom_builder.AtomBuilder.__call__"
+    ]
+  },
+  {
+    "id": 48,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_q_block_size",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/ragged_ops/blocked_flash/blocked_flash.py:15",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_q_block_size"
+    ]
+  },
+  {
+    "id": 49,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_kv_block_size",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/kernels/ragged_ops/blocked_flash/blocked_flash.py:45",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.kernels.ragged_ops.blocked_flash.blocked_flash.get_kv_block_size"
+    ]
+  },
+  {
+    "id": 50,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.inference_policy_base.InferenceV2Policy.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/inference_policy_base.py:111",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.inference_policy_base.InferenceV2Policy.__init__"
+    ]
+  },
+  {
+    "id": 51,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.inference_policy_base.ContainerMap.validate",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/inference_policy_base.py:85",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.inference_policy_base.ContainerMap.validate"
+    ]
+  },
+  {
+    "id": 52,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.layer_container_base.LayerMetaclass.__new__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/layer_container_base.py:50",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.layer_container_base.LayerMetaclass.__new__"
+    ]
+  },
+  {
+    "id": 53,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.parameter_base.ParametrizedList.__setitem__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/parameter_base.py:222",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.parameter_base.ParametrizedList.__setitem__"
+    ]
+  },
+  {
+    "id": 54,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.parameter_base.paramlist_setter",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/parameter_base.py:49",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.parameter_base.paramlist_setter"
+    ]
+  },
+  {
+    "id": 55,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.attn.get_local_heads",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/attn.py:9",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.attn.get_local_heads"
+    ]
+  },
+  {
+    "id": 56,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.qkv.qkv_out_features",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/qkv.py:116",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.qkv.qkv_out_features"
+    ]
+  },
+  {
+    "id": 57,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.qkv.shard_qkv_param",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/qkv.py:14",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.qkv.shard_qkv_param"
+    ]
+  },
+  {
+    "id": 58,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.utils.shard_param",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/utils.py:43",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.utils.shard_param"
+    ]
+  },
+  {
+    "id": 59,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.model_implementations.sharding.utils.get_matrices",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/model_implementations/sharding/utils.py:85",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.model_implementations.sharding.utils.get_matrices"
+    ]
+  },
+  {
+    "id": 60,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.modules.heuristics.instantiate_linear",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/modules/heuristics.py:75",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.modules.heuristics.instantiate_linear"
+    ]
+  },
+  {
+    "id": 61,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.modules.implementations.linear.quantized_linear.fp_quantize",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/modules/implementations/linear/quantized_linear.py:25",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.modules.implementations.linear.quantized_linear.fp_quantize"
+    ]
+  },
+  {
+    "id": 62,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.modules.implementations.unembed.ragged_unembed.DSRaggedUnembed.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/modules/implementations/unembed/ragged_unembed.py:83",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.inference.v2.modules.implementations.unembed.ragged_unembed.DSRaggedUnembed.forward"
+    ]
+  },
+  {
+    "id": 63,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.inference.v2.ragged.kv_cache.BlockedKVCache.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/inference/v2/ragged/kv_cache.py:60",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.inference.v2.ragged.kv_cache.BlockedKVCache.__init__"
+    ]
+  },
+  {
+    "id": 64,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.base_io_buffer.Base_IO_Buffer.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/base_io_buffer.py:11",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.base_io_buffer.Base_IO_Buffer.__init__"
+    ]
+  },
+  {
+    "id": 65,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.base_io_buffer.Base_IO_Buffer._drain",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/base_io_buffer.py:46",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.base_io_buffer.Base_IO_Buffer._drain"
+    ]
+  },
+  {
+    "id": 66,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.__init__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:15",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.__init__"
+    ]
+  },
+  {
+    "id": 67,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.drain",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:30",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.drain"
+    ]
+  },
+  {
+    "id": 68,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_aligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:47",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_aligned_num_bytes"
+    ]
+  },
+  {
+    "id": 69,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_unaligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:52",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer.get_unaligned_num_bytes"
+    ]
+  },
+  {
+    "id": 70,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.double_io_buffer.Double_IO_Buffer._split_buffer",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/double_io_buffer.py:71",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.double_io_buffer.Double_IO_Buffer._split_buffer"
+    ]
+  },
+  {
+    "id": 71,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.fast_file_writer.FastFileWriter.write",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/fast_file_writer.py:62",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.fast_file_writer.FastFileWriter.write"
+    ]
+  },
+  {
+    "id": 72,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.fast_file_writer.FastFileWriter.save_torch_storage_object_list",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/fast_file_writer.py:89",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.fast_file_writer.FastFileWriter.save_torch_storage_object_list"
+    ]
+  },
+  {
+    "id": 73,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_aligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/single_io_buffer.py:30",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_aligned_num_bytes"
+    ]
+  },
+  {
+    "id": 74,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_unaligned_num_bytes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/single_io_buffer.py:34",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.single_io_buffer.Single_IO_Buffer.get_unaligned_num_bytes"
+    ]
+  },
+  {
+    "id": 75,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.io.utils._new_obj_serialization_details",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/io/utils.py:44",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.io.utils._new_obj_serialization_details"
+    ]
+  },
+  {
+    "id": 76,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.launch.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/launch.py:145",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.launcher.launch.main"
+    ]
+  },
+  {
+    "id": 77,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.launch.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/launch.py:145",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.launch.main"
+    ]
+  },
+  {
+    "id": 78,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.launcher.launch.parse_args",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/launch.py:35",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.launcher.launch.parse_args"
+    ]
+  },
+  {
+    "id": 79,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.MPICHRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:211",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.MPICHRunner.get_cmd"
+    ]
+  },
+  {
+    "id": 80,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:283",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd"
+    ]
+  },
+  {
+    "id": 81,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:283",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.IMPIRunner.get_cmd"
+    ]
+  },
+  {
+    "id": 82,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.multinode_runner.MVAPICHRunner.get_cmd",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/multinode_runner.py:446",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.multinode_runner.MVAPICHRunner.get_cmd"
+    ]
+  },
+  {
+    "id": 83,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner._parse_hostfile",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:243",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner._parse_hostfile"
+    ]
+  },
+  {
+    "id": 84,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.parse_resource_filter",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:310",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.parse_resource_filter"
+    ]
+  },
+  {
+    "id": 85,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.parse_num_nodes",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:421",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.parse_num_nodes"
+    ]
+  },
+  {
+    "id": 86,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:436",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.main"
+    ]
+  },
+  {
+    "id": 87,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.launcher.runner.main",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/launcher/runner.py:436",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.launcher.runner.main"
+    ]
+  },
+  {
+    "id": 88,
+    "type": "RUNTIME_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.linear.optimized_linear.LoRAOptimizedLinear._load_from_state_dict",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/linear/optimized_linear.py:161",
+    "reason": "Function may trigger RUNTIME_ERROR",
+    "call_chain": [
+      "deepspeed.linear.optimized_linear.LoRAOptimizedLinear._load_from_state_dict"
+    ]
+  },
+  {
+    "id": 89,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.linear.quantization.QuantizedParameter.__new__",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/linear/quantization.py:37",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.linear.quantization.QuantizedParameter.__new__"
+    ]
+  },
+  {
+    "id": 90,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.model_implementations.transformers.ds_transformer.DeepSpeedTransformerInference.forward",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/model_implementations/transformers/ds_transformer.py:107",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.model_implementations.transformers.ds_transformer.DeepSpeedTransformerInference.forward"
+    ]
+  },
+  {
+    "id": 91,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.auto_tp_model_utils.build_mpt_alibi_tensor",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/auto_tp_model_utils.py:92",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.auto_tp_model_utils.build_mpt_alibi_tensor"
+    ]
+  },
+  {
+    "id": 92,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.fusedqkv_utils._phi3_type_transpose",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/fusedqkv_utils.py:110",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.fusedqkv_utils._phi3_type_transpose"
+    ]
+  },
+  {
+    "id": 93,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.fusedqkv_utils._transpose_fused_qkvw",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/fusedqkv_utils.py:124",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.module_inject.fusedqkv_utils._transpose_fused_qkvw"
+    ]
+  },
+  {
+    "id": 94,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.fusedqkv_utils._glm_type_transpose",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/fusedqkv_utils.py:67",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.fusedqkv_utils._glm_type_transpose"
+    ]
+  },
+  {
+    "id": 95,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.load_checkpoint.load_parameters",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/load_checkpoint.py:70",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.load_checkpoint.load_parameters"
+    ]
+  },
+  {
+    "id": 96,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.replace_module.replace_transformer_layer",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/replace_module.py:189",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.module_inject.replace_module.replace_transformer_layer"
+    ]
+  },
+  {
+    "id": 97,
+    "type": "NULL_PTR",
+    "confidence": 0.76,
+    "function": "deepspeed.module_inject.replace_module._module_match",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/replace_module.py:80",
+    "reason": "Function may trigger NULL_PTR",
+    "call_chain": [
+      "deepspeed.module_inject.replace_module._module_match"
+    ]
+  },
+  {
+    "id": 98,
+    "type": "VALUE_ERROR",
+    "confidence": 0.84,
+    "function": "deepspeed.module_inject.replace_module.generic_injection",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/module_inject/replace_module.py:88",
+    "reason": "Function may trigger VALUE_ERROR",
+    "call_chain": [
+      "deepspeed.module_inject.replace_module.generic_injection"
+    ]
+  },
+  {
+    "id": 99,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.moe.mappings._drop_tokens",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/moe/mappings.py:56",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.moe.mappings._drop_tokens"
+    ]
+  },
+  {
+    "id": 100,
+    "type": "DIV_ZERO",
+    "confidence": 0.84,
+    "function": "deepspeed.moe.sharded_moe.top1gating",
+    "variable": null,
+    "location": "external_tools/DeepSpeed/deepspeed/moe/sharded_moe.py:183",
+    "reason": "Function may trigger DIV_ZERO",
+    "call_chain": [
+      "deepspeed.moe.sharded_moe.top1gating"
+    ]
+  }
+]

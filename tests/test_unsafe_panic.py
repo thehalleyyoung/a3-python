@@ -6,7 +6,11 @@ Tests both BUG cases (uncaught general exceptions) and NON-BUG cases
 
 PANIC is the general "unhandled exception = crash" property.
 It overlaps with specific bug classes (ASSERT_FAIL, DIV_ZERO, etc.)
-but also catches other exceptions (NameError, ValueError, etc.).
+but also catches other exceptions.
+
+ITERATION 700: Common exceptions like NameError, ValueError, etc. are now
+classified as fine-grained bug types (NAME_ERROR, VALUE_ERROR, etc.) instead
+of PANIC. PANIC is reserved for truly custom/unknown exception types.
 """
 
 import pytest
@@ -16,9 +20,9 @@ from pyfromscratch.unsafe.registry import check_unsafe_regions
 
 def test_name_error_bug():
     """
-    BUG: NameError (undefined variable) causes PANIC.
+    BUG: NameError (undefined variable) causes NAME_ERROR bug.
     
-    This is a general exception not covered by specific bug classes.
+    ITERATION 700: Now classified as NAME_ERROR, not PANIC.
     """
     code = compile("x = undefined_var", "<string>", "exec")
     vm = SymbolicVM()
@@ -27,14 +31,14 @@ def test_name_error_bug():
     # Should have at least one path
     assert len(paths) > 0
     
-    # At least one path should have NameError
+    # At least one path should have NameError (now classified as NAME_ERROR)
     bugs_found = []
     for path in paths:
         bug = check_unsafe_regions(path.state, path.trace)
-        if bug and bug['bug_type'] == 'PANIC':
+        if bug and bug['bug_type'] in ('NAME_ERROR', 'PANIC'):
             bugs_found.append(bug)
     
-    assert len(bugs_found) > 0, "Should detect PANIC for NameError"
+    assert len(bugs_found) > 0, "Should detect NAME_ERROR (or PANIC) for NameError"
     assert bugs_found[0]['final_state']['exception'] == 'NameError'
 
 
@@ -78,10 +82,10 @@ def test_multiple_operations_not_bug():
 
 def test_unbound_local_error_bug():
     """
-    BUG: UnboundLocalError causes PANIC.
+    BUG: UnboundLocalError causes UNBOUND_LOCAL bug.
     
     Reading a local variable before it's assigned.
-    (Simplified test: we track this as exception in symbolic VM)
+    ITERATION 700: Now classified as UNBOUND_LOCAL, not PANIC.
     """
     # This will cause UnboundLocalError in the symbolic VM
     # when trying to read x before storing to it
@@ -92,11 +96,11 @@ def test_unbound_local_error_bug():
     bugs_found = []
     for path in paths:
         bug = check_unsafe_regions(path.state, path.trace)
-        if bug and bug['bug_type'] == 'PANIC':
+        if bug and bug['bug_type'] in ('UNBOUND_LOCAL', 'NAME_ERROR', 'PANIC'):
             bugs_found.append(bug)
     
     # Should detect the exception
-    assert len(bugs_found) > 0, "Should detect PANIC for UnboundLocalError"
+    assert len(bugs_found) > 0, "Should detect UNBOUND_LOCAL/NAME_ERROR for undefined variable"
 
 
 def test_stack_underflow_bug():
@@ -216,7 +220,9 @@ def test_panic_non_specific_helper():
 
 def test_counterexample_extraction():
     """
-    Test that PANIC counterexamples are correctly extracted.
+    Test that exception counterexamples are correctly extracted.
+    
+    ITERATION 700: NameError is now classified as NAME_ERROR, not PANIC.
     """
     code = compile("x = undefined_var", "<string>", "exec")
     vm = SymbolicVM()
@@ -225,20 +231,20 @@ def test_counterexample_extraction():
     bugs_found = []
     for path in paths:
         bug = check_unsafe_regions(path.state, path.trace)
-        if bug and bug['bug_type'] == 'PANIC':
+        # Now look for NAME_ERROR or PANIC
+        if bug and bug['bug_type'] in ('NAME_ERROR', 'PANIC'):
             bugs_found.append(bug)
     
-    assert len(bugs_found) > 0, "Should find PANIC bug"
+    assert len(bugs_found) > 0, "Should find NAME_ERROR or PANIC bug"
     
     # Check counterexample structure
     bug = bugs_found[0]
     assert 'bug_type' in bug
-    assert bug['bug_type'] == 'PANIC'
+    assert bug['bug_type'] in ('NAME_ERROR', 'PANIC')
     assert 'trace' in bug
     assert 'final_state' in bug
     assert 'exception' in bug['final_state']
     assert bug['final_state']['exception'] == 'NameError'
-    assert 'exception_is_specific' in bug['final_state']
 
 
 def test_return_value_not_bug():

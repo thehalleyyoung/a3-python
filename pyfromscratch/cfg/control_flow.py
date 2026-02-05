@@ -604,6 +604,37 @@ class GuardAnalyzer:
             guards = set()
             
             for i, instr in enumerate(block.instructions):
+                # Pattern: x = SomeClass() or x = func() - constructor/call result is typically non-None
+                # CALL followed by STORE_FAST establishes nonnull for simple constructors
+                if instr.opname == 'STORE_FAST' and i >= 1:
+                    prev = block.instructions[i - 1]
+                    if prev.opname in ('CALL', 'CALL_FUNCTION'):
+                        var_name = instr.argval
+                        if var_name:
+                            # Check if this is likely a constructor call (heuristic: capitalized function name)
+                            # Look back to find what was called
+                            is_constructor = False
+                            for j in range(i - 2, max(-1, i - 6), -1):
+                                if j >= 0:
+                                    load_instr = block.instructions[j]
+                                    if load_instr.opname in ('LOAD_GLOBAL', 'LOAD_NAME', 'LOAD_ATTR'):
+                                        func_name = load_instr.argval
+                                        if func_name and isinstance(func_name, str):
+                                            # Constructors are typically capitalized
+                                            if func_name[0].isupper():
+                                                is_constructor = True
+                                            # Also handle known non-None returning builtins
+                                            elif func_name in ('list', 'dict', 'set', 'tuple', 'str', 'int', 'float', 'bool', 'bytes', 'bytearray', 'frozenset', 'object', 'range', 'slice', 'type'):
+                                                is_constructor = True
+                                        break
+                            if is_constructor:
+                                guards.add(GuardFact(
+                                    guard_type="nonnull",
+                                    variable=var_name,
+                                    established_at=block.id,
+                                    condition=f"constructor assignment => {var_name} is not None"
+                                ))
+                
                 # Pattern: isinstance(v, T) followed by conditional jump
                 # LOAD_GLOBAL isinstance
                 # LOAD_FAST v
@@ -655,6 +686,15 @@ class GuardAnalyzer:
                                 )
                             )
                 
+                # Pattern: x = y or default (or-default pattern)
+                # LOAD_FAST y, COPY, TO_BOOL, POP_JUMP_IF_TRUE, POP_TOP, LOAD_CONST default, STORE_FAST x
+                # If default is truthy/non-None, x is nonnull
+                # If default is non-zero, x is nonzero (for div safety)
+                if instr.opname == 'STORE_FAST' and i >= 4:
+                    or_guards = self._check_or_default_pattern(block.instructions[:i+1], block, instr)
+                    for g in or_guards:
+                        guards.add(g)
+                
                 # Pattern: if v (truthiness check)
                 # LOAD_FAST v
                 # POP_JUMP_IF_FALSE
@@ -671,11 +711,198 @@ class GuardAnalyzer:
                             )
                             guards.add(guard)
                 
-                # Pattern: x != 0 or 0 != x before division
-                if instr.opname == 'COMPARE_OP' and instr.argval == '!=' and i >= 2:
+                # Pattern: NOT_TAKEN after truthiness check establishes nonempty AND nonnull
+                # This handles patterns like: not data or data[0]
+                # When we're in the fallthrough block (NOT_TAKEN), we know the
+                # condition was False, so for `not data`, data is truthy/nonempty
+                if instr.opname == 'NOT_TAKEN' and i == 0:
+                    truthiness_guard = self._check_truthiness_fallthrough_pattern(block)
+                    if truthiness_guard:
+                        guards.add(truthiness_guard)
+                    
+                    # Truthiness also implies nonnull (None is falsy)
+                    nonnull_guard = self._check_truthiness_nonnull_guard(block)
+                    if nonnull_guard:
+                        guards.add(nonnull_guard)
+                    
+                    # Also check for len(x) != n pattern on fallthrough
+                    len_ne_guard = self._check_len_ne_fallthrough_pattern(block)
+                    if len_ne_guard:
+                        guards.add(len_ne_guard)
+                
+                # Pattern: comparisons that establish x != 0 (for DIV_ZERO)
+                # Includes: x != 0, x > 0, x >= 1, x < 0, x <= -1, etc.
+                if instr.opname == 'COMPARE_OP' and instr.argval in ('!=', '<', '<=', '>', '>=') and i >= 2:
                     div_guard = self._check_div_guard_pattern(block.instructions[:i+1], block)
                     if div_guard:
                         guards.add(div_guard)
+                    
+                    # Also check for len(x) != 0 pattern (non-empty check)
+                    nonempty_guard = self._check_nonempty_guard_pattern(block.instructions[:i+1], block)
+                    if nonempty_guard:
+                        guards.add(nonempty_guard)
+                
+                # Pattern: i < len(container) or len(container) > i  (bounds check)
+                # This establishes bounds guard for container[i]
+                if instr.opname == 'COMPARE_OP' and instr.argval in ('<', '<=', '>', '>=') and i >= 2:
+                    bounds_guard = self._check_bounds_guard_pattern(block.instructions[:i+1], block)
+                    if bounds_guard:
+                        guards.add(bounds_guard)
+                    
+                    # Also check for len(x) > 0 pattern (non-empty check)
+                    nonempty_guard = self._check_nonempty_guard_pattern(block.instructions[:i+1], block)
+                    if nonempty_guard:
+                        guards.add(nonempty_guard)
+                
+                # Pattern: len(x) == n for exact length check
+                if instr.opname == 'COMPARE_OP' and instr.argval == '==' and i >= 2:
+                    exact_len_guard = self._check_nonempty_guard_pattern(block.instructions[:i+1], block)
+                    if exact_len_guard:
+                        guards.add(exact_len_guard)
+                
+                # Pattern: x = d.get(key, default) where default is non-None
+                # LOAD_FAST d, LOAD_ATTR get, LOAD_* key, LOAD_CONST default, CALL, STORE_FAST x
+                if instr.opname == 'STORE_FAST' and i >= 3:
+                    dict_get_guards = self._check_dict_get_pattern(block.instructions[:i+1], block, instr)
+                    for g in dict_get_guards:
+                        guards.add(g)
+                
+                # Pattern: assert x is not None
+                # LOAD_FAST x, LOAD_CONST None, IS_OP 1, POP_JUMP_IF_TRUE, LOAD_ASSERTION_ERROR, RAISE
+                if instr.opname == 'RAISE_VARARGS' and i >= 2:
+                    assert_guard = self._check_assert_nonnull_pattern(block.instructions[:i+1], block)
+                    if assert_guard:
+                        guards.add(assert_guard)
+                    
+                    # Pattern: assert len(x) > 0 (non-empty assertion)
+                    # LOAD_GLOBAL len, LOAD_FAST x, CALL, LOAD_CONST 0, COMPARE_OP >, POP_JUMP_IF_TRUE, ..., RAISE_VARARGS
+                    assert_len_guard = self._check_assert_len_pattern(block.instructions[:i+1], block)
+                    if assert_len_guard:
+                        guards.add(assert_len_guard)
+                    
+                    # Pattern: assert KEY in dict (membership assertion)
+                    # LOAD_FAST key, LOAD_FAST dict, CONTAINS_OP 0, POP_JUMP_IF_TRUE, ..., RAISE_VARARGS  
+                    assert_contains_guard = self._check_assert_contains_pattern(block.instructions[:i+1], block)
+                    if assert_contains_guard:
+                        guards.add(assert_contains_guard)
+                    
+                    # Pattern: assert x != 0 (non-zero assertion)
+                    assert_nonzero_guard = self._check_assert_nonzero_pattern(block.instructions[:i+1], block)
+                    if assert_nonzero_guard:
+                        guards.add(assert_nonzero_guard)
+                
+                # Pattern: a, b, c = iterable (unpacking establishes exact length)
+                # UNPACK_SEQUENCE n followed by STORE_FAST * n
+                if instr.opname == 'UNPACK_SEQUENCE':
+                    unpack_guard = self._check_unpack_pattern(block.instructions[:i+1], block, instr)
+                    if unpack_guard:
+                        guards.add(unpack_guard)
+                
+                # Pattern: i = min(i, len(arr)-1) or i = max(0, i) (bounds clamping)
+                if instr.opname == 'STORE_FAST' and i >= 3:
+                    clamp_guards = self._check_minmax_clamp_pattern(block.instructions[:i+1], block, instr)
+                    for g in clamp_guards:
+                        guards.add(g)
+                
+                # Pattern: if hasattr(obj, 'attr'): obj.attr
+                # LOAD_GLOBAL hasattr, LOAD_FAST obj, LOAD_CONST 'attr', CALL, POP_JUMP_IF_FALSE
+                if instr.opname == 'CALL' and i >= 3:
+                    hasattr_guard = self._check_hasattr_pattern(block.instructions[:i+1], block)
+                    if hasattr_guard:
+                        guards.add(hasattr_guard)
+                
+                # Pattern: if callable(x): x(...)
+                # LOAD_GLOBAL callable, LOAD_FAST x, CALL, POP_JUMP_IF_FALSE
+                if instr.opname == 'CALL' and i >= 2:
+                    callable_guard = self._check_callable_pattern(block.instructions[:i+1], block)
+                    if callable_guard:
+                        guards.add(callable_guard)
+                
+                # Pattern: if key in d: d[key]
+                # LOAD_FAST key, LOAD_FAST d, CONTAINS_OP 0, POP_JUMP_IF_FALSE
+                if instr.opname == 'CONTAINS_OP' and i >= 2:
+                    contains_guard = self._check_contains_pattern(block.instructions[:i+1], block, instr)
+                    if contains_guard:
+                        guards.add(contains_guard)
+                
+                # Pattern: if not x: raise ValueError (raise-before-access guards rest of function)
+                # LOAD_FAST x, POP_JUMP_IF_TRUE skip_raise, LOAD_GLOBAL ValueError, RAISE_VARARGS
+                # After this, x is guaranteed truthy/non-None
+                if instr.opname == 'RAISE_VARARGS' and i >= 1:
+                    raise_guard = self._check_raise_if_not_pattern(block.instructions[:i+1], block)
+                    if raise_guard:
+                        guards.add(raise_guard)
+                
+                # Pattern: x = a if cond else default (conditional expression)
+                # Result is nonnull if both branches are nonnull
+                if instr.opname == 'STORE_FAST' and i >= 2:
+                    ternary_guards = self._check_ternary_pattern(block.instructions[:i+1], block, instr)
+                    for g in ternary_guards:
+                        guards.add(g)
+                
+                # Pattern: x = s.strip() / s.split() / etc. (string methods returning non-None)
+                if instr.opname == 'STORE_FAST' and i >= 2:
+                    str_method_guard = self._check_string_method_pattern(block.instructions[:i+1], block, instr)
+                    if str_method_guard:
+                        guards.add(str_method_guard)
+                
+                # Pattern: x = getattr(obj, 'attr', default) where default is non-None
+                # LOAD_GLOBAL getattr, LOAD_FAST obj, LOAD_CONST 'attr', LOAD_CONST default, CALL, STORE_FAST x
+                if instr.opname == 'STORE_FAST' and i >= 4:
+                    getattr_guards = self._check_getattr_pattern(block.instructions[:i+1], block, instr)
+                    for g in getattr_guards:
+                        guards.add(g)
+                
+                # Pattern: x = d.setdefault(key, default) where default is non-None
+                # LOAD_FAST d, LOAD_ATTR setdefault, LOAD_* key, LOAD_CONST default, CALL, STORE_FAST x
+                if instr.opname == 'STORE_FAST' and i >= 4:
+                    setdefault_guards = self._check_setdefault_pattern(block.instructions[:i+1], block, instr)
+                    for g in setdefault_guards:
+                        guards.add(g)
+                
+                # Pattern: x = next(iter, default) where default is non-None
+                # LOAD_GLOBAL next, LOAD_FAST iter, LOAD_CONST default, CALL, STORE_FAST x
+                if instr.opname == 'STORE_FAST' and i >= 3:
+                    next_guards = self._check_next_default_pattern(block.instructions[:i+1], block, instr)
+                    for g in next_guards:
+                        guards.add(g)
+                
+                # Pattern: if (x := func()) is not None (walrus operator with None check)
+                # CALL, COPY, STORE_FAST x, LOAD_CONST None, IS_OP 1, POP_JUMP_IF_FALSE
+                if instr.opname == 'STORE_FAST' and i >= 1:
+                    walrus_guard = self._check_walrus_pattern(block.instructions[:i+1], block, instr)
+                    if walrus_guard:
+                        guards.add(walrus_guard)
+                
+                # Pattern: for i in range(len(container)): container[i]
+                # The loop iteration variable is bounded by len(container)
+                if instr.opname == 'GET_ITER':
+                    range_bounds = self._check_range_len_pattern(block.instructions[:i+1], block)
+                    for g in range_bounds:
+                        guards.add(g)
+                    
+                    # Also check for enumerate(container) pattern
+                    enumerate_bounds = self._check_enumerate_pattern(block.instructions[:i+1], block)
+                    for g in enumerate_bounds:
+                        guards.add(g)
+                    
+                    # Check for simple iteration: for item in container
+                    # This establishes that container is nonempty during iteration
+                    loop_nonempty = self._check_loop_body_nonempty(block.instructions[:i+1], block)
+                    for g in loop_nonempty:
+                        guards.add(g)
+            
+            # Check if this block is a jump target of a len() != n pattern
+            # This establishes exact_length when we know the != was False
+            len_ne_guard = self._check_len_ne_fallthrough_pattern(block)
+            if len_ne_guard:
+                guards.add(len_ne_guard)
+            
+            # Check if this block is after an exception handler
+            # (try/except barrier: code after except block has caught the exception)
+            exc_barrier_guards = self._check_exception_barrier_pattern(block)
+            for g in exc_barrier_guards:
+                guards.add(g)
             
             self.block_establishes[block.id] = guards
     
@@ -744,30 +971,1630 @@ class GuardAnalyzer:
         instrs: List[dis.Instruction],
         block: BasicBlock
     ) -> Optional[GuardFact]:
-        """Check for division guard pattern (x != 0)."""
+        """
+        Check for division guard patterns that establish x != 0.
+        
+        Patterns detected:
+        1. x != 0 or 0 != x - direct non-zero check
+        2. x > 0 or x >= 1 - positive implies non-zero
+        3. x < 0 or x <= -1 - negative implies non-zero
+        4. 0 < x or 0 > x - reversed comparisons
+        
+        Mathematical basis:
+        - x > 0 => x >= 1 (for integers) => x != 0
+        - x < 0 => x <= -1 (for integers) => x != 0
+        - These are Z3-verifiable implications
+        """
         for i, instr in enumerate(instrs):
-            if instr.opname == 'COMPARE_OP' and instr.argval == '!=':
-                if i >= 2:
-                    left = instrs[i - 2]
-                    right = instrs[i - 1]
-                    
-                    # Pattern: var != 0 or 0 != var
-                    if left.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME') and right.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and right.argval == 0:
-                        return GuardFact(
-                            guard_type="div",
-                            variable=left.argval,
-                            established_at=block.id,
-                            condition=f"{left.argval} != 0"
-                        )
-                    if right.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME') and left.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and left.argval == 0:
-                        return GuardFact(
-                            guard_type="div",
-                            variable=right.argval,
-                            established_at=block.id,
-                            condition=f"0 != {right.argval}"
-                        )
+            if instr.opname == 'COMPARE_OP' and i >= 2:
+                left = instrs[i - 2]
+                right = instrs[i - 1]
+                compare_op = instr.argval
+                
+                # Get variable and constant from comparison operands
+                var_name = None
+                const_val = None
+                var_is_left = False
+                
+                if left.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                    if right.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and isinstance(right.argval, (int, float)):
+                        var_name = left.argval
+                        const_val = right.argval
+                        var_is_left = True
+                elif right.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                    if left.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and isinstance(left.argval, (int, float)):
+                        var_name = right.argval
+                        const_val = left.argval
+                        var_is_left = False
+                
+                if var_name is None or const_val is None:
+                    continue
+                
+                # Check if comparison implies non-zero
+                # Normalize to var <op> const form
+                effective_op = compare_op
+                if not var_is_left:
+                    # Flip comparison: const <op> var => var <flipped_op> const
+                    flip_map = {'<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!='}
+                    effective_op = flip_map.get(compare_op, compare_op)
+                
+                implies_nonzero = False
+                condition = None
+                
+                # var != 0 => div safe
+                if effective_op == '!=' and const_val == 0:
+                    implies_nonzero = True
+                    condition = f"{var_name} != 0"
+                
+                # var > 0 => var >= 1 => var != 0 (for positive)
+                elif effective_op == '>' and const_val >= 0:
+                    implies_nonzero = True
+                    condition = f"{var_name} > {const_val} => nonzero"
+                
+                # var >= 1 => var != 0
+                elif effective_op == '>=' and const_val >= 1:
+                    implies_nonzero = True
+                    condition = f"{var_name} >= {const_val} => nonzero"
+                
+                # var < 0 => var <= -1 => var != 0 (for negative)
+                elif effective_op == '<' and const_val <= 0:
+                    implies_nonzero = True
+                    condition = f"{var_name} < {const_val} => nonzero"
+                
+                # var <= -1 => var != 0
+                elif effective_op == '<=' and const_val <= -1:
+                    implies_nonzero = True
+                    condition = f"{var_name} <= {const_val} => nonzero"
+                
+                if implies_nonzero:
+                    return GuardFact(
+                        guard_type="div",
+                        variable=var_name,
+                        established_at=block.id,
+                        condition=condition
+                    )
+        
         return None
     
+    def _check_bounds_guard_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for bounds guard pattern: i < len(container) or len(container) > i.
+        
+        Establishes guard for container[i] access.
+        
+        Patterns detected:
+        1. LOAD_FAST i, CALL len(container), COMPARE_OP <
+        2. CALL len(container), LOAD_FAST i, COMPARE_OP >
+        """
+        # Find the comparison instruction
+        compare_idx = None
+        for i, instr in enumerate(instrs):
+            if instr.opname == 'COMPARE_OP' and instr.argval in ('<', '<=', '>', '>='):
+                compare_idx = i
+                break
+        
+        if compare_idx is None or compare_idx < 4:
+            return None
+        
+        # Look for len() call before comparison
+        len_call_idx = None
+        len_container = None
+        for i in range(compare_idx - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION'):
+                # Check if this was a call to len()
+                if i >= 2:
+                    # Look for LOAD_GLOBAL/LOAD_BUILTIN 'len' before LOAD_* container
+                    for j in range(max(0, i - 3), i):
+                        if instrs[j].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                            if instrs[j].argval == 'len':
+                                # Found len() - next instruction should be container
+                                if j + 1 < i:
+                                    container_instr = instrs[j + 1]
+                                    if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                                        len_container = container_instr.argval
+                                        len_call_idx = i
+                                break
+                if len_container:
+                    break
+        
+        if not len_container or len_call_idx is None:
+            return None
+        
+        # Find index variable: should be loaded near comparison
+        index_var = None
+        compare_op = instrs[compare_idx].argval
+        
+        # For i < len(c): index loaded BEFORE len() call setup
+        # For len(c) > i: index loaded after len() but before comparison
+        # We need to search from compare back to before the len() setup started
+        # The len() call sequence is: LOAD_GLOBAL len, LOAD_FAST container, CALL
+        # So index should be found before LOAD_GLOBAL len (at len_call_idx - 2 or earlier)
+        len_load_idx = None
+        for j in range(len_call_idx - 1, -1, -1):
+            if instrs[j].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME') and instrs[j].argval == 'len':
+                len_load_idx = j
+                break
+        
+        search_start = compare_idx - 1
+        search_end = 0 if len_load_idx is None else len_load_idx - 1
+        
+        for i in range(search_start, search_end - 1, -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                if instr.argval != len_container and instr.argval != 'len':
+                    index_var = instr.argval
+                    break
+        
+        if not index_var:
+            return None
+        
+        # Determine if this is a valid bounds check
+        # i < len(c) or i <= len(c) - 1 → safe for c[i]
+        # len(c) > i or len(c) >= i + 1 → safe for c[i]
+        if compare_op in ('<', '<=', '>', '>='):
+            return GuardFact(
+                guard_type="bounds",
+                variable=f"{len_container}[{index_var}]",
+                established_at=block.id,
+                condition=f"{index_var} {compare_op} len({len_container})"
+            )
+        
+        return None
+    
+    def _check_range_len_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> List[GuardFact]:
+        """
+        Check for range(len(container)) iteration pattern.
+        
+        In: for i in range(len(container)): ...
+        The loop variable i is always in bounds for container.
+        
+        This pattern is common and establishes bounds guards for the
+        iteration variable on every container access.
+        """
+        guards = []
+        
+        # Look for pattern: LOAD_GLOBAL range, LOAD_GLOBAL len, LOAD_* container, CALL, CALL, GET_ITER
+        for i, instr in enumerate(instrs):
+            if instr.opname == 'GET_ITER' and i >= 4:
+                # Look back for range(len(...)) pattern
+                range_idx = None
+                len_idx = None
+                container = None
+                
+                for j in range(max(0, i - 10), i):
+                    if instrs[j].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                        if instrs[j].argval == 'range':
+                            range_idx = j
+                        elif instrs[j].argval == 'len':
+                            len_idx = j
+                    elif instrs[j].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                        if len_idx is not None and range_idx is not None:
+                            if instrs[j].argval not in ('range', 'len'):
+                                container = instrs[j].argval
+                                break
+                
+                if range_idx is not None and len_idx is not None and container:
+                    # This block establishes a bounds guard for any iteration variable
+                    # accessing container. The actual variable name will be resolved
+                    # by the FOR_ITER -> STORE_FAST pattern.
+                    guards.append(GuardFact(
+                        guard_type="range_len_loop",
+                        variable=container,
+                        established_at=block.id,
+                        condition=f"range(len({container}))"
+                    ))
+        
+        return guards
+
+    def _check_enumerate_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> List[GuardFact]:
+        """
+        Check for enumerate(container) iteration pattern.
+        
+        In: for i, item in enumerate(container): ...
+        The loop variable i is always in bounds for container.
+        
+        Pattern: LOAD_GLOBAL enumerate, LOAD_FAST container, CALL, GET_ITER
+        """
+        guards = []
+        
+        for i, instr in enumerate(instrs):
+            if instr.opname == 'GET_ITER' and i >= 2:
+                # Look back for enumerate(...) pattern
+                enumerate_idx = None
+                container = None
+                
+                for j in range(max(0, i - 6), i):
+                    if instrs[j].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                        if instrs[j].argval == 'enumerate':
+                            enumerate_idx = j
+                    elif instrs[j].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                        if enumerate_idx is not None:
+                            if instrs[j].argval != 'enumerate':
+                                container = instrs[j].argval
+                                break
+                
+                if enumerate_idx is not None and container:
+                    # enumerate(x) guarantees i is valid index for x
+                    guards.append(GuardFact(
+                        guard_type="enumerate_loop",
+                        variable=container,
+                        established_at=block.id,
+                        condition=f"enumerate({container})"
+                    ))
+        
+        return guards
+
+    def _check_or_default_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for x = y or default pattern.
+        
+        Pattern: LOAD_FAST y, COPY, TO_BOOL, POP_JUMP_IF_TRUE, NOT_TAKEN, POP_TOP, LOAD_CONST default, STORE_FAST x
+        
+        If default is truthy/non-None, x is nonnull.
+        If default is non-zero, x is nonzero (for div safety).
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        # Look for pattern ending in STORE_FAST
+        # We need: LOAD_CONST <default> before this, and POP_JUMP_IF_TRUE before that
+        has_pop_jump = False
+        default_val = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 10), -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT'):
+                default_val = instr.argval
+            elif instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_FORWARD_IF_TRUE'):
+                has_pop_jump = True
+                break
+        
+        if not has_pop_jump:
+            return guards
+        
+        # Check if default establishes guards
+        if default_val is not None:
+            # If default is truthy (non-None, non-empty, non-zero), x is guarded
+            if default_val is not None and default_val != 0 and default_val != '' and default_val != []:
+                guards.append(GuardFact(
+                    guard_type="nonnull",
+                    variable=var_name,
+                    established_at=block.id,
+                    condition=f"{var_name} = ... or {repr(default_val)} => nonnull"
+                ))
+                
+                # If default is numeric and non-zero, x is div-safe
+                if isinstance(default_val, (int, float)) and default_val != 0:
+                    guards.append(GuardFact(
+                        guard_type="div",
+                        variable=var_name,
+                        established_at=block.id,
+                        condition=f"{var_name} = ... or {default_val} => nonzero"
+                    ))
+        
+        return guards
+
+    def _check_loop_body_nonempty(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> List[GuardFact]:
+        """
+        Check for simple iteration pattern: for item in container.
+        
+        During iteration, the container is non-empty (we're inside the loop body).
+        This allows safe access to container[0] inside the loop.
+        
+        Pattern: LOAD_FAST container, GET_ITER -> FOR_ITER body
+        """
+        guards = []
+        
+        # Look for GET_ITER preceded by LOAD_FAST (simple iteration)
+        for i, instr in enumerate(instrs):
+            if instr.opname == 'GET_ITER' and i >= 1:
+                prev = instrs[i - 1]
+                if prev.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                    container = prev.argval
+                    if container:
+                        # Inside the loop body, container is nonempty
+                        guards.append(GuardFact(
+                            guard_type="loop_body_nonempty",
+                            variable=container,
+                            established_at=block.id,
+                            condition=f"for ... in {container} => {container} nonempty"
+                        ))
+        
+        return guards
+
+    def _check_dict_get_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for dict.get(key, default) pattern.
+        
+        Pattern: LOAD_FAST d, LOAD_ATTR get, LOAD_* key, LOAD_CONST default, CALL, STORE_FAST x
+        
+        If default is non-None, x is nonnull.
+        If default is non-zero numeric, x is div-safe.
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        # Look for LOAD_ATTR 'get' and a default value before the CALL
+        has_get_attr = False
+        default_val = None
+        call_idx = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 12), -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION', 'CALL_METHOD'):
+                call_idx = i
+            elif instr.opname == 'LOAD_ATTR' and instr.argval == 'get':
+                has_get_attr = True
+            elif instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and call_idx is not None:
+                # This might be the default argument
+                if default_val is None:
+                    default_val = instr.argval
+        
+        if not has_get_attr or call_idx is None:
+            return guards
+        
+        # Check if default establishes guards
+        if default_val is not None:
+            # If default is non-None, x is nonnull
+            guards.append(GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = d.get(k, {repr(default_val)}) => nonnull"
+            ))
+            
+            # If default is numeric and non-zero, x is div-safe
+            if isinstance(default_val, (int, float)) and default_val != 0:
+                guards.append(GuardFact(
+                    guard_type="div",
+                    variable=var_name,
+                    established_at=block.id,
+                    condition=f"{var_name} = d.get(k, {default_val}) => nonzero"
+                ))
+        
+        return guards
+
+    def _check_assert_nonnull_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for assert x is not None pattern.
+        
+        Pattern: LOAD_FAST x, LOAD_CONST None, IS_OP 1, POP_JUMP_IF_TRUE, ..., RAISE_VARARGS
+        
+        After the assertion passes (no raise), x is guaranteed non-None.
+        We detect this by finding the assertion pattern and establishing nonnull
+        for the variable on the non-raise path.
+        """
+        # Look for IS_OP followed by conditional jump (assertion pattern)
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname == 'IS_OP' and instr.arg == 1:  # 'is not'
+                # Check if previous is LOAD_CONST None
+                if i >= 2:
+                    load_instr = instrs[i - 2]
+                    const_instr = instrs[i - 1]
+                    
+                    if (load_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME') and
+                        const_instr.opname == 'LOAD_CONST' and const_instr.argval is None):
+                        var_name = load_instr.argval
+                        if var_name:
+                            return GuardFact(
+                                guard_type="nonnull",
+                                variable=var_name,
+                                established_at=block.id,
+                                condition=f"assert {var_name} is not None"
+                            )
+        return None
+    
+    def _check_assert_len_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for assert len(x) > 0 pattern.
+        
+        Pattern: LOAD_GLOBAL len, LOAD_FAST x, CALL, LOAD_CONST 0, COMPARE_OP >, POP_JUMP_IF_TRUE, ..., RAISE_VARARGS
+        
+        After assertion passes, x is guaranteed non-empty.
+        """
+        # Look for COMPARE_OP followed by POP_JUMP in assertion context
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname == 'COMPARE_OP' and instr.argval in ('>', '>=', '!='):
+                # Look back for len() call pattern
+                if i >= 4:
+                    # Check for: LOAD_GLOBAL/BUILTIN len, LOAD_FAST x, CALL, LOAD_CONST 0, COMPARE_OP
+                    const_idx = i - 1
+                    call_idx = i - 2
+                    container_idx = i - 3
+                    len_idx = i - 4
+                    
+                    if (const_idx >= 0 and call_idx >= 0 and container_idx >= 0 and len_idx >= 0 and
+                        instrs[const_idx].opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and
+                        instrs[const_idx].argval == 0 and
+                        instrs[call_idx].opname in ('CALL', 'CALL_FUNCTION') and
+                        instrs[container_idx].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME') and
+                        instrs[len_idx].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME') and
+                        instrs[len_idx].argval == 'len'):
+                        
+                        container = instrs[container_idx].argval
+                        if container:
+                            return GuardFact(
+                                guard_type="nonempty",
+                                variable=container,
+                                established_at=block.id,
+                                condition=f"assert len({container}) > 0"
+                            )
+        return None
+    
+    def _check_assert_contains_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for assert key in dict pattern.
+        
+        Pattern: LOAD_FAST key, LOAD_FAST dict, CONTAINS_OP 0, POP_JUMP_IF_TRUE, ..., RAISE_VARARGS
+        
+        After assertion passes, key is guaranteed in dict.
+        """
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname == 'CONTAINS_OP' and instr.arg == 0:  # 'in'
+                if i >= 2:
+                    key_instr = instrs[i - 2]
+                    dict_instr = instrs[i - 1]
+                    
+                    if (key_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_CONST') and
+                        dict_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME')):
+                        
+                        key_var = key_instr.argval
+                        dict_var = dict_instr.argval
+                        if key_var and dict_var:
+                            # If key is a constant, use its repr
+                            if key_instr.opname == 'LOAD_CONST':
+                                key_str = repr(key_var)
+                            else:
+                                key_str = str(key_var)
+                            
+                            return GuardFact(
+                                guard_type="key_in",
+                                variable=f"{dict_var}[{key_str}]",
+                                established_at=block.id,
+                                condition=f"assert {key_str} in {dict_var}"
+                            )
+        return None
+    
+    def _check_assert_nonzero_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for assert x != 0 pattern.
+        
+        Pattern: LOAD_FAST x, LOAD_CONST 0, COMPARE_OP !=, POP_JUMP_IF_TRUE, ..., RAISE_VARARGS
+        
+        After assertion passes, x is guaranteed non-zero (safe for division).
+        """
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname == 'COMPARE_OP' and instr.argval in ('!=', '>', '>=', '<', '<='):
+                if i >= 2:
+                    var_instr = instrs[i - 2]
+                    const_instr = instrs[i - 1]
+                    
+                    if (var_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME') and
+                        const_instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and
+                        const_instr.argval == 0):
+                        
+                        var_name = var_instr.argval
+                        compare_op = instr.argval
+                        
+                        # Check if comparison implies non-zero
+                        if compare_op in ('!=', '>', '>=', '<', '<='):
+                            # !=, >, <, >=, <= all imply non-zero when compared to 0
+                            if var_name:
+                                return GuardFact(
+                                    guard_type="div",
+                                    variable=var_name,
+                                    established_at=block.id,
+                                    condition=f"assert {var_name} {compare_op} 0"
+                                )
+        return None
+    
+    def _check_raise_if_not_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for 'if not x: raise' pattern.
+        
+        Pattern: LOAD_FAST x, POP_JUMP_IF_TRUE skip_raise, ..., RAISE_VARARGS
+        
+        After this pattern (on non-raise path), x is guaranteed truthy/non-None.
+        This is detected by looking for a jump-if-true that skips over a raise.
+        """
+        # The RAISE_VARARGS is at the end, look back for the conditional jump
+        for i in range(len(instrs) - 2, -1, -1):
+            instr = instrs[i]
+            if instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_FORWARD_IF_TRUE'):
+                # Look back one more for the variable load
+                if i >= 1:
+                    load_instr = instrs[i - 1]
+                    if load_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                        var_name = load_instr.argval
+                        if var_name:
+                            # This establishes nonnull on the jump-taken path (after the raise)
+                            return GuardFact(
+                                guard_type="nonnull",
+                                variable=var_name,
+                                established_at=block.id,
+                                condition=f"if not {var_name}: raise (guards rest of function)"
+                            )
+        return None
+
+    def _check_unpack_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        unpack_instr: dis.Instruction
+    ) -> Optional[GuardFact]:
+        """
+        Check for unpacking pattern: a, b, c = iterable.
+        
+        Pattern: LOAD_FAST iterable, UNPACK_SEQUENCE n
+        
+        This establishes that len(iterable) == n, making indices 0..n-1 safe.
+        """
+        n = unpack_instr.arg  # Number of elements to unpack
+        if n is None or n < 1:
+            return None
+        
+        # Find the variable being unpacked (should be loaded just before)
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 5), -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                container = instr.argval
+                if container:
+                    return GuardFact(
+                        guard_type="exact_length",
+                        variable=container,
+                        extra=str(n),
+                        established_at=block.id,
+                        condition=f"unpacking {container} into {n} values => len({container}) == {n}"
+                    )
+                break
+        
+        return None
+
+    def _check_minmax_clamp_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for min/max bounds clamping patterns.
+        
+        Patterns:
+        1. i = min(i, len(arr)-1) - clamps i to valid upper bound
+        2. i = max(0, i) - clamps i to valid lower bound
+        3. i = min(max(0, i), len(arr)-1) - full clamping
+        
+        After clamping, arr[i] is bounds-safe.
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        # Look for min() or max() call with len() or constant
+        has_min = False
+        has_max = False
+        has_len = False
+        container = None
+        lower_bound = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 15), -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                if instr.argval == 'min':
+                    has_min = True
+                elif instr.argval == 'max':
+                    has_max = True
+                elif instr.argval == 'len':
+                    has_len = True
+            elif instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                if has_len and container is None and instr.argval != var_name:
+                    container = instr.argval
+            elif instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT'):
+                if isinstance(instr.argval, int) and instr.argval == 0:
+                    lower_bound = 0
+        
+        # min(i, len(arr)-1) or min(i, len(arr)) establishes upper bound
+        if has_min and has_len and container:
+            guards.append(GuardFact(
+                guard_type="bounds",
+                variable=f"{container}[{var_name}]",
+                established_at=block.id,
+                condition=f"{var_name} = min({var_name}, len({container})-1) => bounds safe"
+            ))
+        
+        # max(0, i) establishes lower bound (i >= 0)
+        if has_max and lower_bound == 0:
+            guards.append(GuardFact(
+                guard_type="nonnegative",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = max(0, {var_name}) => {var_name} >= 0"
+            ))
+        
+        return guards
+
+    def _check_hasattr_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for hasattr(obj, 'attr') pattern.
+        
+        Pattern: LOAD_GLOBAL hasattr, LOAD_FAST obj, LOAD_CONST 'attr', CALL
+        
+        After the hasattr check passes, obj.attr is safe to access.
+        This establishes a 'hasattr' guard that the dataflow analysis
+        can use to suppress AttributeError warnings.
+        """
+        # Look for hasattr call
+        has_hasattr = False
+        obj_var = None
+        attr_name = None
+        
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                if instr.argval == 'hasattr':
+                    has_hasattr = True
+            elif instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                if has_hasattr and obj_var is None:
+                    obj_var = instr.argval
+            elif instr.opname == 'LOAD_CONST':
+                if has_hasattr and obj_var and isinstance(instr.argval, str):
+                    attr_name = instr.argval
+                    break
+        
+        if has_hasattr and obj_var and attr_name:
+            return GuardFact(
+                guard_type="hasattr",
+                variable=obj_var,
+                extra=attr_name,
+                established_at=block.id,
+                condition=f"hasattr({obj_var}, '{attr_name}')"
+            )
+        
+        return None
+
+    def _check_callable_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for callable(x) pattern.
+        
+        Pattern: LOAD_GLOBAL callable, LOAD_FAST x, CALL
+        
+        After callable check passes, x is guaranteed to be non-None
+        (None is not callable). This establishes nonnull guard.
+        """
+        has_callable = False
+        var_name = None
+        
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                if instr.argval == 'callable':
+                    has_callable = True
+            elif instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                if has_callable and var_name is None:
+                    var_name = instr.argval
+                    break
+        
+        if has_callable and var_name:
+            return GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"callable({var_name}) => {var_name} is not None"
+            )
+        
+        return None
+
+    def _check_contains_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        contains_instr: dis.Instruction
+    ) -> Optional[GuardFact]:
+        """
+        Check for 'key in container' pattern.
+        
+        Pattern: LOAD_FAST key, LOAD_FAST container, CONTAINS_OP 0
+        
+        After 'key in d' check passes, d[key] is safe (no KeyError).
+        This establishes a 'key_in' guard for safe dict/set access.
+        
+        CONTAINS_OP 0 = 'in', CONTAINS_OP 1 = 'not in'
+        """
+        # Only handle 'in' (not 'not in')
+        if contains_instr.arg != 0:
+            return None
+        
+        # Look for the key and container
+        key_var = None
+        container_var = None
+        
+        for i in range(len(instrs) - 1, max(-1, len(instrs) - 5), -1):
+            instr = instrs[i]
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                if container_var is None:
+                    container_var = instr.argval
+                elif key_var is None:
+                    key_var = instr.argval
+                    break
+        
+        if key_var and container_var:
+            return GuardFact(
+                guard_type="key_in",
+                variable=f"{container_var}[{key_var}]",
+                extra=container_var,
+                established_at=block.id,
+                condition=f"{key_var} in {container_var}"
+            )
+        
+        return None
+
+    def _check_ternary_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for conditional expression: x = a if cond else default.
+        
+        Pattern involves POP_JUMP_IF_FALSE/TRUE and multiple value loads.
+        
+        If the default value is non-None, x is guaranteed nonnull.
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        # Look for pattern with conditional jump and constant default
+        has_cond_jump = False
+        default_val = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 10), -1):
+            instr = instrs[i]
+            if instr.opname in ('POP_JUMP_IF_FALSE', 'POP_JUMP_IF_TRUE',
+                               'POP_JUMP_FORWARD_IF_FALSE', 'POP_JUMP_FORWARD_IF_TRUE'):
+                has_cond_jump = True
+            elif instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and has_cond_jump:
+                # This could be the default value in else branch
+                if default_val is None:
+                    default_val = instr.argval
+        
+        if has_cond_jump and default_val is not None:
+            # If default is non-None, result is nonnull
+            guards.append(GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = ... if ... else {repr(default_val)} => nonnull"
+            ))
+            
+            # If default is non-zero numeric, result is div-safe
+            if isinstance(default_val, (int, float)) and default_val != 0:
+                guards.append(GuardFact(
+                    guard_type="div",
+                    variable=var_name,
+                    established_at=block.id,
+                    condition=f"{var_name} = ... if ... else {default_val} => nonzero"
+                ))
+        
+        return guards
+
+    def _check_string_method_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> Optional[GuardFact]:
+        """
+        Check for string method calls that always return non-None.
+        
+        Methods like str.strip(), str.split(), str.lower(), str.upper(),
+        str.replace(), etc. always return a string (never None).
+        
+        Pattern: LOAD_FAST s, LOAD_ATTR strip, CALL, STORE_FAST x
+        """
+        var_name = store_instr.argval
+        if not var_name:
+            return None
+        
+        # String methods that never return None
+        nonnull_str_methods = {
+            'strip', 'lstrip', 'rstrip', 'split', 'rsplit', 'splitlines',
+            'lower', 'upper', 'title', 'capitalize', 'swapcase', 'casefold',
+            'replace', 'translate', 'encode', 'format', 'format_map',
+            'join', 'center', 'ljust', 'rjust', 'zfill', 'expandtabs',
+            'partition', 'rpartition', 'maketrans'
+        }
+        
+        # Also list methods that return non-None
+        nonnull_list_methods = {'copy', 'sorted'}
+        
+        # Dict methods
+        nonnull_dict_methods = {'copy', 'keys', 'values', 'items'}
+        
+        all_nonnull_methods = nonnull_str_methods | nonnull_list_methods | nonnull_dict_methods
+        
+        # Look for LOAD_ATTR with one of these methods followed by CALL
+        has_call = False
+        method_name = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 8), -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION', 'CALL_METHOD'):
+                has_call = True
+            elif instr.opname == 'LOAD_ATTR' and has_call:
+                if instr.argval in all_nonnull_methods:
+                    method_name = instr.argval
+                    break
+        
+        if has_call and method_name:
+            return GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = ....{method_name}() => nonnull"
+            )
+        
+        return None
+
+    def _check_getattr_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for getattr(obj, 'attr', default) pattern.
+        
+        Pattern: LOAD_GLOBAL getattr, LOAD_FAST obj, LOAD_CONST 'attr', LOAD_CONST default, CALL
+        
+        If default is non-None, x is nonnull.
+        If default is non-zero numeric, x is div-safe.
+        
+        Z3 model:
+        - getattr(obj, attr, default) returns obj.attr if exists, else default
+        - If default is non-None, result is guaranteed non-None
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        has_getattr = False
+        default_val = None
+        call_idx = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 12), -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION'):
+                call_idx = i
+            elif instr.opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                if instr.argval == 'getattr':
+                    has_getattr = True
+            elif instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and call_idx is not None:
+                # This might be the default argument (3rd arg)
+                if default_val is None:
+                    default_val = instr.argval
+        
+        if not has_getattr or call_idx is None:
+            return guards
+        
+        # Check if default establishes guards
+        if default_val is not None:
+            guards.append(GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = getattr(obj, attr, {repr(default_val)}) => nonnull"
+            ))
+            
+            if isinstance(default_val, (int, float)) and default_val != 0:
+                guards.append(GuardFact(
+                    guard_type="div",
+                    variable=var_name,
+                    established_at=block.id,
+                    condition=f"{var_name} = getattr(obj, attr, {default_val}) => nonzero"
+                ))
+        
+        return guards
+
+    def _check_setdefault_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for dict.setdefault(key, default) pattern.
+        
+        Pattern: LOAD_FAST d, LOAD_ATTR setdefault, LOAD_* key, LOAD_CONST default, CALL
+        
+        d.setdefault(key, default) returns:
+        - d[key] if key exists
+        - default otherwise (and sets d[key] = default)
+        
+        If default is non-None, result is guaranteed non-None.
+        
+        Z3 model:
+        - result = d[key] if key in d else default
+        - If default is non-None: result is non-None
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        has_setdefault = False
+        default_val = None
+        call_idx = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 12), -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION', 'CALL_METHOD'):
+                call_idx = i
+            elif instr.opname == 'LOAD_ATTR' and instr.argval == 'setdefault':
+                has_setdefault = True
+            elif instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and call_idx is not None:
+                if default_val is None:
+                    default_val = instr.argval
+        
+        if not has_setdefault or call_idx is None:
+            return guards
+        
+        if default_val is not None:
+            guards.append(GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = d.setdefault(k, {repr(default_val)}) => nonnull"
+            ))
+            
+            if isinstance(default_val, (int, float)) and default_val != 0:
+                guards.append(GuardFact(
+                    guard_type="div",
+                    variable=var_name,
+                    established_at=block.id,
+                    condition=f"{var_name} = d.setdefault(k, {default_val}) => nonzero"
+                ))
+        
+        return guards
+
+    def _check_next_default_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> List[GuardFact]:
+        """
+        Check for next(iterator, default) pattern.
+        
+        Pattern: LOAD_GLOBAL next, LOAD_FAST iter, LOAD_CONST default, CALL
+        
+        next(iter, default) returns:
+        - Next item from iterator if available
+        - default if iterator is exhausted
+        
+        If default is non-None, result is guaranteed non-None.
+        
+        Z3 model:
+        - result = next_item OR default (depending on iterator state)
+        - If default is non-None: result is non-None
+        """
+        guards = []
+        var_name = store_instr.argval
+        if not var_name:
+            return guards
+        
+        has_next = False
+        default_val = None
+        call_idx = None
+        
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 10), -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION'):
+                call_idx = i
+            elif instr.opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                if instr.argval == 'next':
+                    has_next = True
+            elif instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and call_idx is not None:
+                if default_val is None:
+                    default_val = instr.argval
+        
+        if not has_next or call_idx is None:
+            return guards
+        
+        if default_val is not None:
+            guards.append(GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} = next(iter, {repr(default_val)}) => nonnull"
+            ))
+            
+            if isinstance(default_val, (int, float)) and default_val != 0:
+                guards.append(GuardFact(
+                    guard_type="div",
+                    variable=var_name,
+                    established_at=block.id,
+                    condition=f"{var_name} = next(iter, {default_val}) => nonzero"
+                ))
+        
+        return guards
+
+    def _check_walrus_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock,
+        store_instr: dis.Instruction
+    ) -> Optional[GuardFact]:
+        """
+        Check for walrus operator with subsequent None check.
+        
+        Pattern: if (x := func()) is not None:
+        Bytecode: CALL, COPY, STORE_FAST x, LOAD_CONST None, IS_OP 1, POP_JUMP_IF_FALSE
+        
+        On the true branch, x is guaranteed non-None.
+        
+        Z3 model:
+        - Condition: x is not None
+        - True branch: nonnull(x) = True
+        """
+        var_name = store_instr.argval
+        if not var_name:
+            return None
+        
+        # Look for COPY before STORE_FAST (walrus pattern duplicates value)
+        has_copy = False
+        for i in range(len(instrs) - 2, max(-1, len(instrs) - 5), -1):
+            if instrs[i].opname == 'COPY':
+                has_copy = True
+                break
+        
+        if has_copy:
+            # Walrus operator detected - check if there's a None check after
+            # The guard will be established by the POP_JUMP_IF_NOT_NONE handler
+            # For now, we establish a tentative nonnull that will be refined
+            return GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"(x := ...) walrus pattern => may be nonnull after check"
+            )
+        
+        return None
+
+    def _check_exception_barrier_pattern(
+        self,
+        block: BasicBlock
+    ) -> List[GuardFact]:
+        """
+        Check for exception barrier pattern (try/except).
+        
+        Code after an exception handler that catches TypeError/AttributeError
+        establishes that operations which would raise those exceptions are safe.
+        
+        Z3/Barrier model:
+        - Exception barrier: if we reach code after except block, the exception was caught
+        - For TypeError: type errors in the try block are handled
+        - For AttributeError: attribute access errors are handled
+        
+        This is conservative - we only establish guards for blocks that are
+        exception handler entry points or directly follow exception handlers.
+        """
+        guards = []
+        
+        # Check if this block is an exception handler entry
+        for region in self.cfg.exception_regions:
+            if block.start_offset == region.handler_offset:
+                # This is an exception handler - the exception is being caught
+                # Code after this point is protected from that exception type
+                guards.append(GuardFact(
+                    guard_type="exception_caught",
+                    variable="_exception",
+                    extra="handler",
+                    established_at=block.id,
+                    condition=f"exception handler at offset {region.handler_offset}"
+                ))
+        
+        return guards
+
+    def _check_nonempty_guard_pattern(
+        self,
+        instrs: List[dis.Instruction],
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for len(x) > 0 or len(x) >= 1 pattern (non-empty check).
+        
+        This pattern establishes that x[0] is a safe access (container has >= 1 element).
+        
+        Patterns detected:
+        1. len(x) > 0   - container has at least 1 element
+        2. len(x) >= 1  - container has at least 1 element  
+        3. len(x) != 0  - container is not empty
+        4. 0 < len(x)   - same as len(x) > 0
+        5. 1 <= len(x)  - same as len(x) >= 1
+        
+        The guard stores Z3-verifiable constraint: len(container) >= 1.
+        This allows proving that x[0] is safe via Z3 implication checking.
+        """
+        # Find the comparison instruction
+        compare_idx = None
+        compare_op = None
+        for i, instr in enumerate(instrs):
+            if instr.opname == 'COMPARE_OP':
+                compare_idx = i
+                compare_op = instr.argval
+                break
+        
+        if compare_idx is None or compare_idx < 3:
+            return None
+        
+        # Look for len() call in the pattern
+        len_container = None
+        len_call_idx = None
+        
+        for i in range(compare_idx - 1, -1, -1):
+            instr = instrs[i]
+            if instr.opname in ('CALL', 'CALL_FUNCTION'):
+                # Check if this was a call to len()
+                for j in range(max(0, i - 3), i):
+                    if instrs[j].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                        if instrs[j].argval == 'len':
+                            # Found len() - next instruction should be container
+                            if j + 1 < i:
+                                container_instr = instrs[j + 1]
+                                if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                                    len_container = container_instr.argval
+                                    len_call_idx = i
+                            break
+                if len_container:
+                    break
+        
+        if not len_container or len_call_idx is None:
+            return None
+        
+        # Look for constant 0 or 1 in the comparison
+        const_value = None
+        const_is_left = False  # True if constant is on left side of comparison
+        
+        # Check for constant after len() call (len(x) > 0 pattern)
+        for i in range(len_call_idx + 1, compare_idx):
+            instr = instrs[i]
+            if instr.opname == 'LOAD_CONST' and isinstance(instr.argval, int):
+                const_value = instr.argval
+                const_is_left = False
+                break
+            # Handle LOAD_SMALL_INT for Python 3.14+
+            if instr.opname == 'LOAD_SMALL_INT' and isinstance(instr.argval, int):
+                const_value = instr.argval
+                const_is_left = False
+                break
+        
+        # Check for constant before len() (0 < len(x) pattern)
+        if const_value is None:
+            for i in range(0, len_call_idx):
+                instr = instrs[i]
+                if instr.opname == 'LOAD_CONST' and isinstance(instr.argval, int):
+                    # Check if this is loaded right before the comparison setup
+                    # It should be the first operand loaded
+                    const_value = instr.argval
+                    const_is_left = True
+                    break
+                if instr.opname == 'LOAD_SMALL_INT' and isinstance(instr.argval, int):
+                    const_value = instr.argval
+                    const_is_left = True
+                    break
+        
+        if const_value is None:
+            return None
+        
+        # Determine if this is a non-empty check or an exact length check
+        # Valid patterns:
+        # - len(x) > 0, len(x) >= 1, len(x) != 0 -> nonempty (len >= 1)
+        # - len(x) == n (for n >= 1) -> exact length (len == n)
+        is_nonempty_check = False
+        exact_length = None
+        
+        if const_is_left:
+            # Pattern: const <op> len(x)
+            # 0 < len(x)  -> len(x) > 0  -> len(x) >= 1
+            # 1 <= len(x) -> len(x) >= 1
+            # 0 != len(x) -> len(x) != 0 -> len(x) >= 1
+            # n == len(x) -> len(x) == n
+            if const_value == 0 and compare_op == '<':
+                is_nonempty_check = True
+            elif const_value == 1 and compare_op == '<=':
+                is_nonempty_check = True
+            elif const_value == 0 and compare_op == '!=':
+                is_nonempty_check = True
+            elif compare_op == '==' and const_value >= 1:
+                exact_length = const_value
+        else:
+            # Pattern: len(x) <op> const
+            # len(x) > 0  -> len(x) >= 1
+            # len(x) >= 1 -> len(x) >= 1
+            # len(x) != 0 -> len(x) >= 1
+            # len(x) == n -> len(x) == n
+            if const_value == 0 and compare_op == '>':
+                is_nonempty_check = True
+            elif const_value == 1 and compare_op == '>=':
+                is_nonempty_check = True
+            elif const_value == 0 and compare_op == '!=':
+                is_nonempty_check = True
+            elif compare_op == '==' and const_value >= 1:
+                exact_length = const_value
+        
+        if exact_length is not None:
+            # Create guard with exact length constraint
+            # For len(x) == n, we know indices 0 to n-1 are valid
+            return GuardFact(
+                guard_type="exact_length",
+                variable=len_container,
+                extra=str(exact_length),  # Store the exact length
+                established_at=block.id,
+                condition=f"len({len_container}) == {exact_length}"
+            )
+        elif is_nonempty_check:
+            # Create guard with nonempty constraint (len >= 1)
+            return GuardFact(
+                guard_type="nonempty",
+                variable=len_container,
+                extra="len>=1",  # Encodes the Z3 constraint for verification
+                established_at=block.id,
+                condition=f"len({len_container}) >= 1"
+            )
+        
+        return None
+    
+    def _check_truthiness_fallthrough_pattern(
+        self,
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for truthiness guard established by fallthrough from conditional.
+        
+        Handles patterns like: not data or data[0]
+        When we're in the fallthrough block (starts with NOT_TAKEN), we know:
+        - For POP_JUMP_IF_TRUE preceded by UNARY_NOT: the original value is truthy
+        - For POP_JUMP_IF_FALSE: the original value is truthy
+        
+        For sequences, truthy means non-empty, so this establishes nonempty.
+        """
+        if not block.predecessors:
+            return None
+        
+        # Look at the predecessor block to find the conditional pattern
+        pred_id = block.predecessors[0]
+        pred_block = self.cfg.blocks.get(pred_id)
+        if not pred_block or not pred_block.instructions:
+            return None
+        
+        # Find the conditional jump at the end of the predecessor
+        instrs = pred_block.instructions
+        
+        # Look for pattern: LOAD_FAST v, TO_BOOL, [UNARY_NOT], POP_JUMP_IF_xxx
+        var_name = None
+        has_unary_not = False
+        jump_type = None
+        
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            
+            if instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_IF_FALSE', 
+                               'POP_JUMP_FORWARD_IF_TRUE', 'POP_JUMP_FORWARD_IF_FALSE'):
+                jump_type = instr.opname
+                continue
+            
+            if instr.opname == 'TO_BOOL':
+                continue
+            
+            if instr.opname == 'COPY':
+                continue
+            
+            if instr.opname == 'UNARY_NOT':
+                has_unary_not = True
+                continue
+            
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                var_name = instr.argval
+                break
+        
+        if not var_name or not jump_type:
+            return None
+        
+        # Determine if the fallthrough means the variable is truthy/nonempty
+        # POP_JUMP_IF_TRUE: jumps if True, fallthrough if False
+        # POP_JUMP_IF_FALSE: jumps if False, fallthrough if True
+        # 
+        # With UNARY_NOT:
+        # - `not x` is True when x is falsy, False when x is truthy
+        # - POP_JUMP_IF_TRUE on `not x`: jump when x is falsy, fallthrough when x is truthy
+        #
+        # Without UNARY_NOT:
+        # - POP_JUMP_IF_TRUE on x: jump when x is truthy, fallthrough when x is falsy
+        # - POP_JUMP_IF_FALSE on x: jump when x is falsy, fallthrough when x is truthy
+        
+        var_is_truthy_on_fallthrough = False
+        
+        if has_unary_not:
+            # The condition is `not x`
+            if 'TRUE' in jump_type:
+                # POP_JUMP_IF_TRUE on `not x`: fallthrough when `not x` is False, i.e., x is truthy
+                var_is_truthy_on_fallthrough = True
+            else:
+                # POP_JUMP_IF_FALSE on `not x`: fallthrough when `not x` is True, i.e., x is falsy
+                var_is_truthy_on_fallthrough = False
+        else:
+            # The condition is just x
+            if 'FALSE' in jump_type:
+                # POP_JUMP_IF_FALSE on x: fallthrough when x is truthy
+                var_is_truthy_on_fallthrough = True
+            else:
+                # POP_JUMP_IF_TRUE on x: fallthrough when x is falsy
+                var_is_truthy_on_fallthrough = False
+        
+        if var_is_truthy_on_fallthrough:
+            # Variable is truthy on this path
+            # This establishes BOTH nonnull (for objects) AND nonempty (for sequences)
+            # We return nonempty which is the stronger condition
+            # The nonnull guard is also added by the caller
+            return GuardFact(
+                guard_type="nonempty",
+                variable=var_name,
+                extra="len>=1",  # Truthy for sequences means non-empty
+                established_at=block.id,
+                condition=f"{var_name} is truthy (non-empty/nonnull)"
+            )
+        else:
+            # Variable is FALSY on this path (critical for `if x or x[0]` pattern)
+            # For sequences, falsy means EMPTY (len == 0)
+            # This is the key insight for detecting IndexError in short-circuit evaluation:
+            # In `if x or x[0]`: if x is falsy, we evaluate x[0], but x is empty -> IndexError
+            return GuardFact(
+                guard_type="empty",
+                variable=var_name,
+                extra="len==0",  # Falsy for sequences means empty
+                established_at=block.id,
+                condition=f"{var_name} is falsy (empty/None)"
+            )
+    
+    def _check_truthiness_nonnull_guard(self, block: BasicBlock) -> Optional[GuardFact]:
+        """
+        Additional check for truthiness establishing nonnull.
+        
+        When we detect truthiness fallthrough, the variable is also non-None
+        because None is falsy. This establishes a separate nonnull guard.
+        """
+        if not block.predecessors:
+            return None
+        
+        pred_id = block.predecessors[0]
+        pred_block = self.cfg.blocks.get(pred_id)
+        if not pred_block or not pred_block.instructions:
+            return None
+        
+        instrs = pred_block.instructions
+        
+        # Look for the same pattern as truthiness fallthrough
+        var_name = None
+        has_unary_not = False
+        jump_type = None
+        
+        for i in range(len(instrs) - 1, -1, -1):
+            instr = instrs[i]
+            
+            if instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_IF_FALSE', 
+                               'POP_JUMP_FORWARD_IF_TRUE', 'POP_JUMP_FORWARD_IF_FALSE'):
+                jump_type = instr.opname
+                continue
+            
+            if instr.opname in ('TO_BOOL', 'COPY'):
+                continue
+            
+            if instr.opname == 'UNARY_NOT':
+                has_unary_not = True
+                continue
+            
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                var_name = instr.argval
+                break
+        
+        if not var_name or not jump_type:
+            return None
+        
+        var_is_truthy_on_fallthrough = False
+        if has_unary_not:
+            if 'TRUE' in jump_type:
+                var_is_truthy_on_fallthrough = True
+        else:
+            if 'FALSE' in jump_type:
+                var_is_truthy_on_fallthrough = True
+        
+        if var_is_truthy_on_fallthrough:
+            return GuardFact(
+                guard_type="nonnull",
+                variable=var_name,
+                established_at=block.id,
+                condition=f"{var_name} is truthy => nonnull"
+            )
+        
+        return None
+    
+    def _check_len_ne_fallthrough_pattern(
+        self,
+        block: BasicBlock
+    ) -> Optional[GuardFact]:
+        """
+        Check for len(x) != n pattern on fallthrough.
+        
+        Handles patterns like:
+            if len(args) != 4:
+                return error
+            # Here args[0..3] are safe
+        
+        When we're in the fallthrough block (NOT_TAKEN after POP_JUMP_IF_FALSE),
+        and the predecessor had len(x) != n, we know len(x) == n.
+        
+        NOTE: This handles the case where NOT_TAKEN indicates fallthrough.
+        The guard is established on THIS block (the fallthrough), but we also
+        need to check if we're the jump target of a len() != check.
+        """
+        if not block.predecessors:
+            return None
+        
+        # Look at the predecessor block
+        pred_id = block.predecessors[0]
+        pred_block = self.cfg.blocks.get(pred_id)
+        if not pred_block or not pred_block.instructions:
+            return None
+        
+        instrs = pred_block.instructions
+        
+        # Look for pattern: LOAD_GLOBAL len, LOAD_FAST x, CALL, LOAD_CONST n, COMPARE_OP !=, POP_JUMP_IF_FALSE
+        # When POP_JUMP_IF_FALSE falls through, the != was True (condition True, no jump)
+        # When POP_JUMP_IF_FALSE jumps, the != was False, so len(x) == n
+        
+        # Find the jump instruction
+        jump_instr = None
+        jump_target = None
+        for i in range(len(instrs) - 1, -1, -1):
+            if instrs[i].opname in ('POP_JUMP_IF_FALSE', 'POP_JUMP_FORWARD_IF_FALSE'):
+                jump_instr = instrs[i]
+                jump_target = instrs[i].argval
+                break
+        
+        if not jump_instr:
+            return None
+        
+        # Determine if we're the fallthrough or the jump target
+        # For NOT_TAKEN blocks, we're the fallthrough (condition was True)
+        # We need to check if THIS block is the JUMP TARGET (condition was False)
+        is_jump_target = False
+        if block.instructions and block.instructions[0].offset == jump_target:
+            is_jump_target = True
+        
+        # Look for COMPARE_OP != before the jump
+        compare_idx = None
+        compare_op = None
+        for i in range(len(instrs) - 1, -1, -1):
+            if instrs[i].opname == 'COMPARE_OP':
+                compare_idx = i
+                compare_op = instrs[i].argval
+                break
+        
+        if compare_idx is None or compare_op != '!=':
+            return None
+        
+        # Look for len() call and constant
+        container = None
+        const_value = None
+        
+        for i in range(compare_idx - 1, -1, -1):
+            instr = instrs[i]
+            
+            # Find the constant
+            if instr.opname in ('LOAD_CONST', 'LOAD_SMALL_INT') and isinstance(instr.argval, int):
+                const_value = instr.argval
+            
+            # Find len() call pattern
+            if instr.opname in ('CALL', 'CALL_FUNCTION'):
+                # Look back for LOAD_GLOBAL len, LOAD_FAST x
+                for j in range(max(0, i - 4), i):
+                    if instrs[j].opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN', 'LOAD_NAME'):
+                        if instrs[j].argval == 'len':
+                            # Next instruction should be the container
+                            if j + 1 < i:
+                                container_instr = instrs[j + 1]
+                                if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                                    container = container_instr.argval
+                            break
+                break
+        
+        if not container or const_value is None or const_value < 1:
+            return None
+        
+        # For POP_JUMP_IF_FALSE:
+        # - Fallthrough (NOT_TAKEN): condition was True (len != n is True, so len != n)
+        # - Jump target: condition was False (len != n is False, so len == n)
+        
+        if is_jump_target:
+            # We're the jump target - condition was False, so len == n
+            return GuardFact(
+                guard_type="exact_length",
+                variable=container,
+                extra=str(const_value),
+                established_at=block.id,
+                condition=f"len({container}) == {const_value} (from != jump target)"
+            )
+        
+        return None
+
     def _propagate_guards(self):
         """
         Propagate guards using dominance.

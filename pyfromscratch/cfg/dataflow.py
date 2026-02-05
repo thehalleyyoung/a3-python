@@ -14,7 +14,7 @@ barrier synthesis only needed where DF_v(π) = unknown.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Set, List, Optional, Callable, TypeVar, Generic
+from typing import Dict, Set, List, Optional, Callable, TypeVar, Generic, Tuple
 from abc import ABC, abstractmethod
 import z3
 
@@ -103,15 +103,31 @@ class GuardState:
     State for guard dataflow analysis.
     
     Tracks which guards are definitely established at a program point.
+    Uses Z3 constraints for symbolic verification of bounds safety.
     """
     # Map: guard_key -> definitely established
     # guard_key format: "nonnull:varname", "type:varname:typename", etc.
     established: Set[str] = field(default_factory=set)
     
+    # Z3 constraint store: symbolic constraints for bounds verification
+    # Maps container name -> (z3_length_var, lower_bound_constraint)
+    # For nonempty guard: length_constraints[container] = (len_var, len_var >= 1)
+    length_constraints: Dict[str, Tuple[z3.ExprRef, z3.ExprRef]] = field(default_factory=dict)
+    
     def add_guard(self, guard: GuardFact):
         """Add a guard to the established set."""
         key = self._guard_key(guard)
         self.established.add(key)
+    
+    def add_length_constraint(self, container: str, len_var: z3.ExprRef, constraint: z3.ExprRef):
+        """
+        Add a Z3 length constraint for a container.
+        
+        This is used for symbolic bounds verification. For example:
+        - len(x) > 0 adds constraint: len_x >= 1
+        - len(x) >= n adds constraint: len_x >= n
+        """
+        self.length_constraints[container] = (len_var, constraint)
     
     def has_guard(self, guard_type: str, variable: str, extra: str = None) -> bool:
         """Check if a guard is established."""
@@ -121,16 +137,268 @@ class GuardState:
         return key in self.established
     
     def has_nonnull(self, variable: str) -> bool:
-        """Check if variable is definitely not None."""
+        """
+        Check if variable is definitely not None.
+        
+        Z3 model: nonnull(x) ⟹ x ≠ None
+        
+        Sources of nonnull guards:
+        - Direct: x is not None check
+        - Constructor: x = SomeClass()
+        - String methods: x = s.strip()
+        - getattr/setdefault/next with default
+        - dict.get with non-None default
+        - Callable check: callable(x) implies x is not None
+        """
         return self.has_guard("nonnull", variable)
     
     def has_type(self, variable: str, type_name: str) -> bool:
         """Check if variable is definitely of given type."""
         return self.has_guard("type", variable, type_name)
     
+    def has_nonempty(self, variable: str) -> bool:
+        """
+        Check if variable (collection) is definitely non-empty.
+        
+        This checks for nonempty guards established by:
+        - len(x) > 0, len(x) >= 1
+        - len(x) != 0
+        - if x: (truthiness check for collections)
+        - for loop body (inside iteration, collection is non-empty)
+        """
+        return self.has_guard("nonempty", variable, "len>=1") or self.has_guard("nonempty", variable)
+    
     def has_div_safe(self, variable: str) -> bool:
-        """Check if variable is definitely non-zero."""
-        return self.has_guard("div", variable)
+        """
+        Check if variable is definitely non-zero.
+        
+        This checks for div guards established by:
+        - x != 0 direct checks
+        - x > 0, x >= 1 (positive implies non-zero)
+        - x < 0, x <= -1 (negative implies non-zero)
+        - Truthiness checks (truthy implies non-zero for numbers)
+        """
+        if self.has_guard("div", variable):
+            return True
+        
+        # Truthiness on fallthrough also establishes non-zero for numbers
+        # If nonempty:variable is set, the variable is truthy
+        # For numbers, truthy means non-zero
+        if self.has_guard("nonempty", variable, "len>=1"):
+            return True
+        
+        return False
+    
+    def has_bounds_safe(self, container: str, index: str) -> bool:
+        """
+        Check if container[index] access is definitely in bounds.
+        
+        Uses Z3 to verify bounds safety when symbolic constraints are available.
+        
+        Checks for:
+        1. Explicit bounds guard: bounds:{container}[{index}]
+        2. Range-len loop guard: range_len_loop:{container} (iteration variable always safe)
+        3. Enumerate loop guard: enumerate_loop:{container} (index variable always safe)
+        4. Nonempty guard with constant index 0: nonempty:{container} + index == 0
+        5. Exact length guard: exact_length:{container}:{n} + 0 <= index < n
+        6. Negative index with nonempty: arr[-1] safe when len >= 1
+        7. Key-in guard: if key in d: d[key] is safe
+        8. Z3 constraint verification: prove 0 <= index < len(container)
+        """
+        # Check explicit bounds guard
+        if self.has_guard("bounds", f"{container}[{index}]"):
+            return True
+        
+        # Check range(len(...)) loop pattern
+        if self.has_guard("range_len_loop", container):
+            return True
+        
+        # Check enumerate(...) loop pattern
+        if self.has_guard("enumerate_loop", container):
+            return True
+        
+        # Check for loop body nonempty (inside a for loop, container is nonempty)
+        if self.has_guard("loop_body_nonempty", container):
+            if self._is_constant_zero_index(index):
+                return True
+        
+        # Check nonempty guard for index 0 or -1
+        if self.has_guard("nonempty", container, "len>=1"):
+            if self._is_constant_zero_index(index):
+                return True
+            # Negative index -1 is safe when len >= 1
+            if self._is_negative_one_index(index):
+                return True
+        
+        # Check key_in guard: if key in container: container[key] is safe
+        if self.has_guard("key_in", f"{container}[{index}]"):
+            return True
+        
+        # Check exact_length guard: len(container) == n allows indices 0..n-1 and -n..-1
+        exact_length = self._get_exact_length_guard(container)
+        if exact_length is not None:
+            try:
+                idx_val = int(index)
+                # Positive indices: 0..n-1
+                if 0 <= idx_val < exact_length:
+                    return True
+                # Negative indices: -n..-1
+                if -exact_length <= idx_val < 0:
+                    return True
+            except ValueError:
+                pass
+        
+        # Z3 constraint verification for symbolic bounds
+        if container in self.length_constraints:
+            return self._verify_bounds_with_z3(container, index)
+        
+        return False
+    
+    def _get_exact_length_guard(self, container: str) -> Optional[int]:
+        """
+        Check if there's an exact_length guard for this container.
+        
+        Returns the exact length value if found, None otherwise.
+        """
+        # Look for exact_length:container:n in established guards
+        for key in self.established:
+            if key.startswith(f"exact_length:{container}:"):
+                try:
+                    return int(key.split(":")[-1])
+                except ValueError:
+                    pass
+        return None
+    
+    def _is_constant_zero_index(self, index: str) -> bool:
+        """
+        Check if index is the constant 0.
+        
+        Handles cases like:
+        - Literal "0"
+        - Variable that is known to be 0 from dataflow
+        """
+        # Direct constant check
+        if index == "0":
+            return True
+        
+        # Try to parse as integer
+        try:
+            if int(index) == 0:
+                return True
+        except ValueError:
+            pass
+        
+        return False
+    
+    def _is_negative_one_index(self, index: str) -> bool:
+        """
+        Check if index is -1 (last element access).
+        
+        arr[-1] is safe when len(arr) >= 1, which is established
+        by nonempty guards.
+        """
+        if index == "-1":
+            return True
+        try:
+            if int(index) == -1:
+                return True
+        except ValueError:
+            pass
+        return False
+    
+    def has_key_safe(self, container: str, key: str) -> bool:
+        """
+        Check if container[key] access is safe for dict/set.
+        
+        This is distinct from bounds checking - it verifies key existence.
+        
+        Checks for:
+        1. key_in guard: if key in container: container[key] is safe
+        2. hasattr guard (for attribute access): if hasattr(obj, 'attr')
+        """
+        # Check key_in guard
+        if self.has_guard("key_in", f"{container}[{key}]"):
+            return True
+        
+        return False
+    
+    def has_attr_safe(self, obj: str, attr: str) -> bool:
+        """
+        Check if obj.attr access is safe.
+        
+        Checks for:
+        1. hasattr guard: if hasattr(obj, 'attr')
+        2. Type guard: if isinstance(obj, T) where T has attr
+        """
+        # Check hasattr guard
+        if self.has_guard("hasattr", obj, attr):
+            return True
+        
+        return False
+    
+    def _verify_bounds_with_z3(self, container: str, index: str) -> bool:
+        """
+        Use Z3 to verify that container[index] is in bounds.
+        
+        Given the established constraints (e.g., len(container) >= 1),
+        check if the index is provably safe.
+        
+        For positive indices: 0 <= index < len(container)
+        For negative indices: -len(container) <= index < 0
+        
+        Mathematical basis (barrier certificate):
+        - Given: len(container) >= 1 (nonempty guard)
+        - For index -1: -len >= -1 is always true when len >= 1
+        - Therefore: -len <= -1 < 0 is satisfiable, so arr[-1] is safe
+        
+        Returns True if the access is provably safe.
+        """
+        try:
+            len_var, len_constraint = self.length_constraints[container]
+            
+            # Try to determine index value
+            idx_val = None
+            try:
+                idx_val = int(index)
+            except ValueError:
+                # index is a variable - need to check if we have constraints on it
+                # For now, only handle constant indices
+                return False
+            
+            if idx_val is None:
+                return False
+            
+            # Create Z3 solver to verify safety
+            solver = z3.Solver()
+            solver.set("timeout", 100)  # 100ms timeout
+            
+            # Add the established length constraint
+            solver.add(len_constraint)
+            
+            # Check if index is always in bounds
+            idx_z3 = z3.IntVal(idx_val)
+            
+            if idx_val >= 0:
+                # Positive index: 0 <= idx < len
+                in_bounds = z3.And(idx_z3 >= 0, idx_z3 < len_var)
+            else:
+                # Negative index: -len <= idx < 0
+                # In Python, arr[-1] accesses arr[len-1], arr[-2] accesses arr[len-2], etc.
+                # Valid range: -len <= idx < 0
+                in_bounds = z3.And(idx_z3 >= -len_var, idx_z3 < 0)
+            
+            # Try to prove safety by checking if NOT(in_bounds) is unsatisfiable
+            solver.push()
+            solver.add(z3.Not(in_bounds))
+            result = solver.check()
+            solver.pop()
+            
+            # If UNSAT, the negation is impossible, so access is always safe
+            return result == z3.unsat
+            
+        except Exception:
+            # Z3 verification failed - conservatively return False
+            return False
     
     def _guard_key(self, guard: GuardFact) -> str:
         key = f"{guard.guard_type}:{guard.variable}"
@@ -139,15 +407,35 @@ class GuardState:
         return key
     
     def copy(self) -> 'GuardState':
-        return GuardState(established=self.established.copy())
+        return GuardState(
+            established=self.established.copy(),
+            length_constraints=self.length_constraints.copy()
+        )
     
     def meet(self, other: 'GuardState') -> 'GuardState':
         """Intersection: guards that hold on ALL paths."""
-        return GuardState(established=self.established & other.established)
+        # For length constraints, take the intersection (must hold on all paths)
+        common_containers = set(self.length_constraints.keys()) & set(other.length_constraints.keys())
+        merged_constraints = {}
+        for container in common_containers:
+            # Take the weaker constraint (smaller lower bound)
+            # This is conservative - both paths must satisfy it
+            # For simplicity, keep self's constraint if containers match
+            merged_constraints[container] = self.length_constraints[container]
+        return GuardState(
+            established=self.established & other.established,
+            length_constraints=merged_constraints
+        )
     
     def join(self, other: 'GuardState') -> 'GuardState':
         """Union: guards that hold on ANY path."""
-        return GuardState(established=self.established | other.established)
+        # For length constraints, take the union
+        merged_constraints = self.length_constraints.copy()
+        merged_constraints.update(other.length_constraints)
+        return GuardState(
+            established=self.established | other.established,
+            length_constraints=merged_constraints
+        )
 
 
 class GuardDataflowAnalysis:
@@ -210,6 +498,11 @@ class GuardDataflowAnalysis:
             new_out = new_in.copy()
             new_out.established |= self.block_gen.get(bid, set())
             
+            # Also propagate Z3 length constraints
+            if hasattr(self, 'block_length_constraints') and bid in self.block_length_constraints:
+                for container, (len_var, constraint) in self.block_length_constraints[bid].items():
+                    new_out.add_length_constraint(container, len_var, constraint)
+            
             # Check if changed
             if new_out.established != self.out_state[bid].established:
                 self.out_state[bid] = new_out
@@ -224,20 +517,48 @@ class GuardDataflowAnalysis:
         return self.in_state
     
     def _compute_gen_sets(self):
-        """Compute guards generated by each block."""
+        """Compute guards generated by each block, including Z3 constraints."""
         from .control_flow import GuardAnalyzer
         
         guard_analyzer = GuardAnalyzer(self.cfg)
         guard_analyzer._find_guard_establishments()
         
+        # Also store Z3 constraints for nonempty guards
+        self.block_length_constraints: Dict[int, Dict[str, Tuple[z3.ExprRef, z3.ExprRef]]] = {}
+        
         for bid, guards in guard_analyzer.block_establishes.items():
             gen = set()
+            length_constraints = {}
+            
             for g in guards:
                 key = f"{g.guard_type}:{g.variable}"
                 if g.extra:
                     key += f":{g.extra}"
                 gen.add(key)
+                
+                # For nonempty guards, create Z3 constraint: len(container) >= 1
+                if g.guard_type == "nonempty":
+                    container = g.variable
+                    # Create fresh Z3 variable for container length
+                    len_var = z3.Int(f"len_{container}")
+                    # Create constraint: len >= 1 (nonempty)
+                    constraint = len_var >= 1
+                    length_constraints[container] = (len_var, constraint)
+                
+                # For exact_length guards, create Z3 constraint: len(container) == n
+                elif g.guard_type == "exact_length" and g.extra:
+                    container = g.variable
+                    try:
+                        exact_len = int(g.extra)
+                        len_var = z3.Int(f"len_{container}")
+                        constraint = len_var == exact_len
+                        length_constraints[container] = (len_var, constraint)
+                    except ValueError:
+                        pass
+            
             self.block_gen[bid] = gen
+            if length_constraints:
+                self.block_length_constraints[bid] = length_constraints
     
     def _all_guards(self) -> Set[str]:
         """Get all possible guards (for initialization)."""
@@ -816,18 +1137,50 @@ class IntraprocAnalysisResult:
     - Type states
     - Bounds info
     - Exception catching info
+    - Z3 length constraints for symbolic bounds verification
     """
     cfg: ControlFlowGraph
     guard_states: Dict[int, GuardState]
     type_states: Dict[int, Dict[str, TypeState]]
     bounds: Dict[int, Dict[str, BoundsInfo]]
+    guard_gen: Dict[int, Set[str]] = field(default_factory=dict)  # Guards generated by each block
+    # Z3 length constraints generated by each block: block_id -> (container -> (len_var, constraint))
+    length_constraint_gen: Dict[int, Dict[str, Tuple[z3.ExprRef, z3.ExprRef]]] = field(default_factory=dict)
     
     def get_guards_at_offset(self, offset: int) -> GuardState:
-        """Get guards valid at instruction offset."""
+        """
+        Get guards valid at instruction offset.
+        
+        Uses both:
+        1. Dataflow-propagated guards (from guard_states)
+        2. Dominance-based guards (from dominating blocks)
+        
+        This ensures loop-invariant guards like range_len_loop are properly
+        propagated even when dataflow meet operation loses them.
+        
+        Also propagates Z3 length constraints for symbolic bounds verification.
+        """
         block = self.cfg.get_block_for_offset(offset)
-        if block:
-            return self.guard_states.get(block.id, GuardState())
-        return GuardState()
+        if not block:
+            return GuardState()
+        
+        # Start with dataflow result
+        result = self.guard_states.get(block.id, GuardState()).copy()
+        
+        # Add guards from all dominating blocks (including self)
+        # This handles loop-invariant guards that are lost by meet/intersection
+        dominators = self.cfg.dominators.get(block.id, set())
+        for dom_id in dominators:
+            # Get guards generated by the dominating block
+            if dom_id in self.guard_gen:
+                result.established |= self.guard_gen[dom_id]
+            
+            # Propagate Z3 length constraints from dominating blocks
+            if dom_id in self.length_constraint_gen:
+                for container, (len_var, constraint) in self.length_constraint_gen[dom_id].items():
+                    result.add_length_constraint(container, len_var, constraint)
+        
+        return result
     
     def get_type_state(self, offset: int, variable: str) -> Optional[TypeState]:
         """Get type state for a variable at offset."""
@@ -903,9 +1256,14 @@ def run_intraprocedural_analysis(code) -> IntraprocAnalysisResult:
     bounds_analysis = BoundsAnalysis(cfg)
     bounds = bounds_analysis.analyze()
     
+    # Get Z3 length constraints for symbolic verification
+    length_constraint_gen = getattr(guard_analysis, 'block_length_constraints', {})
+    
     return IntraprocAnalysisResult(
         cfg=cfg,
         guard_states=guard_states,
         type_states=type_states,
-        bounds=bounds
+        bounds=bounds,
+        guard_gen=guard_analysis.block_gen,  # Pass guard gen sets for dominance-based propagation
+        length_constraint_gen=length_constraint_gen,  # Pass Z3 constraints for symbolic bounds verification
     )

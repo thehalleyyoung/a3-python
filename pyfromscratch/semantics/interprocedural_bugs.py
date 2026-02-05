@@ -23,15 +23,19 @@ from pathlib import Path
 from enum import IntEnum
 
 from ..confidence_interval import ReachabilityIntervalPTS, RiskInterval, ConcreteWitnessEvidence
+from ..stochastic_risk import risk_interval_for_precondition
 from .crash_summaries import (
     REGISTERED_BUG_TYPES, PRECONDITION_TO_BUG,
     PreconditionType, Precondition,
     ExceptionType, EXCEPTION_TO_BUG,
     Nullability,
-    CrashSummary, CrashSummaryComputer,
-    BytecodeCrashSummaryComputer,  # Prefer bytecode-level analysis
+    CrashSummary,
+    BytecodeCrashSummaryComputer,  # Bytecode-only analysis (AST-based removed)
     InterproceduralBugSummary, compute_all_bug_summaries,
 )
+from ..barriers.guard_to_barrier import translate_guard_to_barrier, guards_protect_bug
+from ..barriers.context_aware_verification import verify_bug_context_aware
+from ..barriers.extreme_verification import verify_bug_extreme
 from .summaries import TaintSummary, SummaryComputer
 from .interprocedural_taint import InterproceduralContext
 from .intraprocedural_taint import IntraproceduralTaintAnalyzer, IntraproceduralBug
@@ -88,6 +92,12 @@ class InterproceduralBug:
     # Additional context
     tainted_sources: List[str] = field(default_factory=list)
     relevant_args: List[int] = field(default_factory=list)
+    
+    # SYMBOLIC VARIABLE TRACKING: Track the exact variable that causes the bug
+    # Format: "param_N" for parameters, "local_NAME" for locals, "call:FUNC" for call results
+    # This enables precise interprocedural guard matching
+    bug_variable: Optional[str] = None
+    bug_offset: Optional[int] = None  # Bytecode offset where bug occurs
     
     # Source provenance (for cleartext/sensitivity tracking)
     inferred_source: bool = False  # True if source was inferred from name/type, not explicit
@@ -201,6 +211,8 @@ class InterproceduralBugTracker:
             entry_points: Optional set of entry point function names. If None, auto-detect.
                          If auto-detection finds nothing, analyze all functions.
         """
+        import logging
+        logger = logging.getLogger(__name__)
         from ..contracts.security_lattice import (
             get_source_contracts_for_summaries,
             get_sink_contracts_for_summaries,
@@ -209,13 +221,17 @@ class InterproceduralBugTracker:
         )
         
         # Initialize contracts (idempotent)
+        logger.info(f"[PROJECT] Initializing security contracts for {root_path.name}")
         init_security_contracts()
         
         # Build call graph
+        logger.info(f"[PROJECT] Building call graph from {root_path}")
         call_graph = build_call_graph_from_directory(root_path)
+        logger.info(f"[PROJECT] Call graph: {len(call_graph.functions)} functions, {sum(len(f.call_sites) for f in call_graph.functions.values())} call sites")
         
         # Detect entry points
         if entry_points is None:
+            logger.info(f"[PROJECT] Detecting entry points")
             entry_point_list = detect_entry_points_in_project(root_path)
             entry_points = get_entry_point_functions(entry_point_list)
             
@@ -223,20 +239,27 @@ class InterproceduralBugTracker:
             # use all functions as entry points
             if not entry_points or not (entry_points & set(call_graph.functions.keys())):
                 entry_points = set(call_graph.functions.keys())
+                logger.info(f"[PROJECT] Using all {len(entry_points)} functions as entry points")
+            else:
+                logger.info(f"[PROJECT] Found {len(entry_points)} entry points")
         
         # Compute reachable functions
+        logger.info(f"[PROJECT] Computing reachability from entry points")
         reachable = call_graph.get_reachable_from(entry_points)
+        logger.info(f"[PROJECT] Reachable: {len(reachable)} functions")
         
         # If reachability is empty but we have functions, include entry points themselves
         if not reachable and entry_points:
             reachable = entry_points & set(call_graph.functions.keys())
         
         # Load security contracts for library functions
+        logger.info(f"[PROJECT] Loading security contracts")
         source_contracts = get_source_contracts_for_summaries()
         sink_contracts = get_sink_contracts_for_summaries()
         sanitizer_contracts = get_sanitizer_contracts_for_summaries()
         
         # Compute taint summaries
+        logger.info(f"[PROJECT] Computing taint summaries for {len(call_graph.functions)} functions")
         taint_computer = SummaryComputer(
             call_graph,
             source_contracts=source_contracts,
@@ -244,13 +267,26 @@ class InterproceduralBugTracker:
             sanitizer_contracts=sanitizer_contracts,
         )
         taint_summaries = taint_computer.compute_all()
+        logger.info(f"[PROJECT] Computed {len(taint_summaries)} taint summaries")
         
         # Compute crash summaries (using bytecode-level analysis by default)
+        logger.info(f"[PROJECT] Computing crash summaries (bytecode-level)")
         crash_computer = BytecodeCrashSummaryComputer(call_graph)
         crash_summaries = crash_computer.compute_all()
+        logger.info(f"[PROJECT] Computed {len(crash_summaries)} crash summaries")
         
         # Combine summaries
+        logger.info(f"[PROJECT] Combining taint + crash summaries")
         combined = compute_all_bug_summaries(call_graph, taint_summaries)
+        
+        # Train Layer 0 fast barrier filters on the codebase (one-time learning)
+        logger.info(f"[PROJECT] Training Layer 0 fast barrier filters on codebase")
+        from ..barriers.extreme_verification import get_extreme_verifier
+        extreme_verifier = get_extreme_verifier()
+        if hasattr(extreme_verifier, 'fast_filters'):
+            extreme_verifier.fast_filters.learn_from_codebase(crash_summaries)
+            logger.info(f"[PROJECT] Layer 0 trained on {len(crash_summaries)} functions")
+        logger.info(f"[PROJECT] Tracker ready - starting bug detection")
         
         return cls(
             call_graph=call_graph,
@@ -388,7 +424,14 @@ class InterproceduralBugTracker:
         
         return breakdown.combined_score()
     
-    def find_all_bugs(self, apply_fp_reduction: bool = False) -> List[InterproceduralBug]:
+    def find_all_bugs(
+        self, 
+        apply_fp_reduction: bool = False,
+        apply_intent_filter: bool = True,
+        intent_confidence: float = 0.7,
+        root_path: Optional[Path] = None,
+        only_non_security: bool = True,  # NEW: skip security bugs for speed
+    ) -> List[InterproceduralBug]:
         """
         Find all bugs reachable from entry points.
         
@@ -398,53 +441,343 @@ class InterproceduralBugTracker:
         Deduplicates findings by (file, line, sink_type) to avoid reporting
         the same bug multiple times from different entry points.
         
+        INTERPROCEDURAL GUARD EXTENSION: Also applies guard facts computed
+        from function summaries to reduce false positives.
+        
         Args:
             apply_fp_reduction: If True, apply FP context adjustments to reduce
                                false positives from CLI tools, test files, etc.
+            apply_intent_filter: If True, apply intent-aware filtering to report
+                                only high-confidence true positives (default: True)
+            intent_confidence: Minimum confidence for intent filtering (default: 0.7)
+            root_path: Project root path for reading source code during intent analysis
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         self.bugs_found = []
+        
+        # SPEED OPTIMIZATION: Cache guard analysis results
+        self._guard_cache = {}
         
         # ITERATION 610: For crash bugs, analyze ALL functions with may_trigger
         # Crash bugs don't require entry-point reachability - if a function CAN crash,
         # we should report it regardless of how it's called. Security bugs still
         # require reachability for taint tracking.
-        self._analyze_all_crash_bugs()
+        logger.info(f"[BUGS] Analyzing crash bugs across {len(self.crash_summaries)} functions")
+        
+        # SPEED: Analyze in batches with progress reporting
+        summaries_list = list(self.crash_summaries.items())
+        batch_size = 100
+        total_verified = 0
+        total_skipped = 0
+        
+        for batch_start in range(0, len(summaries_list), batch_size):
+            batch_end = min(batch_start + batch_size, len(summaries_list))
+            if batch_start % 500 == 0 and batch_start > 0:
+                logger.info(f"[BUGS] Progress: {batch_start}/{len(summaries_list)} functions analyzed, {total_verified} verified safe, {total_skipped} skipped")
+            # Analyze batch
+            for func_name, summary in summaries_list[batch_start:batch_end]:
+                self._analyze_crash_bugs_for_function(func_name, summary)
+        
+        logger.info(f"[BUGS] Found {len(self.bugs_found)} potential crash bugs after verification")
         
         # For security bugs, use entry-point reachability
-        for entry in self.entry_points:
-            self._analyze_from_entry(entry)
+        if only_non_security:
+            logger.info(f"[BUGS] Skipping security bug analysis (only_non_security=True)")
+        else:
+            logger.info(f"[BUGS] Analyzing security bugs from {len(self.entry_points)} entry points")
+            for i, entry in enumerate(self.entry_points, 1):
+                if i % 100 == 0:
+                    logger.info(f"[BUGS] Progress: {i}/{len(self.entry_points)} entry points analyzed")
+                self._analyze_from_entry(entry)
+        logger.info(f"[BUGS] Total bugs before deduplication: {len(self.bugs_found)}")
         
         # Deduplicate bugs by (location, bug_type)
         # Keep the bug with the shortest call chain for each unique location+type
+        logger.info(f"[BUGS] Deduplicating bugs")
         self.bugs_found = self._deduplicate_bugs(self.bugs_found)
+        logger.info(f"[BUGS] After deduplication: {len(self.bugs_found)} bugs")
+        
+        # INTERPROCEDURAL GUARD: Apply guard-based FP reduction
+        logger.info(f"[BUGS] Applying interprocedural guard analysis")
+        self.bugs_found = self._apply_interprocedural_guards(self.bugs_found)
+        logger.info(f"[BUGS] After guard reduction: {len(self.bugs_found)} bugs")
         
         # Apply FP context adjustments
         if apply_fp_reduction:
             self.bugs_found = self._apply_fp_context_adjustments(self.bugs_found)
         
+        # Apply intent-aware filtering for high-confidence TPs only
+        if apply_intent_filter:
+            self.bugs_found = self.apply_intent_filtering(
+                self.bugs_found, 
+                min_confidence=intent_confidence,
+                root_path=root_path,
+            )
+        
         self.analyzed = True
         return self.bugs_found
     
+    def _apply_interprocedural_guards(
+        self,
+        bugs: List[InterproceduralBug],
+    ) -> List[InterproceduralBug]:
+        """
+        Apply interprocedural guard analysis to reduce false positives.
+        
+        AUTOMATIC GUARD PROPAGATION: Uses guard facts automatically collected
+        from the intraprocedural GuardAnalyzer (control_flow.py). Any guard
+        pattern defined there is automatically available here.
+        
+        For each bug, check if interprocedural guards make it a FP:
+        1. If the crash function has guards of relevant types
+        2. If a callee returns a value with guarantees
+        3. If the call chain validates parameters
+        
+        Uses GUARD_TYPE_TO_BUG_TYPES mapping from interprocedural_guards.py
+        to automatically map guard patterns to bug types.
+        """
+        from .interprocedural_guards import get_guard_types_for_bug
+        
+        filtered_bugs = []
+        guarded_count = 0
+        
+        for bug in bugs:
+            is_guarded = self._is_bug_interprocedurally_guarded(bug)
+            
+            if is_guarded:
+                guarded_count += 1
+                # Mark as guarded with reduced confidence
+                bug.confidence *= 0.25  # 75% reduction for interprocedurally guarded
+                bug.reason += " [interprocedural guard detected]"
+            
+            filtered_bugs.append(bug)
+        
+        return filtered_bugs
+    
+    def _is_bug_interprocedurally_guarded(self, bug: InterproceduralBug) -> bool:
+        """Check if a bug is protected by interprocedural guards.
+        
+        CONTEXT-AWARE VERIFICATION: Uses all 5 layers of barrier certificate system.
+        OPTIMIZATION: Caches results per (bug_type, variable, function).
+        """
+        
+        # Check cache first
+        cache_key = (bug.bug_type, bug.bug_variable, bug.crash_function)
+        if cache_key in self._guard_cache:
+            return self._guard_cache[cache_key]
+        
+        # Collect call chain summaries
+        call_chain_summaries = []
+        for func_name in bug.call_chain:
+            func_summary = self.crash_summaries.get(func_name)
+            if func_summary:
+                call_chain_summaries.append(func_summary)
+        
+        crash_summary = self.crash_summaries.get(bug.crash_function)
+        if not crash_summary:
+            return False
+        
+        # Run context-aware verification
+        verification_result = verify_bug_context_aware(
+            bug_type=bug.bug_type,
+            bug_variable=bug.bug_variable,
+            crash_summary=crash_summary,
+            call_chain_summaries=call_chain_summaries,
+            code_object=None  # Would need function.__code__
+        )
+        
+        return verification_result.is_safe
+    
+    def verify_bugs_with_dse(
+        self,
+        bugs: Optional[List[InterproceduralBug]] = None,
+        max_steps: int = 100,
+        timeout_per_function: int = 5000,
+    ) -> Tuple[List[InterproceduralBug], List[InterproceduralBug], List[InterproceduralBug]]:
+        """
+        Verify bugs using DSE with Z3-backed symbolic execution.
+        
+        This is the principled approach: use SymbolicVM to actually explore
+        paths and check if the unsafe state is Z3-satisfiable.
+        
+        Args:
+            bugs: List of bugs to verify. If None, uses self.bugs_found
+            max_steps: Maximum DSE steps per function
+            timeout_per_function: Z3 timeout in ms per function
+        
+        Returns:
+            Tuple of (confirmed_bugs, refuted_bugs, unknown_bugs)
+            - confirmed: DSE found a path triggering the bug
+            - refuted: DSE exhaustively proved no path triggers the bug
+            - unknown: DSE timed out or couldn't determine
+        """
+        from ..semantics.symbolic_vm import SymbolicVM
+        from ..unsafe.registry import check_unsafe_regions
+        import types
+        
+        if bugs is None:
+            bugs = self.bugs_found
+        
+        confirmed = []
+        refuted = []
+        unknown = []
+        
+        # Group bugs by function to avoid redundant DSE
+        bugs_by_function: Dict[str, List[InterproceduralBug]] = {}
+        for bug in bugs:
+            func_name = bug.crash_function
+            if func_name not in bugs_by_function:
+                bugs_by_function[func_name] = []
+            bugs_by_function[func_name].append(bug)
+        
+        for func_name, func_bugs in bugs_by_function.items():
+            # Get function code object
+            func_info = self.call_graph.get_function(func_name)
+            if not func_info:
+                unknown.extend(func_bugs)
+                continue
+            
+            try:
+                # Compile to get code object
+                with open(func_info.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    source = f.read()
+                
+                module_code = compile(source, str(func_info.file_path), 'exec')
+                func_code = self._find_code_object(module_code, func_info.name, func_info.line_number)
+                
+                if not func_code:
+                    unknown.extend(func_bugs)
+                    continue
+                
+                # Run DSE
+                vm = SymbolicVM()
+                paths = vm.explore_bounded(func_code, max_steps=max_steps)
+                
+                # Check which bug types are actually reachable
+                reachable_bug_types = set()
+                for path in paths:
+                    result = check_unsafe_regions(path.state, path.trace)
+                    if result:
+                        reachable_bug_types.add(result.get('bug_type'))
+                
+                # IMPORTANT: Security bugs require interprocedural taint tracking
+                # that per-function DSE cannot capture. Only use DSE to verify
+                # non-security bugs (NULL_PTR, BOUNDS, DIV_ZERO, etc.)
+                from ..unsafe.registry import SECURITY_BUG_TYPES
+                NON_SECURITY_BUGS = {'NULL_PTR', 'BOUNDS', 'DIV_ZERO', 'TYPE_CONFUSION', 
+                                     'ASSERT_FAIL', 'INTEGER_OVERFLOW', 'FP_DOMAIN',
+                                     'STACK_OVERFLOW', 'MEMORY_LEAK', 'ITERATOR_INVALID'}
+                
+                # Classify each bug
+                for bug in func_bugs:
+                    # Security bugs: DSE can't verify taint flow, keep as unknown
+                    if bug.bug_type in SECURITY_BUG_TYPES:
+                        unknown.append(bug)
+                        continue
+                    
+                    if bug.bug_type in reachable_bug_types:
+                        # DSE confirmed this bug type is reachable
+                        bug.confidence = min(bug.confidence + 0.2, 1.0)  # Boost confidence
+                        confirmed.append(bug)
+                    elif bug.bug_type in NON_SECURITY_BUGS and len(paths) > 0:
+                        # DSE explored paths but didn't find this non-security bug
+                        # Could be refuted if DSE was complete, or unknown if bounded
+                        if len(paths) < max_steps // 2:
+                            # Likely explored all paths - refute
+                            refuted.append(bug)
+                        else:
+                            # Bounded exploration - unknown
+                            unknown.append(bug)
+                    else:
+                        unknown.append(bug)
+                
+            except Exception as e:
+                # DSE failed - unknown status
+                unknown.extend(func_bugs)
+        
+        return confirmed, refuted, unknown
+    
+    def _find_code_object(
+        self,
+        module_code: types.CodeType,
+        func_name: str,
+        line_number: int
+    ) -> Optional[types.CodeType]:
+        """Find a function's code object by name and line number."""
+        import types
+        for const in module_code.co_consts:
+            if isinstance(const, types.CodeType):
+                if const.co_name == func_name and const.co_firstlineno == line_number:
+                    return const
+                # Search nested
+                nested = self._find_code_object(const, func_name, line_number)
+                if nested:
+                    return nested
+        return None
+    
+    def find_all_bugs_with_dse_verification(
+        self,
+        max_dse_steps: int = 100,
+        apply_fp_reduction: bool = True,
+        apply_intent_filter: bool = True,
+        intent_confidence: float = 0.7,
+        root_path: Optional[Path] = None,
+    ) -> List[InterproceduralBug]:
+        """
+        Find all bugs with DSE verification.
+        
+        This is the full pipeline:
+        1. Summary-based bug detection (fast, may have FPs)
+        2. DSE verification (slower, reduces FPs)
+        3. Return only confirmed + unknown bugs (drop refuted)
+        
+        Args:
+            max_dse_steps: Maximum DSE steps for verification
+            apply_fp_reduction: Apply FP context adjustments
+            apply_intent_filter: Apply intent-aware filtering (default: True)
+            intent_confidence: Minimum confidence for intent filtering (default: 0.7)
+            root_path: Project root path for intent analysis
+        """
+        # First pass: summary-based detection with intent filtering
+        bugs = self.find_all_bugs(
+            apply_fp_reduction=apply_fp_reduction,
+            apply_intent_filter=apply_intent_filter,
+            intent_confidence=intent_confidence,
+            root_path=root_path,
+        )
+        
+        # Second pass: DSE verification
+        confirmed, refuted, unknown = self.verify_bugs_with_dse(bugs, max_steps=max_dse_steps)
+        
+        # Return confirmed bugs (high confidence) and unknown (conservative)
+        # Refuted bugs are dropped as they're likely FPs
+        return confirmed + unknown
+
     def _analyze_all_crash_bugs(self) -> None:
         """
         Analyze ALL functions for crash bugs, regardless of reachability.
         
-        Crash bugs (DIV_ZERO, NULL_PTR, BOUNDS, etc.) are about whether a function
-        CAN crash, not whether it's reachable from entry points. This differs from
-        security bugs which require taint to flow from sources to sinks.
+        OPTIMIZED: Renamed to _analyze_crash_bugs_for_function and called from find_all_bugs.
+        This method is kept for backwards compatibility but delegates to new batched version.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         for func_name, crash_summary in self.crash_summaries.items():
-            # Only analyze functions that have direct may_trigger bugs
-            if not crash_summary.may_trigger:
-                continue
-            
-            func_info = self.call_graph.get_function(func_name)
-            
-            # Create a simple call chain with just this function
-            call_chain = [func_name]
-            
-            # Check for direct bugs in this function
-            self._check_direct_bugs(crash_summary, call_chain, func_info)
+            if crash_summary.may_trigger:
+                self._analyze_crash_bugs_for_function(func_name, crash_summary)
+    
+    def _analyze_crash_bugs_for_function(self, func_name: str, crash_summary: CrashSummary) -> None:
+        """
+        Analyze a single function for crash bugs.
+        
+        OPTIMIZATION: Extracted from _analyze_all_crash_bugs for batching.
+        """
+        func_info = self.call_graph.get_function(func_name)
+        call_chain = [func_name]
+        self._check_direct_bugs(crash_summary, call_chain, func_info)
     
     def _apply_fp_context_adjustments(
         self,
@@ -517,6 +850,87 @@ class InterproceduralBugTracker:
         
         return filtered_bugs
     
+    def apply_intent_filtering(
+        self,
+        bugs: List[InterproceduralBug],
+        min_confidence: float = 0.7,
+        root_path: Optional[Path] = None,
+    ) -> List[InterproceduralBug]:
+        """
+        Apply intent-aware filtering to reduce false positives.
+        
+        Uses semantic analysis to determine if bugs are:
+        - Intentional (test code, example code, expected behavior)
+        - Protected by guards (null checks, bounds checks)
+        - In framework context (self parameters, request objects)
+        
+        Only reports bugs with high confidence of being unintentional.
+        
+        Args:
+            bugs: List of bugs to filter
+            min_confidence: Minimum confidence to consider as TP (default 0.7 = high confidence)
+            root_path: Project root path for reading source code
+        
+        Returns:
+            Filtered list containing only high-confidence true positives
+        """
+        from .intent_detector import create_intent_aware_filter
+        from .ast_guard_analysis import SafetyAnalyzer
+        
+        bug_filter = create_intent_aware_filter(threshold=min_confidence)
+        safety_analyzer = SafetyAnalyzer()
+        
+        filtered_bugs = []
+        
+        for bug in bugs:
+            # Parse location
+            location_parts = bug.crash_location.split(':')
+            crash_file = ':'.join(location_parts[:-1]) if len(location_parts) > 1 else bug.crash_location
+            crash_line = location_parts[-1] if len(location_parts) > 1 else None
+            
+            # Try to get source code
+            source_code = None
+            if root_path:
+                full_path = root_path / crash_file.lstrip('/')
+                if not full_path.exists():
+                    full_path = root_path / crash_file
+                if full_path.exists():
+                    try:
+                        source_code = full_path.read_text(encoding='utf-8', errors='ignore')
+                    except Exception:
+                        pass
+            
+            # Run intent analysis
+            should_include, adjusted_conf, analysis = bug_filter.filter_bug(
+                bug_type=bug.bug_type,
+                file_path=crash_file,
+                function_name=bug.crash_function,
+                variable_name=bug.bug_variable,
+                source_code=source_code,
+                line_number=int(crash_line) if crash_line and crash_line.isdigit() else None,
+                original_confidence=bug.confidence,
+            )
+            
+            # Additional AST-based safety check if we have source
+            if source_code and should_include:
+                func_name = bug.crash_function.split('.')[-1] if '.' in bug.crash_function else bug.crash_function
+                is_guarded, guard_conf, guard_reason = safety_analyzer.is_bug_guarded(
+                    source=source_code,
+                    function_name=func_name,
+                    bug_type=bug.bug_type,
+                    variable=bug.bug_variable,
+                    line_number=int(crash_line) if crash_line and crash_line.isdigit() else None
+                )
+                
+                if is_guarded and guard_conf > 0.7:
+                    should_include = False
+            
+            if should_include:
+                bug.confidence = adjusted_conf
+                filtered_bugs.append(bug)
+        
+        return filtered_bugs
+
     def _deduplicate_bugs(self, bugs: List[InterproceduralBug]) -> List[InterproceduralBug]:
         """
         Deduplicate bugs by (file:line, bug_type).
@@ -622,8 +1036,12 @@ class InterproceduralBugTracker:
         func_info: Optional['FunctionInfo'] = None,
     ) -> None:
         """Check for bugs directly triggered by a function."""
+        import logging
+        logger = logging.getLogger(__name__)
         from ..cfg.call_graph import FunctionInfo
         func_name = summary.qualified_name
+        
+        logger.info(f"[TRACKER] Analyzing {func_name} for direct bugs")
         
         # Build crash_location with file path if available
         if func_info:
@@ -652,11 +1070,53 @@ class InterproceduralBugTracker:
             # the code has SOME protection, reducing the likelihood it's a real bug
             # ITERATION 610: Increased reduction - if ALL paths are guarded for this bug type,
             # it's very likely a false positive (e.g., attribute access on typed params)
-            if bug_type in summary.guarded_bugs:
-                # Check if may_trigger ONLY has this bug type due to untracked paths
-                # In practice, if guarded_bugs contains the bug type, it means at least
-                # some paths have guards, making it less likely to be a real bug
-                confidence *= 0.3  # 70% reduction for guarded operations
+            
+            # SYMBOLIC VARIABLE: Try to extract the variable causing this bug FIRST
+            # Look for associated preconditions or guarded variables
+            bug_variable = None
+            for precond in summary.preconditions:
+                if PRECONDITION_TO_BUG.get(precond.condition_type) == bug_type:
+                    bug_variable = f"param_{precond.param_index}"
+                    break
+            
+            # If no precondition, check guard_type_to_vars for clues
+            if bug_variable is None:
+                from .interprocedural_guards import BUG_TYPE_TO_GUARD_TYPES
+                for guard_type in BUG_TYPE_TO_GUARD_TYPES.get(bug_type, set()):
+                    guarded_vars = summary.get_all_guarded_variables(guard_type)
+                    if guarded_vars:
+                        bug_variable = next(iter(guarded_vars))  # Take first
+                        break
+            
+            # EXTREME CONTEXT-AWARE VERIFICATION: ALL bugs now go through 25-paper verification
+            # Layer 0 (fast barriers) will catch easy FPs in O(n) time before expensive layers
+            
+            # Collect call chain summaries for interprocedural analysis
+            call_chain_summaries = []
+            for func_name in call_chain:
+                func_summary = self.crash_summaries.get(func_name)
+                if func_summary:
+                    call_chain_summaries.append(func_summary)
+            
+            # Run EXTREME context-aware verification (Layer 0 + Layers 1-5)
+            # This now runs for ALL bugs, not just guarded ones
+            verification_result = verify_bug_extreme(
+                bug_type=bug_type,
+                bug_variable=bug_variable,
+                crash_summary=summary,
+                call_chain_summaries=call_chain_summaries,
+                code_object=None,  # Would need actual code object
+                source_code=None   # Would need source code
+            )
+            
+            if verification_result.is_safe:
+                # Layer 0 or deeper verification proved safe - skip this bug (FP)
+                logger.info(f"[TRACKER] Verified SAFE: {bug_type} on {bug_variable} - skipping")
+                continue
+            else:
+                # Could not prove safe - keep the bug
+                logger.debug(f"[TRACKER] Could not prove safe: {bug_type} on {bug_variable}")
+                # Don't reduce confidence - if we can't prove it safe, report it
             
             # bug_type is now a string (e.g., 'DIV_ZERO')
             bug = InterproceduralBug(
@@ -669,6 +1129,7 @@ class InterproceduralBugTracker:
                 reachability_pts=ReachabilityIntervalPTS.unknown(
                     evidence=["source=crash_summary", "kind=may_trigger"]
                 ),
+                bug_variable=bug_variable,
             )
             
             # Check for relevant exceptions
@@ -1070,6 +1531,16 @@ class InterproceduralBugTracker:
             certainty='POSSIBLE',  # Preconditions are uncertain
         )
         
+        # Attach stochastic risk bound (metadata only)
+        arg_state = None
+        if context and precond.param_index is not None:
+            arg_state = context.get(f"arg{precond.param_index}")
+        risk_interval = risk_interval_for_precondition(precond, arg_state)
+        
+        # SYMBOLIC VARIABLE: Track which variable causes this bug
+        # For precondition violations, it's the parameter that was passed
+        bug_variable = f"param_{arg_idx}"
+
         # Create bug report
         return InterproceduralBug(
             bug_type=bug_type,
@@ -1083,6 +1554,8 @@ class InterproceduralBugTracker:
             reachability_pts=ReachabilityIntervalPTS.unknown(
                 evidence=["source=precondition_check", f"precond={precond.condition_type.name}"]
             ),
+            risk_interval=risk_interval,
+            bug_variable=bug_variable,
         )
     
     # ========================================================================

@@ -24,3 +24,7 @@ htmlcov/
 results/
 *.log
 external_tools/
+RustFromScratch/
+venv/
+test_venv/
+.DS_Store
