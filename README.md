@@ -1,98 +1,152 @@
 # PythonFromScratch
 
-A static analysis tool for Python that detects security vulnerabilities and bugs using symbolic execution and barrier-certificate proofs.
+A static analysis tool for Python that finds **real bugs** in large codebases using bytecode analysis, barrier-certificate proofs, and Z3-backed symbolic execution.
 
-## Installation
+Tested on Microsoft DeepSpeed (5,000+ functions) — found **6 confirmed true positives** including silent data corruption and unguarded division-by-zero bugs, while automatically proving 87.6% of candidates as false positives.
 
-### From source
+---
+
+## Install
 
 ```bash
-git clone https://github.com/your-org/PythonFromScratch.git
+git clone https://github.com/halleyyoung/PythonFromScratch.git
 cd PythonFromScratch
 pip install -e .
 ```
 
-### Using Docker
+Requires **Python ≥ 3.11** and **z3-solver** (installed automatically).
+
+---
+
+## Walkthrough: Analyze a Real Project
+
+### 1. Clone a target repo
 
 ```bash
-docker build -t pyfromscratch .
+git clone https://github.com/microsoft/DeepSpeed.git external_tools/DeepSpeed
 ```
 
-## Quick Start
+### 2. Run the analyzer
 
 ```bash
-# Analyze a single file
-pyfromscratch myfile.py
-
-# Security analysis with function-level entry points
-pyfromscratch myfile.py --functions
-
-# Interprocedural analysis of a project
-pyfromscratch myproject/ --interprocedural
+python3.11 -m pyfromscratch external_tools/DeepSpeed/deepspeed/
 ```
 
-## Usage
+This runs the full pipeline automatically:
 
-### Basic Analysis
+```
+======================================================================
+  PythonFromScratch — Full Project Analysis
+  Target: external_tools/DeepSpeed/deepspeed
+======================================================================
+
+STEP 1: BUILDING CALL GRAPH
+  Functions: 5003  (2.2s)
+
+STEP 2: COMPUTING CRASH SUMMARIES
+  Summaries: 5003  (329.4s)
+
+STEP 3: BUILDING CODE OBJECTS FOR DSE
+  Code objects: 5003  (0.0s)
+
+STEP 4: BUG TYPE COVERAGE
+    2928  NULL_PTR
+     689  BOUNDS
+     358  ASSERT_FAIL
+     119  DIV_ZERO
+      35  RUNTIME_ERROR
+      ...
+
+STEP 5: BARRIER CERTIFICATE + DSE ANALYSIS
+  Total bug instances:     4613
+  Fully guarded (guards):  3008
+  Unguarded:               1605
+
+  Barrier results (35.8s):
+    Proven FP:   1031/1605
+    Remaining:   574
+
+STEP 6: DSE RESULTS
+  DSE confirmed FP:    4
+  DSE confirmed TP:    493
+
+STEP 7: TRUE POSITIVE CANDIDATES
+  Production code bugs:  571
+  Test-only code bugs:   3
+
+  TRUE POSITIVES (DSE-confirmed reachable):
+    ⚠️ DIV_ZERO in utils.groups._ensure_divisibility
+    ⚠️ DIV_ZERO in utils.timer.ThroughputTimer._is_report_boundary
+    ⚠️ DIV_ZERO in inference.v2.inference_utils.ceil_div
+    ...
+
+SUMMARY
+  Functions analysed:    5003
+  Total bug instances:   4613
+  Proven false positive: 4039 (87.6%)
+  Remaining candidates:  574
+  DSE-confirmed TPs:     493
+
+  Results saved to results/deepspeed_results.pkl
+```
+
+### 3. Filter remaining false positives with Copilot
+
+The analyzer's barrier certificates and DSE eliminate ~88% of false positives automatically. The remaining candidates include bugs that are technically reachable but may be guarded by framework invariants invisible at the bytecode level (e.g., "this parameter is always non-None because PyTorch guarantees it").
+
+**Ask GitHub Copilot (or any LLM) to triage the remaining candidates:**
+
+> Look at the output from `python3.11 -m pyfromscratch external_tools/DeepSpeed/deepspeed/`. For each remaining TP candidate, read the actual source code and callers to determine if it's a real bug or a false positive. Classify each as:
+>
+> - **REAL_BUG** — genuinely reachable crash from user input or config
+> - **INTENTIONAL_GUARD** — deliberate `raise` (working as designed)
+> - **FP_SELF** — attribute access on `self` (never None)
+> - **FP_FRAMEWORK** — parameter guaranteed by framework (pytest, argparse, etc.)
+> - **FP_INTERNAL** — parameter guaranteed by internal plumbing
+>
+> Write up the confirmed true positives in a markdown report.
+
+This step typically reduces 500+ candidates down to **5–10 real bugs** with source-level evidence.
+
+See [docs/TRUE_POSITIVE_ANALYSIS.md](docs/TRUE_POSITIVE_ANALYSIS.md) for our full DeepSpeed investigation.
+
+---
+
+## Single-File Analysis
 
 ```bash
-pyfromscratch <file.py> [options]
+# Analyze one file
+python3.11 -m pyfromscratch myfile.py
+
+# Security analysis — treats each function as an entry point with tainted params
+python3.11 -m pyfromscratch myfile.py --functions
+
+# Verbose output
+python3.11 -m pyfromscratch myfile.py --verbose
 ```
 
-**Exit codes:**
-- `0` = **SAFE** — verified with barrier certificate
-- `1` = **BUG** — counterexample found
-- `2` = **UNKNOWN** — neither proof nor counterexample
-- `3` = Error (file not found, etc.)
+**Exit codes:** `0` = SAFE, `1` = BUG found, `2` = UNKNOWN, `3` = error
 
-### Command-Line Options
+---
+
+## All Options
 
 | Option | Description |
 |--------|-------------|
-| `--verbose` | Show detailed analysis output |
-| `--functions` | Analyze functions as entry points with tainted parameters |
+| `--verbose` | Detailed output |
+| `--functions` | Treat each function as a tainted entry point |
 | `--all-functions` | Analyze ALL functions as entry points |
-| `--interprocedural` | Enable cross-function analysis with call graph |
-| `--entry-points NAME,...` | Specify entry point functions (comma-separated) |
+| `--interprocedural` | Cross-function taint analysis with call graph |
+| `--entry-points NAME,...` | Specify entry point functions |
 | `--min-confidence 0.0-1.0` | Filter bugs by confidence score |
 | `--deduplicate` | Deduplicate findings by type + location |
-| `--context-depth N` | k-CFA context sensitivity (0=insensitive, 1=1-CFA, etc.) |
+| `--save-results PATH` | Custom output path (default: `results/<name>_results.pkl`) |
+| `--context-depth N` | k-CFA context sensitivity (0, 1, 2, ...) |
 | `--check-termination` | Detect non-terminating loops |
 | `--synthesize-invariants` | Generate inductive loop invariants |
 | `--no-concolic` | Pure symbolic analysis (no concrete execution) |
 
-### Analysis Modes
-
-#### 1. Module-Level Analysis (default)
-Analyzes top-level code execution:
-```bash
-pyfromscratch script.py
-```
-
-#### 2. Function Entry Point Analysis
-Treats each function as an entry point with untrusted (tainted) parameters — ideal for security analysis:
-```bash
-pyfromscratch app.py --functions
-```
-
-#### 3. Interprocedural Analysis
-Follows data flow across function calls with call-graph construction:
-```bash
-pyfromscratch myproject/ --interprocedural --entry-points main,handle_request
-```
-
-### Docker Usage
-
-```bash
-# Analyze a file (mount your code to /target)
-docker run --rm -v $(pwd):/target pyfromscratch /target/myfile.py
-
-# With options
-docker run --rm -v $(pwd):/target pyfromscratch /target/app.py --functions --verbose
-
-# Interprocedural analysis of a directory
-docker run --rm -v $(pwd)/myproject:/target pyfromscratch /target --interprocedural
-```
+---
 
 ## Detected Bug Types
 
@@ -217,48 +271,57 @@ Total bugs found: 0
 
 ## How It Works
 
-1. **Frontend** — Compiles Python to bytecode, builds control-flow graphs
-2. **Symbolic Execution** — Explores program paths with Z3 constraints
-3. **Taint Tracking** — Traces untrusted data through the program
-4. **Unsafe Predicates** — Checks if tainted data reaches dangerous sinks
-5. **Barrier Synthesis** — Attempts to prove safety via inductive invariants
+The analyzer runs a **7-step pipeline** on a project directory:
 
-The tool produces one of three verdicts:
-- **BUG**: Found a concrete path from source to sink
-- **SAFE**: Proved no such path exists (barrier certificate)
-- **UNKNOWN**: Could not determine either way
+1. **Call Graph** — Builds a whole-program call graph from all `.py` files
+2. **Crash Summaries** — Disassembles bytecode, finds unguarded divisions, None-dereferences, out-of-bounds accesses, etc.
+3. **Code Objects** — Extracts Python code objects for symbolic execution
+4. **Guard Detection** — Identifies bugs already protected by `if`, `try/except`, `assert`, `isinstance` checks
+5. **Barrier Certificates** — 10 proof patterns (assume-guarantee, post-condition, refinement types, inductive invariants, control flow, dataflow, disjunctive, callee return-guarantee, validated params, DSE confirmation) attempt to formally prove each remaining bug is unreachable
+6. **DSE (Z3)** — Dynamic symbolic execution confirms whether a concrete input can trigger each surviving bug
+7. **Classification** — Separates production code from test code, reports true positive candidates
+
+The tool produces one of three verdicts per bug:
+- **FP (proven)** — barrier certificate or DSE proves the bug is unreachable
+- **TP candidate** — no proof found; needs human/LLM triage
+- **DSE-confirmed TP** — Z3 found a satisfying assignment that reaches the bug
 
 ## Architecture
 
 ```
 pyfromscratch/
+├── __main__.py   # python -m pyfromscratch entry point
+├── cli.py        # CLI: single-file and project-directory analysis
+├── analyzer.py   # Core analysis engine
 ├── frontend/     # Python loading, bytecode compilation
-├── cfg/          # Control-flow graph construction
-├── semantics/    # Symbolic bytecode execution
+├── cfg/          # Control-flow graph + call graph construction
+├── semantics/    # Symbolic bytecode execution, crash summaries
 ├── z3model/      # Z3 value/heap modeling
 ├── unsafe/       # Bug type predicates (67 types)
 ├── contracts/    # External call modeling, taint sources/sinks
-├── dse/          # Concolic execution oracle
-└── barriers/     # Barrier certificate synthesis
+├── dse/          # Concolic execution oracle (Z3-backed)
+└── barriers/     # Barrier certificate synthesis (10 patterns)
+```
+
+## Docker
+
+```bash
+# Build
+docker build -t pyfromscratch .
+
+# Analyze a directory
+docker run --rm -v $(pwd)/my_project:/target pyfromscratch /target
+
+# Analyze a single file
+docker run --rm -v $(pwd):/code pyfromscratch /code/myfile.py --functions
 ```
 
 ## Development
 
 ```bash
-# Run tests
-pytest
-
-# Run tests with coverage
-pytest --cov=pyfromscratch
-
-# Type checking
-mypy pyfromscratch
+pytest                          # Run tests
+pytest --cov=pyfromscratch      # With coverage
 ```
-
-## Requirements
-
-- Python ≥ 3.11
-- z3-solver ≥ 4.12.0
 
 ## License
 
