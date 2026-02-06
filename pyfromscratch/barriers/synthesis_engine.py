@@ -664,7 +664,7 @@ class UnifiedSynthesisEngine:
         }
     
     def _run_sos_safety(self, problem: Dict[str, Any]) -> VerificationResult:
-        """Run SOS safety checking."""
+        """Run SOS safety checking using Papers #1-10."""
         system = problem.get('system', {})
         property_dict = problem.get('property', {})
         n_vars = problem.get('n_vars', 2)
@@ -675,6 +675,93 @@ class UnifiedSynthesisEngine:
         unsafe = property_dict.get('avoid', system.get('unsafe'))
         dynamics = system.get('dynamics')
         
+        # ENHANCED: Try all Papers #1-10 for Python bugs
+        bug_type = system.get('bug_type')
+        bug_variable = system.get('bug_variable')
+        summary = system.get('crash_summary')
+        
+        if bug_type and bug_variable and summary:
+            logger.debug(f"[SOS Safety] Trying Papers #1-10 for {bug_type} on {bug_variable}")
+            
+            # Try Papers #1-5 first
+            try:
+                from .papers_1_to_5_complete import Papers1to5UnifiedEngine
+                engine1to5 = Papers1to5UnifiedEngine()
+                is_safe, paper_name, certificate = engine1to5.verify_safety(
+                    bug_type, bug_variable, summary
+                )
+                if is_safe:
+                    logger.info(f"[{paper_name}] ✓ SUCCESS!")
+                    return VerificationResult(
+                        status='safe',
+                        certificate=certificate,
+                        method_used=paper_name
+                    )
+                else:
+                    logger.debug(f"[Papers #1-5] All returned False")
+            except Exception as e:
+                logger.debug(f"[Papers #1-5] Exception: {e}")
+            
+            # Try Papers #6-10 as fallback
+            try:
+                from .papers_6_to_10_complete import Papers6to10UnifiedEngine
+                engine6to10 = Papers6to10UnifiedEngine()
+                is_safe, paper_name, certificate = engine6to10.verify_safety(
+                    bug_type, bug_variable, summary
+                )
+                if is_safe:
+                    logger.info(f"[{paper_name}] ✓ SUCCESS!")
+                    return VerificationResult(
+                        status='safe',
+                        certificate=certificate,
+                        method_used=paper_name
+                    )
+                else:
+                    logger.debug(f"[Papers #6-10] All returned False")
+            except Exception as e:
+                logger.debug(f"[Papers #6-10] Exception: {e}")
+            
+            # Try Papers #11-15 as fallback
+            try:
+                from .papers_11_to_15_complete import Papers11to15UnifiedEngine
+                engine11to15 = Papers11to15UnifiedEngine()
+                is_safe, paper_name, certificate = engine11to15.verify_safety(
+                    bug_type, bug_variable, summary
+                )
+                if is_safe:
+                    logger.info(f"[{paper_name}] ✓ SUCCESS!")
+                    return VerificationResult(
+                        status='safe',
+                        certificate=certificate,
+                        method_used=paper_name
+                    )
+                else:
+                    logger.debug(f"[Papers #11-15] All returned False")
+            except Exception as e:
+                logger.debug(f"[Papers #11-15] Exception: {e}")
+            
+            # Try Papers #16-20 as final fallback
+            try:
+                from .papers_16_to_20_complete import Papers16to20UnifiedEngine
+                engine16to20 = Papers16to20UnifiedEngine()
+                is_safe, paper_name, certificate = engine16to20.verify_safety(
+                    bug_type, bug_variable, summary
+                )
+                if is_safe:
+                    logger.info(f"[{paper_name}] ✓ SUCCESS!")
+                    return VerificationResult(
+                        status='safe',
+                        certificate=certificate,
+                        method_used=paper_name
+                    )
+                else:
+                    logger.debug(f"[Papers #16-20] All returned False")
+            except Exception as e:
+                logger.debug(f"[Papers #16-20] Exception: {e}")
+        else:
+            logger.debug(f"[SOS Safety] Missing context: bug_type={bug_type}, bug_variable={bug_variable}, summary={summary is not None}")
+        
+        # Fallback to original SOS safety checking
         if not all([initial, safe, unsafe, dynamics]):
             return VerificationResult(status='unknown')
         
@@ -686,7 +773,7 @@ class UnifiedSynthesisEngine:
         return VerificationResult(
             status=status,
             certificate=barrier,
-            method_used='sos_safety'
+            method_used='sos_safety_paper3'
         )
     
     def _run_putinar(self, problem: Dict[str, Any]) -> VerificationResult:

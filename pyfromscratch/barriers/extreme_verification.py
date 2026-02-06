@@ -558,6 +558,13 @@ class ExtremeContextVerifier(ContextAwareVerifier):
         logger.info(f"[EXTREME] Verifying {bug_type} on {bug_variable or 'unknown'} in {crash_summary.function_name}")
         start_time = time.time()
         
+        # Track which papers/layers succeed (for multi-paper comparison)
+        layer0_success = False
+        layer0_paper = None
+        layer2_success = False
+        layer4_ice_success = False
+        layer4_houdini_success = False
+        
         result = ContextAwareResult(is_safe=False)
         
         # FAST PATH: Skip expensive verification for low-risk patterns
@@ -603,23 +610,24 @@ class ExtremeContextVerifier(ContextAwareVerifier):
         # Each technique tries to prove: B(x) ≥ threshold → safe
         # Success rate: ~30% of remaining bugs (after pre-check) in O(n) time
         
-        # OPTIMIZATION: Skip Layer 0 if pre-check was close to succeeding
-        skip_layer0 = (conf_quick > 0.60)  # Pre-check showed promise
+        # Layer 0: Fast barrier filters (Papers #21-25)
+        # Always run Layer 0 - it's fast (O(n)) and may catch bugs pre-check missed
+        logger.debug(f"[LAYER 0] Trying fast barrier filters")
+        is_safe_fast, confidence_fast, technique = self.fast_filters.try_prove_safe(
+            bug_type, bug_variable or '', crash_summary
+        )
         
-        if not skip_layer0:
-            logger.debug(f"[LAYER 0] Trying fast barrier filters")
-            is_safe_fast, confidence_fast, technique = self.fast_filters.try_prove_safe(
-                bug_type, bug_variable or '', crash_summary
-            )
-            
-            if is_safe_fast and confidence_fast > 0.85:
-                logger.warning(f"✓ [LAYER 0: {technique.upper()}] Paper #{_get_paper_number(technique)} | {bug_type} on {bug_variable} | conf={confidence_fast:.0%}")
-                result.is_safe = True
-                result.verification_time_ms = (time.time() - start_time) * 1000
-                self._verification_cache[cache_key] = result
-                return result
+        # Track Layer 0 results
+        layer0_success = is_safe_fast and confidence_fast > 0.85
+        layer0_paper = _get_paper_number(technique) if layer0_success else None
+        
+        if layer0_success:
+            logger.warning(f"✓ [LAYER 0: {technique.upper()}] Paper #{layer0_paper} | {bug_type} on {bug_variable} | conf={confidence_fast:.0%}")
+            # CHANGED: Don't return immediately - continue to Layers 1-5 for comparison
+            # This allows us to see which deeper papers would also succeed
+            result.is_safe = True  # Mark as safe from Layer 0
         else:
-            logger.debug(f"[LAYER 0] Skipping (pre-check confidence {conf_quick:.0%} suggests FP)")
+            logger.debug(f"[LAYER 0] No success (confidence {confidence_fast:.0%} below 0.85 threshold)")
         
         # =====================================================================
         # PHASE -1: Bayesian Probabilistic FP Scoring - DISABLED (UNSOUND)
@@ -824,12 +832,18 @@ class ExtremeContextVerifier(ContextAwareVerifier):
         )
         
         layer2_barriers = []
+        layer2_success = False
         if synthesis_problem:
+            try:
                 # UnifiedSynthesisEngine.verify() needs system and property separate
                 system = {
                     'n_vars': synthesis_problem.get('n_vars', 2),
                     'dynamics_type': synthesis_problem.get('dynamics_type', 'discrete'),
                     'num_modes': synthesis_problem.get('num_modes', 1),
+                    # ADDED: Pass Python bug context for Papers #1-2
+                    'bug_type': bug_type,
+                    'bug_variable': bug_variable,
+                    'crash_summary': crash_summary,
                 }
                 property_spec = {
                     'max_degree': synthesis_problem.get('max_degree', 4),
@@ -848,10 +862,12 @@ class ExtremeContextVerifier(ContextAwareVerifier):
                         layer2_barriers.append(barrier)
                         result.synthesized_barriers.append(barrier)
                     
+                    layer2_success = True
+                    logger.warning(f"✓ [LAYER 2: SOS/SDP] Papers #1-8 | {bug_type} on {bug_variable} | barrier synthesized")
                     result.is_safe = True
-                    result.verification_time_ms = (time.time() - start_time) * 1000
-                    logger.debug(f"[EXTREME] Layer 2 succeeded - barrier synthesized")
-                    return result
+                    # CHANGED: Don't return - continue to see what else succeeds
+            except Exception as e:
+                logger.debug(f"[EXTREME] Layer 2 failed: {e}")
         
         # =====================================================================
         # PHASE 4-7: LAYERS 3-5 BUILD ON LAYER 2
@@ -865,6 +881,7 @@ class ExtremeContextVerifier(ContextAwareVerifier):
         )
         
         layer4_learned = []
+        layer4_ice_success = False
         if ice_examples and ice_examples.positive:
             try:
                 # Use unified engine's learning capability
@@ -885,10 +902,10 @@ class ExtremeContextVerifier(ContextAwareVerifier):
                     )
                     layer4_learned.append(learned_barrier)
                     result.synthesized_barriers.append(learned_barrier)
+                    layer4_ice_success = True
+                    logger.warning(f"✓ [LAYER 4: ICE] Papers #17 | {bug_type} on {bug_variable} | invariant learned")
                     result.is_safe = True
-                    result.verification_time_ms = (time.time() - start_time) * 1000
-                    logger.debug(f"[EXTREME] Layer 4 succeeded - invariant learned via ICE")
-                    return result
+                    # CHANGED: Don't return - continue
             except Exception as e:
                 logger.debug(f"[EXTREME] Layer 4 ICE learning failed: {e}")
                 pass  # ICE learning failed, continue
@@ -903,6 +920,7 @@ class ExtremeContextVerifier(ContextAwareVerifier):
             bug_type, bug_variable, crash_summary
         )
         
+        layer4_houdini_success = False
         if candidate_annotations:
             try:
                 # Use unified engine's Houdini capability
@@ -921,10 +939,10 @@ class ExtremeContextVerifier(ContextAwareVerifier):
                         houdini_result.certificate, bug_variable
                     )
                     result.synthesized_barriers.append(houdini_barrier)
+                    layer4_houdini_success = True
+                    logger.warning(f"✓ [LAYER 4: HOUDINI] Paper #18 | {bug_type} on {bug_variable} | annotations refined")
                     result.is_safe = True
-                    result.verification_time_ms = (time.time() - start_time) * 1000
-                    logger.debug(f"[EXTREME] Layer 4 Houdini succeeded - annotations refined")
-                    return result
+                    # CHANGED: Don't return - continue
             except Exception as e:
                 logger.debug(f"[EXTREME] Layer 4 Houdini failed: {e}")
                 pass  # Houdini failed, continue
@@ -1036,34 +1054,42 @@ class ExtremeContextVerifier(ContextAwareVerifier):
                 pass  # IC3 failed, continue
         
         # =====================================================================
-        # PHASE 8-9: FINAL CHECKS (Only if expensive layers disabled)
+        # PHASE 8: Interprocedural Propagation
         # =====================================================================
-        if skip_expensive_layers:
-            # Skip interprocedural propagation and DSE for speed
-            logger.debug(f"[EXTREME] Skipping final phases 8-9 for speed")
-        else:
-            # =====================================================================
-            # PHASE 8: Interprocedural Propagation
-            # =====================================================================
-            interprocedural = self._propagate_barriers_interprocedurally(
-                bug_type, bug_variable, call_chain_summaries
-            )
-            if interprocedural:
-                result.synthesized_barriers.extend(interprocedural)
-                result.is_safe = True
-                result.verification_time_ms = (time.time() - start_time) * 1000
-                return result
-            
-            # =====================================================================
-            # PHASE 9: DSE Verification (ground truth)
-            # =====================================================================
-            if code_object:
-                dse_result = self._verify_with_dse(code_object, bug_type, bug_variable)
-                result.dse_verified = True
-                result.is_safe = not dse_result['bug_reachable']
-                result.dse_counterexample = dse_result.get('counterexample')
+        interprocedural = self._propagate_barriers_interprocedurally(
+            bug_type, bug_variable, call_chain_summaries
+        )
+        if interprocedural:
+            result.synthesized_barriers.extend(interprocedural)
+            result.is_safe = True
+            result.verification_time_ms = (time.time() - start_time) * 1000
+            return result
+        
+        # =====================================================================
+        # PHASE 9: DSE Verification (ground truth)
+        # =====================================================================
+        if code_object:
+            dse_result = self._verify_with_dse(code_object, bug_type, bug_variable)
+            result.dse_verified = True
+            result.is_safe = not dse_result['bug_reachable']
+            result.dse_counterexample = dse_result.get('counterexample')
         
         result.verification_time_ms = (time.time() - start_time) * 1000
+        
+        # Log which papers contributed to this result
+        papers_succeeded = []
+        if layer0_success and layer0_paper:
+            papers_succeeded.append(f"Paper #{layer0_paper} (Layer 0)")
+        if layer2_success:
+            papers_succeeded.append("Papers #1-8 (Layer 1-2: SOS/SDP)")
+        if layer4_ice_success:
+            papers_succeeded.append("Paper #17 (Layer 4: ICE)")
+        if layer4_houdini_success:
+            papers_succeeded.append("Paper #18 (Layer 4: Houdini)")
+        
+        if papers_succeeded:
+            logger.info(f"[EXTREME] Papers succeeded: {', '.join(papers_succeeded)}")
+        
         logger.info(f"[EXTREME] Result: {'SAFE' if result.is_safe else 'UNSAFE'} ({result.verification_time_ms:.2f}ms)")
         
         # Cache result for future lookups
@@ -1231,19 +1257,103 @@ class ExtremeContextVerifier(ContextAwareVerifier):
         }
         
         # Add initial/unsafe predicates based on bug type
+        # Map ALL non-security bug types to barrier synthesis problems
+        problem['initial_set'] = 'true'  # Always start from any state
+        
+        # Core memory/access bugs
         if bug_type == 'BOUNDS':
-            # Initial: any value
-            # Unsafe: index >= len or index < 0
-            problem['initial_set'] = 'true'
-            problem['unsafe_set'] = f'{bug_variable} < 0 or index >= len'
+            problem['unsafe_set'] = f'{bug_variable} < 0 or {bug_variable} >= len'
         elif bug_type == 'DIV_ZERO':
-            problem['initial_set'] = 'true'
             problem['unsafe_set'] = f'{bug_variable} == 0'
         elif bug_type == 'NULL_PTR':
-            problem['initial_set'] = 'true'
             problem['unsafe_set'] = f'{bug_variable} == null'
+        elif bug_type == 'TYPE_CONFUSION':
+            problem['unsafe_set'] = f'type({bug_variable}) != expected'
+        
+        # Exception-based bugs (from exception_bugs.py)
+        elif bug_type == 'VALUE_ERROR':
+            problem['unsafe_set'] = f'{bug_variable} not_in_valid_range'
+        elif bug_type == 'RUNTIME_ERROR':
+            problem['unsafe_set'] = f'{bug_variable} violates_invariant'
+        elif bug_type == 'NOT_IMPLEMENTED':
+            problem['unsafe_set'] = f'{bug_variable} is_abstract'
+        elif bug_type == 'FILE_NOT_FOUND':
+            problem['unsafe_set'] = f'not exists({bug_variable})'
+        elif bug_type == 'PERMISSION_ERROR':
+            problem['unsafe_set'] = f'not accessible({bug_variable})'
+        elif bug_type == 'OS_ERROR':
+            problem['unsafe_set'] = f'{bug_variable} syscall_fails'
+        elif bug_type == 'IO_ERROR':
+            problem['unsafe_set'] = f'{bug_variable} io_fails'
+        elif bug_type == 'IMPORT_ERROR':
+            problem['unsafe_set'] = f'not module_exists({bug_variable})'
+        elif bug_type == 'NAME_ERROR':
+            problem['unsafe_set'] = f'not defined({bug_variable})'
+        elif bug_type == 'UNBOUND_LOCAL':
+            problem['unsafe_set'] = f'not assigned({bug_variable})'
+        elif bug_type == 'TIMEOUT_ERROR':
+            problem['unsafe_set'] = f'time({bug_variable}) > threshold'
+        elif bug_type == 'CONNECTION_ERROR':
+            problem['unsafe_set'] = f'not connected({bug_variable})'
+        
+        # Core correctness bugs
+        elif bug_type == 'ASSERT_FAIL':
+            problem['unsafe_set'] = f'{bug_variable} == false'
+        elif bug_type == 'FP_DOMAIN':
+            problem['unsafe_set'] = f'{bug_variable} not_in_float_domain'
+        elif bug_type == 'INTEGER_OVERFLOW':
+            problem['unsafe_set'] = f'{bug_variable} > max_int or {bug_variable} < min_int'
+        elif bug_type == 'STACK_OVERFLOW':
+            problem['unsafe_set'] = f'depth({bug_variable}) > max_depth'
+        elif bug_type == 'MEMORY_LEAK':
+            problem['unsafe_set'] = f'allocated({bug_variable}) and not freed({bug_variable})'
+        elif bug_type == 'NON_TERMINATION':
+            problem['unsafe_set'] = f'loops_forever({bug_variable})'
+        elif bug_type == 'ITERATOR_INVALID':
+            problem['unsafe_set'] = f'invalidated({bug_variable})'
+        
+        # Memory safety bugs  
+        elif bug_type == 'USE_AFTER_FREE':
+            problem['unsafe_set'] = f'freed({bug_variable}) and accessed({bug_variable})'
+        elif bug_type == 'DOUBLE_FREE':
+            problem['unsafe_set'] = f'free_count({bug_variable}) > 1'
+        elif bug_type == 'UNINIT_MEMORY':
+            problem['unsafe_set'] = f'not initialized({bug_variable})'
+        
+        # Concurrency bugs
+        elif bug_type == 'DATA_RACE':
+            problem['unsafe_set'] = f'concurrent_access({bug_variable}) without_lock'
+        elif bug_type == 'DEADLOCK':
+            problem['unsafe_set'] = f'circular_wait({bug_variable})'
+        elif bug_type == 'SEND_SYNC':
+            problem['unsafe_set'] = f'not thread_safe({bug_variable})'
+        
+        # Information flow bugs
+        elif bug_type == 'INFO_LEAK':
+            problem['unsafe_set'] = f'leaks({bug_variable})'
+        elif bug_type == 'TIMING_CHANNEL':
+            problem['unsafe_set'] = f'timing_dependent({bug_variable})'
+        
+        # Kitchensink semantic bugs (24 types from kitchensink_taxonomy.py)
+        elif bug_type in ('PRECONDITION_VIOLATION', 'POSTCONDITION_VIOLATION', 
+                          'INVARIANT_VIOLATION', 'ASSERTION_VIOLATION', 'CONTRACT_VIOLATION'):
+            problem['unsafe_set'] = f'violates_contract({bug_variable})'
+        elif bug_type in ('USE_BEFORE_INIT', 'USE_AFTER_CLOSE', 'DOUBLE_RELEASE',
+                          'TEMPORAL_VIOLATION', 'LIFECYCLE_VIOLATION', 'STATE_INCONSISTENCY'):
+            problem['unsafe_set'] = f'temporal_violation({bug_variable})'
+        elif bug_type in ('UNVALIDATED_INPUT', 'UNCHECKED_RETURN', 'TAINTED_DATA_FLOW',
+                          'MISSING_NULL_CHECK', 'MISSING_BOUNDS_CHECK'):
+            problem['unsafe_set'] = f'unchecked({bug_variable})'
+        elif bug_type in ('ITERATOR_PROTOCOL', 'CONTEXT_MANAGER_PROTOCOL', 
+                          'DESCRIPTOR_PROTOCOL', 'ASYNC_PROTOCOL'):
+            problem['unsafe_set'] = f'protocol_violation({bug_variable})'
+        elif bug_type in ('MEMORY_EXHAUSTION', 'CPU_EXHAUSTION', 
+                          'DISK_EXHAUSTION', 'FILE_HANDLE_EXHAUSTION'):
+            problem['unsafe_set'] = f'exhausted({bug_variable})'
+        
+        # Fallback for any unknown bug types
         else:
-            return None
+            problem['unsafe_set'] = f'unsafe({bug_variable})'
         
         # Add interval constraints if available
         if bug_variable:

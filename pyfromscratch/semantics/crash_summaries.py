@@ -73,7 +73,49 @@ EXCEPTION_BARRIER_MAP: Dict[str, List[str]] = {
     'NULL_PTR': ['AttributeError', 'TypeError'],
     'VALUE_ERROR': ['ValueError'],
     'TYPE_CONFUSION': ['TypeError'],
+    'RUNTIME_ERROR': ['RuntimeError'],
+    'IMPORT_ERROR': ['ImportError', 'ModuleNotFoundError'],
+    'ASSERT_FAIL': ['AssertionError'],
+    'INTEGER_OVERFLOW': ['OverflowError'],
+    'FILE_NOT_FOUND': ['FileNotFoundError'],
+    'PERMISSION_ERROR': ['PermissionError'],
+    'OS_ERROR': ['OSError'],
+    'IO_ERROR': ['IOError'],
+    'NAME_ERROR': ['NameError'],
+    'UNBOUND_LOCAL': ['UnboundLocalError'],
+    'TIMEOUT_ERROR': ['TimeoutError'],
 }
+
+# Bytecode constants for division operations.
+# Dynamically computed to handle Python version differences
+# (e.g., Python 3.14 changed BINARY_OP arg numbering).
+def _compute_division_binary_ops():
+    """Compute the correct BINARY_OP arg values for division on this Python."""
+    import dis as _dis
+    args = set()
+    for expr in ['x / y', 'x // y', 'x % y']:
+        code = compile(f'def f(x, y):\n    return {expr}', '<div>', 'exec')
+        for c in code.co_consts:
+            if hasattr(c, 'co_name') and c.co_name == 'f':
+                for instr in _dis.get_instructions(c):
+                    if instr.opname == 'BINARY_OP':
+                        args.add(instr.arg)
+    for expr in ['x /= y', 'x //= y', 'x %= y']:
+        code = compile(f'def f(x, y):\n    {expr}\n    return x', '<div>', 'exec')
+        for c in code.co_consts:
+            if hasattr(c, 'co_name') and c.co_name == 'f':
+                for instr in _dis.get_instructions(c):
+                    if instr.opname == 'BINARY_OP':
+                        args.add(instr.arg)
+    return args
+
+DIVISION_BINARY_OPS = _compute_division_binary_ops()
+
+# Bytecode opcode sets for different operations
+SUBSCRIPT_OPCODES = {'BINARY_SUBSCR', 'LOAD_SUBSCR'}
+ATTRIBUTE_OPCODES = {'LOAD_ATTR', 'LOAD_METHOD'}
+CALL_OPCODES = {'CALL_FUNCTION', 'CALL', 'CALL_METHOD'}
+RAISE_OPCODES = {'RAISE_VARARGS'}
 
 
 # ============================================================================
@@ -651,773 +693,6 @@ class ParameterFlow:
 
 
 class BytecodeCrashSummaryAnalyzer:
-    """
-    AST visitor that computes crash summary for a single function.
-    
-    Analyzes:
-    - What operations may crash (division, subscript, attribute access)
-    - What exceptions are raised or may propagate
-    - Nullability flow from params to operations
-    
-    ITERATION 611: Adds guard tracking for FP reduction.
-    From barrier-certificate-theory.tex: guards from control flow (if x is not None)
-    make subsequent operations safe. We track these to avoid false positives.
-    """
-    
-    def __init__(
-        self,
-        func_name: str,
-        qualified_name: str,
-        parameters: List[str],
-        file_path: str,
-        existing_summaries: Dict[str, CrashSummary],
-    ):
-        self.func_name = func_name
-        self.qualified_name = qualified_name
-        self.parameters = parameters
-        self.file_path = file_path
-        self.summaries = existing_summaries
-        
-        # Track param index by name
-        self.param_indices = {p: i for i, p in enumerate(parameters)}
-        
-        # Track what flows from each param
-        self.var_sources: Dict[str, Set[int]] = {}
-        for i, p in enumerate(parameters):
-            self.var_sources[p] = {i}
-        
-        # Build summary
-        self.summary = CrashSummary(
-            function_name=func_name,
-            qualified_name=qualified_name,
-            parameter_count=len(parameters),
-        )
-        
-        # Track return nullability from return statements
-        self._return_nullabilities: List[Nullability] = []
-        
-        # ITERATION 611: Guard tracking for FP reduction
-        self.guards = GuardTracker()
-    
-    def analyze(self, func_node: ast.FunctionDef) -> CrashSummary:
-        """Analyze function and return crash summary."""
-        # ITERATION 610: Initialize param nullability from type annotations
-        self._init_param_nullability_from_annotations(func_node)
-        
-        # ITERATION 611: 'self' and 'cls' are guaranteed non-None
-        if self.parameters and self.parameters[0] == 'self':
-            self.guards.nonnull_vars.add('self')
-            self.summary.param_nullability[0] = Nullability.NOT_NONE
-        if self.parameters and self.parameters[0] == 'cls':
-            self.guards.nonnull_vars.add('cls')
-            self.summary.param_nullability[0] = Nullability.NOT_NONE
-        
-        # NOTE: Removed NEVER_NONE_NAMES heuristic
-        # Only 'self' and 'cls' are semantically guaranteed non-None by Python
-        # Other guarantees should come from type annotations or DSE analysis
-        
-        # Only visit the function body, not annotations/decorators
-        for stmt in func_node.body:
-            self.visit(stmt)
-        
-        # Compute final return nullability
-        if self._return_nullabilities:
-            result = Nullability.BOTTOM
-            for n in self._return_nullabilities:
-                result = result.join(n)
-            self.summary.return_nullability = result
-        
-        self.summary.analyzed = True
-        return self.summary
-    
-    def _init_param_nullability_from_annotations(self, func_node: ast.FunctionDef) -> None:
-        """
-        Initialize parameter nullability from type annotations.
-        
-        ITERATION 610: Reduce false positive NULL_PTR for typed parameters.
-        If a parameter has a non-Optional type hint (e.g., `x: BaseClass`),
-        we assume it's NOT_NONE because the type system implies non-null.
-        Only Optional[X] or Union[X, None] or X | None indicate may-be-null.
-        """
-        for i, arg in enumerate(func_node.args.args):
-            if arg.annotation:
-                if self._annotation_is_optional(arg.annotation):
-                    # Optional type - could be None
-                    self.summary.param_nullability[i] = Nullability.MAY_BE_NONE
-                else:
-                    # Non-optional type annotation - assume NOT_NONE
-                    # This reduces FPs for typed code like Qlib
-                    self.summary.param_nullability[i] = Nullability.NOT_NONE
-            # No annotation = TOP (unknown)
-    
-    def _annotation_is_optional(self, annotation: ast.AST) -> bool:
-        """
-        Check if a type annotation indicates Optional/nullable.
-        
-        Handles:
-        - Optional[X] -> True
-        - Union[X, None] -> True
-        - X | None -> True (Python 3.10+)
-        - None -> True
-        - Everything else -> False
-        """
-        # None literal
-        if isinstance(annotation, ast.Constant) and annotation.value is None:
-            return True
-        
-        # ast.Name("None")
-        if isinstance(annotation, ast.Name) and annotation.id == 'None':
-            return True
-        
-        # Subscript: Optional[X] or Union[X, None]
-        if isinstance(annotation, ast.Subscript):
-            if isinstance(annotation.value, ast.Attribute):
-                # typing.Optional, typing.Union
-                attr_name = annotation.value.attr
-            elif isinstance(annotation.value, ast.Name):
-                # Optional, Union
-                attr_name = annotation.value.id
-            else:
-                return False
-            
-            if attr_name == 'Optional':
-                return True
-            if attr_name == 'Union':
-                # Check if None is in the union
-                if isinstance(annotation.slice, ast.Tuple):
-                    for elt in annotation.slice.elts:
-                        if self._annotation_is_optional(elt):
-                            return True
-                elif self._annotation_is_optional(annotation.slice):
-                    return True
-        
-        # BinOp: X | None (Python 3.10+)
-        if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
-            if self._annotation_is_optional(annotation.left) or self._annotation_is_optional(annotation.right):
-                return True
-        
-        return False
-    
-    def _get_param_sources(self, node: ast.AST) -> Set[int]:
-        """Get which parameters flow to this expression."""
-        if isinstance(node, ast.Name):
-            return self.var_sources.get(node.id, set())
-        elif isinstance(node, ast.BinOp):
-            return self._get_param_sources(node.left) | self._get_param_sources(node.right)
-        elif isinstance(node, ast.UnaryOp):
-            return self._get_param_sources(node.operand)
-        elif isinstance(node, ast.Call):
-            # Conservative: all args
-            sources = set()
-            for arg in node.args:
-                sources |= self._get_param_sources(arg)
-            return sources
-        elif isinstance(node, ast.Subscript):
-            return self._get_param_sources(node.value) | self._get_param_sources(node.slice)
-        elif isinstance(node, ast.Attribute):
-            return self._get_param_sources(node.value)
-        elif isinstance(node, ast.IfExp):
-            return (self._get_param_sources(node.test) | 
-                   self._get_param_sources(node.body) |
-                   self._get_param_sources(node.orelse))
-        return set()
-    
-    def _is_none_literal(self, node: ast.AST) -> bool:
-        """Check if node is None literal."""
-        return isinstance(node, ast.Constant) and node.value is None
-    
-    def _get_nullability(self, node: ast.AST) -> Nullability:
-        """Estimate nullability of expression."""
-        if self._is_none_literal(node):
-            return Nullability.IS_NONE
-        if isinstance(node, ast.Constant):
-            return Nullability.NOT_NONE
-        if isinstance(node, (ast.List, ast.Dict, ast.Set, ast.Tuple)):
-            return Nullability.NOT_NONE
-        if isinstance(node, ast.Name):
-            # ITERATION 611: Check guards first
-            if node.id in self.guards.nonnull_vars:
-                return Nullability.NOT_NONE
-            # Check if it's a param we know about
-            if node.id in self.param_indices:
-                idx = self.param_indices[node.id]
-                return self.summary.param_nullability.get(idx, Nullability.TOP)
-        return Nullability.TOP
-    
-    def _get_name_str(self, node: ast.AST) -> str:
-        """Get string representation of a name or attribute chain."""
-        if isinstance(node, ast.Name):
-            return node.id
-        elif isinstance(node, ast.Attribute):
-            base = self._get_name_str(node.value)
-            return f'{base}.{node.attr}' if base else node.attr
-        elif isinstance(node, ast.Subscript):
-            return self._get_name_str(node.value)
-        elif isinstance(node, ast.Call):
-            return self._get_name_str(node.func)
-        return ''
-    
-    def _is_path_division(self, left: ast.AST) -> bool:
-        """
-        Check if division is Path.__truediv__ (not numeric).
-        
-        Path / "file" uses the / operator but is path concatenation, not division.
-        
-        DSE-based approach: Use type inference from Z3 symbolic values to determine
-        if the operand is a Path type. The SymbolicVM tracks types precisely.
-        
-        For AST-level analysis, we use type annotations when available.
-        """
-        # Use type annotations if available
-        if isinstance(left, ast.Name):
-            # Check if we have type info from annotations
-            if hasattr(self, 'type_annotations') and left.id in self.type_annotations:
-                type_str = self.type_annotations.get(left.id, '')
-                if 'Path' in type_str or 'path' in type_str.lower():
-                    return True
-        # For attribute access like self.path, check type annotations on class
-        if isinstance(left, ast.Attribute):
-            if hasattr(self, 'type_annotations'):
-                attr_type = self.type_annotations.get(f'{self._get_name_str(left.value)}.{left.attr}', '')
-                if 'Path' in attr_type:
-                    return True
-        # Conservative: cannot determine without DSE type inference
-        return False
-    
-    def _body_terminates(self, body: List[ast.AST]) -> bool:
-        """
-        Check if a block always terminates (raise, return, continue, break).
-        
-        ITERATION 611: For early-return patterns like:
-            if x is None:
-                raise ValueError(...)
-            # After here, x is definitely not None
-        """
-        if not body:
-            return False
-        last = body[-1]
-        # Direct terminators
-        if isinstance(last, (ast.Return, ast.Raise, ast.Continue, ast.Break)):
-            return True
-        # If with terminating branches
-        if isinstance(last, ast.If):
-            if_terminates = self._body_terminates(last.body)
-            else_terminates = self._body_terminates(last.orelse) if last.orelse else False
-            return if_terminates and else_terminates
-        return False
-    
-    def _extract_inverted_guards(self, test: ast.AST) -> None:
-        """
-        Extract guards from the OPPOSITE of a test condition.
-        
-        Used after 'if x is None: raise' - after the if, x is NOT None.
-        """
-        if isinstance(test, ast.Compare) and len(test.ops) == 1:
-            # if x is None: raise -> x is NOT None after
-            if isinstance(test.ops[0], ast.Is):
-                if isinstance(test.comparators[0], ast.Constant) and test.comparators[0].value is None:
-                    if isinstance(test.left, ast.Name):
-                        self.guards.nonnull_vars.add(test.left.id)
-            
-            # if x == 0: return -> x != 0 after
-            elif isinstance(test.ops[0], ast.Eq):
-                if isinstance(test.comparators[0], ast.Constant) and test.comparators[0].value == 0:
-                    if isinstance(test.left, ast.Name):
-                        self.guards.nonzero_vars.add(test.left.id)
-            
-            # if not x: raise -> x is truthy after
-            # (handled by UnaryOp below)
-        
-        # if not x: raise -> x is truthy after
-        elif isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
-            if isinstance(test.operand, ast.Name):
-                self.guards.nonnull_vars.add(test.operand.id)
-                self.guards.nonempty_vars.add(test.operand.id)
-                self.guards.nonzero_vars.add(test.operand.id)
-    
-    def visit_If(self, node: ast.If) -> None:
-        """
-        ITERATION 611: Extract guards from if conditions.
-        
-        Track guards like 'if x is not None:' to reduce FPs in the body.
-        Also handle early-return patterns: 'if x is None: raise'
-        """
-        old_guards = self.guards.copy()
-        
-        # Check for early-return pattern: if condition: <terminate>
-        # After this pattern, the INVERSE of the condition holds
-        if self._body_terminates(node.body) and not node.orelse:
-            # After the if, the condition is FALSE
-            self._extract_inverted_guards(node.test)
-            # Still need to visit the body for its own analysis
-            for stmt in node.body:
-                self.visit(stmt)
-            # Don't restore guards - the inverted guards persist
-            return
-        
-        # Normal case: extract guards from the test condition
-        self._extract_guards_from_test(node.test)
-        
-        # Visit body with updated guards
-        for stmt in node.body:
-            self.visit(stmt)
-        
-        # Restore guards for else branch (opposite knowledge)
-        self.guards = old_guards
-        for stmt in node.orelse:
-            self.visit(stmt)
-    
-    def _extract_guards_from_test(self, test: ast.AST) -> None:
-        """Extract guard facts from an if condition."""
-        # if x is not None:
-        if isinstance(test, ast.Compare) and len(test.ops) == 1:
-            if isinstance(test.ops[0], ast.IsNot):
-                if isinstance(test.comparators[0], ast.Constant) and test.comparators[0].value is None:
-                    if isinstance(test.left, ast.Name):
-                        self.guards.nonnull_vars.add(test.left.id)
-            
-            # if x != 0: or if x > 0:
-            elif isinstance(test.ops[0], (ast.NotEq, ast.Gt)):
-                if isinstance(test.comparators[0], ast.Constant) and test.comparators[0].value == 0:
-                    if isinstance(test.left, ast.Name):
-                        self.guards.nonzero_vars.add(test.left.id)
-            
-            # if len(x) > 0:
-            elif isinstance(test.ops[0], ast.Gt):
-                if isinstance(test.comparators[0], ast.Constant) and test.comparators[0].value == 0:
-                    if isinstance(test.left, ast.Call):
-                        if isinstance(test.left.func, ast.Name) and test.left.func.id == 'len':
-                            if test.left.args and isinstance(test.left.args[0], ast.Name):
-                                self.guards.nonempty_vars.add(test.left.args[0].id)
-        
-        # if x: (truthiness implies non-None and non-empty/zero)
-        elif isinstance(test, ast.Name):
-            self.guards.nonnull_vars.add(test.id)
-            self.guards.nonempty_vars.add(test.id)
-            self.guards.nonzero_vars.add(test.id)
-        
-        # if x and y: (both must be truthy)
-        elif isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
-            for value in test.values:
-                self._extract_guards_from_test(value)
-    
-    def visit_For(self, node: ast.For) -> None:
-        """
-        ITERATION 611: Track loop iteration for safe indexing.
-        
-        for i, x in enumerate(lst): lst[i] is always safe
-        for i in range(len(lst)): lst[i] is always safe
-        """
-        old_guards = self.guards.copy()
-        
-        # for x in container:
-        if isinstance(node.iter, ast.Name):
-            container = node.iter.id
-            if isinstance(node.target, ast.Name):
-                self.guards.loop_vars[node.target.id] = container
-        
-        # for i, x in enumerate(container):
-        elif isinstance(node.iter, ast.Call):
-            if isinstance(node.iter.func, ast.Name):
-                if node.iter.func.id == 'enumerate':
-                    if node.iter.args and isinstance(node.iter.args[0], ast.Name):
-                        container = node.iter.args[0].id
-                        if isinstance(node.target, ast.Tuple) and len(node.target.elts) >= 2:
-                            if isinstance(node.target.elts[0], ast.Name):
-                                self.guards.loop_vars[node.target.elts[0].id] = container
-                
-                # for i in range(len(x)):
-                elif node.iter.func.id == 'range':
-                    if node.iter.args:
-                        arg = node.iter.args[0]
-                        if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
-                            if arg.func.id == 'len' and arg.args:
-                                if isinstance(arg.args[0], ast.Name):
-                                    container = arg.args[0].id
-                                    if isinstance(node.target, ast.Name):
-                                        self.guards.loop_vars[node.target.id] = container
-        
-        # Visit loop body
-        for stmt in node.body:
-            self.visit(stmt)
-        for stmt in node.orelse:
-            self.visit(stmt)
-        
-        self.guards = old_guards
-    
-    # NOTE: REMOVED ad-hoc _is_safe_divisor_pattern that matched names like "count", "size"
-    # This was rejected as non-principled. Proper FP reduction uses:
-    # 1. SymbolicVM DSE with Z3 reachability checking
-    # 2. GuardDataflowAnalysis for guard propagation through CFG
-    # 3. Barrier certificate synthesis for safety proofs
-    
-    def visit_BinOp(self, node: ast.BinOp) -> None:
-        """Check for division by zero risk with FP reduction."""
-        if isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
-            # ITERATION 611: Skip Path division (FP)
-            if self._is_path_division(node.left):
-                self.generic_visit(node)
-                return
-            
-            # ITERATION 611: Skip if divisor is guarded non-zero
-            if isinstance(node.right, ast.Name):
-                if node.right.id in self.guards.nonzero_vars:
-                    self.generic_visit(node)
-                    return
-            
-            # ITERATION 611: Skip constant non-zero divisors
-            if isinstance(node.right, ast.Constant):
-                if isinstance(node.right.value, (int, float)) and node.right.value != 0:
-                    self.generic_visit(node)
-                    return
-            
-            # ITERATION 611: Skip division by len(x) where x is non-empty
-            if isinstance(node.right, ast.Call):
-                if isinstance(node.right.func, ast.Name) and node.right.func.id == 'len':
-                    if node.right.args and isinstance(node.right.args[0], ast.Name):
-                        if node.right.args[0].id in self.guards.nonempty_vars:
-                            self.generic_visit(node)
-                            return
-            
-            # NOTE: REMOVED call to _is_safe_divisor_pattern (ad-hoc name matching)
-            # Proper FP reduction uses DSE with Z3 reachability checking
-            
-            # Not filtered - this is a potential bug
-            divisor_sources = self._get_param_sources(node.right)
-            for param_idx in divisor_sources:
-                self.summary.divisor_params.add(param_idx)
-                self.summary.preconditions.add(
-                    Precondition(param_idx, PreconditionType.NOT_ZERO)
-                )
-                if param_idx not in self.summary.param_bug_propagation:
-                    self.summary.param_bug_propagation[param_idx] = set()
-                self.summary.param_bug_propagation[param_idx].add('DIV_ZERO')
-            
-            # If divisor could be zero, we may trigger DIV_ZERO
-            if divisor_sources or self._could_be_zero(node.right):
-                self.summary.may_trigger.add('DIV_ZERO')
-                self.summary.may_raise.add(ExceptionType.ZERO_DIVISION_ERROR)
-        
-        self.generic_visit(node)
-    
-    def _could_be_zero(self, node: ast.AST) -> bool:
-        """Check if expression could be zero."""
-        if isinstance(node, ast.Constant):
-            return node.value == 0
-        if isinstance(node, ast.Name):
-            # ITERATION 611: Check guards
-            if node.id in self.guards.nonzero_vars:
-                return False
-            # Parameter or variable - could be zero
-            return True
-        return True  # Conservative
-    
-    def visit_Subscript(self, node: ast.Subscript) -> None:
-        """Check for bounds/key error risk with FP reduction."""
-        container_sources = self._get_param_sources(node.value)
-        index_sources = self._get_param_sources(node.slice)
-        
-        # Only flag BOUNDS for Load context (reading)
-        if not isinstance(node.ctx, (ast.Load, ast.Del)):
-            self.generic_visit(node)
-            return
-        
-        # ITERATION 611: Check for safe loop indexing patterns
-        container_name = self._get_name_str(node.value)
-        
-        # Check if index is from iteration over the same container
-        if isinstance(node.slice, ast.Name):
-            idx_name = node.slice.id
-            if self.guards.is_safe_loop_index(idx_name, container_name):
-                # for i in range(len(x)): x[i] is safe
-                self.generic_visit(node)
-                return
-        
-        # ITERATION 611: len(x) - 1 is safe if x is non-empty
-        if isinstance(node.slice, ast.BinOp) and isinstance(node.slice.op, ast.Sub):
-            if isinstance(node.slice.left, ast.Call):
-                call = node.slice.left
-                if isinstance(call.func, ast.Name) and call.func.id == 'len':
-                    if isinstance(node.slice.right, ast.Constant):
-                        if isinstance(node.slice.right.value, int) and node.slice.right.value >= 1:
-                            if call.args and isinstance(call.args[0], ast.Name):
-                                if call.args[0].id in self.guards.nonempty_vars:
-                                    self.generic_visit(node)
-                                    return
-        
-        # ITERATION 611: Constant indices 0, -1 safe if container is non-empty
-        if isinstance(node.slice, ast.Constant):
-            if isinstance(node.slice.value, int) and node.slice.value in (0, -1):
-                if container_name in self.guards.nonempty_vars:
-                    self.generic_visit(node)
-                    return
-        
-        # Not filtered - this is a potential BOUNDS issue
-        self.summary.may_trigger.add('BOUNDS')
-        self.summary.may_raise.add(ExceptionType.INDEX_ERROR)
-        self.summary.may_raise.add(ExceptionType.KEY_ERROR)
-        
-        for idx_param in index_sources:
-            for container_param in container_sources:
-                self.summary.index_params[idx_param] = container_param
-                self.summary.preconditions.add(
-                    Precondition(idx_param, PreconditionType.IN_BOUNDS, container_param)
-                )
-            if idx_param not in self.summary.param_bug_propagation:
-                self.summary.param_bug_propagation[idx_param] = set()
-            self.summary.param_bug_propagation[idx_param].add('BOUNDS')
-        
-        self.generic_visit(node)
-    
-    def visit_Attribute(self, node: ast.Attribute) -> None:
-        """Check for None dereference risk with FP reduction."""
-        # Check if object is guarded as non-None via CFG dataflow analysis
-        if isinstance(node.value, ast.Name):
-            if node.value.id in self.guards.nonnull_vars:
-                self.generic_visit(node)
-                return
-            # Check type annotations for non-nullable types
-            if hasattr(self, 'type_annotations'):
-                type_str = self.type_annotations.get(node.value.id, '')
-                # Non-Optional types are not None
-                if type_str and 'Optional' not in type_str and 'None' not in type_str:
-                    self.generic_visit(node)
-                    return
-            # 'self' and 'cls' are guaranteed non-None by Python semantics
-            if node.value.id in ('self', 'cls'):
-                self.generic_visit(node)
-                return
-        
-        obj_sources = self._get_param_sources(node.value)
-        obj_null = self._get_nullability(node.value)
-        
-        # Attribute access on None causes NULL_PTR
-        # DSE-based approach: Use Z3 to check if None is reachable
-        if obj_null in (Nullability.MAY_BE_NONE, Nullability.IS_NONE, Nullability.TOP):
-            
-            self.summary.may_trigger.add('NULL_PTR')
-            self.summary.may_raise.add(ExceptionType.ATTRIBUTE_ERROR)
-            
-            for param_idx in obj_sources:
-                self.summary.preconditions.add(
-                    Precondition(param_idx, PreconditionType.NOT_NONE)
-                )
-                if param_idx not in self.summary.param_bug_propagation:
-                    self.summary.param_bug_propagation[param_idx] = set()
-                self.summary.param_bug_propagation[param_idx].add('NULL_PTR')
-        
-        self.generic_visit(node)
-    
-    def visit_Call(self, node: ast.Call) -> None:
-        """Check for callee effects and type errors."""
-        # Get callee name
-        callee_name = self._get_callee_name(node)
-        
-        if callee_name:
-            # Check if we have a summary for the callee
-            if callee_name in self.summaries:
-                callee_summary = self.summaries[callee_name]
-                self.summary.merge_callee(callee_summary)
-            else:
-                # Unknown callee - conservative
-                self.summary.may_raise.add(ExceptionType.GENERIC_EXCEPTION)
-        
-        # Calling None causes TYPE_ERROR
-        func_sources = self._get_param_sources(node.func)
-        for param_idx in func_sources:
-            self.summary.preconditions.add(
-                Precondition(param_idx, PreconditionType.NOT_NONE)
-            )
-        
-        # Check for known dangerous functions
-        if callee_name in ('eval', 'exec', 'compile'):
-            self.summary.may_trigger.add('CODE_INJECTION')
-        elif callee_name in ('os.system', 'subprocess.call', 'subprocess.run', 'subprocess.Popen'):
-            self.summary.may_trigger.add('COMMAND_INJECTION')
-        elif callee_name in ('pickle.loads', 'pickle.load', 'yaml.load', 'marshal.loads'):
-            self.summary.may_trigger.add('UNSAFE_DESERIALIZATION')
-        elif callee_name in ('open',):
-            self.summary.performs_io = True
-            self.summary.has_side_effects = True
-        elif callee_name == 'assert':
-            self.summary.may_trigger.add('ASSERT_FAIL')
-            self.summary.may_raise.add(ExceptionType.ASSERTION_ERROR)
-        
-        self.generic_visit(node)
-    
-    def _get_callee_name(self, node: ast.Call) -> Optional[str]:
-        """Extract callee name from Call node."""
-        if isinstance(node.func, ast.Name):
-            return node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            # Try to get qualified name
-            parts = []
-            current = node.func
-            while isinstance(current, ast.Attribute):
-                parts.append(current.attr)
-                current = current.value
-            if isinstance(current, ast.Name):
-                parts.append(current.id)
-            return '.'.join(reversed(parts))
-        return None
-    
-    def visit_Raise(self, node: ast.Raise) -> None:
-        """Track explicitly raised exceptions."""
-        if node.exc:
-            exc_type = self._get_exception_type(node.exc)
-            if exc_type:
-                self.summary.may_raise.add(exc_type)
-                # Map to bug type
-                if exc_type in EXCEPTION_TO_BUG:
-                    self.summary.may_trigger.add(EXCEPTION_TO_BUG[exc_type])
-        else:
-            # Re-raise - we inherit from context
-            self.summary.may_raise.add(ExceptionType.GENERIC_EXCEPTION)
-        
-        self.generic_visit(node)
-    
-    def _get_exception_type(self, node: ast.AST) -> Optional[ExceptionType]:
-        """Get exception type from raise expression."""
-        if isinstance(node, ast.Call):
-            return self._get_exception_type(node.func)
-        elif isinstance(node, ast.Name):
-            return EXCEPTION_NAMES.get(node.id)
-        elif isinstance(node, ast.Attribute):
-            return EXCEPTION_NAMES.get(node.attr)
-        return None
-    
-    def visit_Assert(self, node: ast.Assert) -> None:
-        """Assert may raise AssertionError."""
-        self.summary.may_trigger.add('ASSERT_FAIL')
-        self.summary.may_raise.add(ExceptionType.ASSERTION_ERROR)
-        self.generic_visit(node)
-    
-    def visit_Return(self, node: ast.Return) -> None:
-        """Track return nullability."""
-        if node.value:
-            null = self._get_nullability(node.value)
-            self._return_nullabilities.append(null)
-        else:
-            # return with no value = return None
-            self._return_nullabilities.append(Nullability.IS_NONE)
-        self.generic_visit(node)
-    
-    def visit_Assign(self, node: ast.Assign) -> None:
-        """Track dataflow through assignments."""
-        sources = self._get_param_sources(node.value)
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                self.var_sources[target.id] = sources.copy()
-        self.generic_visit(node)
-    
-    def visit_For(self, node: ast.For) -> None:
-        """For loops may raise StopIteration edge cases."""
-        self.summary.may_raise.add(ExceptionType.STOP_ITERATION)
-        self.generic_visit(node)
-    
-    def visit_While(self, node: ast.While) -> None:
-        """While loops risk non-termination."""
-        # Mark as potentially non-terminating (conservative)
-        self.summary.may_trigger.add('NON_TERMINATION')
-        self.generic_visit(node)
-    
-    def visit_Global(self, node: ast.Global) -> None:
-        """Track global modification."""
-        self.summary.modifies_globals = True
-        self.summary.has_side_effects = True
-        self.generic_visit(node)
-
-
-# ============================================================================
-# BYTECODE-LEVEL CRASH SUMMARY ANALYZER
-# ============================================================================
-
-# Opcodes that may trigger specific bug types
-DIVISION_OPCODES = {'BINARY_OP'}  # Need to check oparg for division
-# ITERATION 610: STORE_SUBSCR (dict[key] = value) never raises KeyError
-# Only BINARY_SUBSCR (read) and DELETE_SUBSCR can raise KeyError/IndexError
-SUBSCRIPT_OPCODES = {'BINARY_SUBSCR', 'DELETE_SUBSCR'}
-ATTRIBUTE_OPCODES = {'LOAD_ATTR', 'STORE_ATTR', 'DELETE_ATTR', 'LOAD_METHOD'}
-CALL_OPCODES = {'CALL', 'CALL_FUNCTION', 'CALL_METHOD', 'CALL_FUNCTION_KW', 'CALL_FUNCTION_EX'}
-ITERATOR_OPCODES = {'GET_ITER', 'FOR_ITER', 'SEND'}
-RAISE_OPCODES = {'RAISE_VARARGS', 'RERAISE'}
-
-# Python 3.11+ binary operation codes (oparg values for BINARY_OP)
-BINARY_OP_NAMES = {
-    0: 'add', 1: 'and_', 2: 'floor_divide', 3: 'lshift', 4: 'matmul',
-    5: 'multiply', 6: 'remainder', 7: 'or_', 8: 'power', 9: 'rshift',
-    10: 'subtract', 11: 'true_divide', 12: 'xor', 13: 'inplace_add',
-    14: 'inplace_and', 15: 'inplace_floor_divide', 16: 'inplace_lshift',
-    17: 'inplace_matmul', 18: 'inplace_multiply', 19: 'inplace_remainder',
-    20: 'inplace_or', 21: 'inplace_power', 22: 'inplace_rshift',
-    23: 'inplace_subtract', 24: 'inplace_true_divide', 25: 'inplace_xor',
-    26: 'subscript',  # Python 3.13+ uses BINARY_OP for subscript
-}
-
-DIVISION_BINARY_OPS = {2, 6, 11, 15, 19, 24}  # floor_divide, remainder, true_divide (regular and inplace)
-SUBSCRIPT_BINARY_OPS = {26}  # subscript operation in Python 3.13+
-
-
-@dataclass
-class BytecodeLocation:
-    """Location in bytecode for crash reporting."""
-    offset: int
-    opname: str
-    oparg: Optional[int]
-    line_number: Optional[int]
-    block_id: int
-    
-    def __str__(self) -> str:
-        return f"{self.opname}@{self.offset} (line {self.line_number})"
-
-
-@dataclass
-class ParameterFlow:
-    """
-    Tracks which parameters flow to a stack slot at a bytecode offset.
-    
-    For bytecode-level analysis, we track data flow through the operand stack.
-    """
-    # Maps stack depth -> set of parameter indices that may flow there
-    stack_flows: Dict[int, Set[int]] = field(default_factory=dict)
-    # Maps local variable index -> set of parameter indices
-    local_flows: Dict[int, Set[int]] = field(default_factory=dict)
-    
-    def copy(self) -> 'ParameterFlow':
-        return ParameterFlow(
-            stack_flows={k: v.copy() for k, v in self.stack_flows.items()},
-            local_flows={k: v.copy() for k, v in self.local_flows.items()},
-        )
-    
-    def merge(self, other: 'ParameterFlow') -> 'ParameterFlow':
-        """Merge flows from two paths (union)."""
-        result = self.copy()
-        for k, v in other.stack_flows.items():
-            if k in result.stack_flows:
-                result.stack_flows[k] = result.stack_flows[k] | v
-            else:
-                result.stack_flows[k] = v.copy()
-        for k, v in other.local_flows.items():
-            if k in result.local_flows:
-                result.local_flows[k] = result.local_flows[k] | v
-            else:
-                result.local_flows[k] = v.copy()
-        return result
-
-    """
-    Bytecode-level crash summary analyzer.
-    
-    Operates on types.CodeType objects directly, using:
-    - CFG from cfg.control_flow.build_cfg
-    - Guard/type/bounds analysis from cfg.dataflow.run_intraprocedural_analysis
-    - Integrates with unsafe.registry.UNSAFE_PREDICATES
-    
-    This is the canonical analysis matching the "bytecode-as-abstract-machine"
-    semantics described in barrier-certificate-theory.tex.
-    
-    This is the PRIMARY and ONLY crash summary analyzer. AST-based analysis
-    was removed as bytecode provides better precision and verification integration.
-    """
     
     def __init__(
         self,
@@ -2140,7 +1415,6 @@ class ParameterFlow:
         location = BytecodeLocation(
             offset=offset,
             opname=opname,
-            oparg=instr.arg,
             line_number=instr.positions.lineno if hasattr(instr, 'positions') and instr.positions else None,
             block_id=block.id,
         )
@@ -2198,6 +1472,11 @@ class ParameterFlow:
         elif opname == 'LOAD_ASSERTION_ERROR':
             self.summary.may_trigger.add('ASSERT_FAIL')
             self.summary.may_raise.add(ExceptionType.ASSERTION_ERROR)
+            # Track assertion failures as bug instances with guard analysis
+            is_guarded = self._is_caught_exception(offset, 'ASSERT_FAIL')
+            self.summary.record_bug_instance('ASSERT_FAIL', is_guarded)
+            if not is_guarded:
+                self.crash_locations.append(('ASSERT_FAIL', location))
     
     def _check_division(
         self,
@@ -2528,14 +1807,33 @@ class ParameterFlow:
         self.summary.may_raise.add(ExceptionType.GENERIC_EXCEPTION)
     
     def _check_raise(self, location: BytecodeLocation, instr: dis.Instruction) -> None:
-        """Check for explicit raise."""
+        """Check for explicit raise.
+        
+        Explicit `raise ExceptionType(...)` statements are tracked as bug instances
+        with guard analysis, just like implicit crash sites (NULL_PTR, DIV_ZERO).
+        
+        An explicit raise is considered "guarded" if:
+        1. It's inside a try/except that catches it (locally handled), OR
+        2. It's a precondition enforcement (raise inside `if bad_input:`) which
+           is intentional validation, not a bug — but the *caller* may fail to
+           satisfy the precondition.
+        """
         # Look at preceding instructions to determine exception type
         exc_type = self._get_exception_type_at(location.offset)
         
         if exc_type:
             self.summary.may_raise.add(exc_type)
             if exc_type in EXCEPTION_TO_BUG:
-                self.summary.may_trigger.add(EXCEPTION_TO_BUG[exc_type])
+                bug_type = EXCEPTION_TO_BUG[exc_type]
+                self.summary.may_trigger.add(bug_type)
+                
+                # Guard analysis: check if this raise is inside a try/except
+                is_guarded = self._is_caught_exception(location.offset, bug_type)
+                
+                # Track as a bug instance for proper guard_counts
+                self.summary.record_bug_instance(bug_type, is_guarded)
+                if not is_guarded:
+                    self.crash_locations.append((bug_type, location))
         else:
             self.summary.may_raise.add(ExceptionType.GENERIC_EXCEPTION)
     

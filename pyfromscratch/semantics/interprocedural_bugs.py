@@ -1071,22 +1071,61 @@ class InterproceduralBugTracker:
             # ITERATION 610: Increased reduction - if ALL paths are guarded for this bug type,
             # it's very likely a false positive (e.g., attribute access on typed params)
             
-            # SYMBOLIC VARIABLE: Try to extract the variable causing this bug FIRST
-            # Look for associated preconditions or guarded variables
+            # SYMBOLIC VARIABLE: Extract the variable causing this bug
+            # This is CRITICAL for Layers 2-5 verification to work!
             bug_variable = None
-            for precond in summary.preconditions:
-                if PRECONDITION_TO_BUG.get(precond.condition_type) == bug_type:
-                    bug_variable = f"param_{precond.param_index}"
-                    break
             
-            # If no precondition, check guard_type_to_vars for clues
+            # For DIV_ZERO: Check divisor_params
+            if bug_type == 'DIV_ZERO' and summary.divisor_params:
+                param_idx = next(iter(summary.divisor_params))
+                bug_variable = f"param_{param_idx}"
+            
+            # For BOUNDS: Check index_params
+            elif bug_type == 'BOUNDS' and summary.index_params:
+                param_idx = next(iter(summary.index_params.keys()))
+                bug_variable = f"param_{param_idx}"
+            
+            # For NULL_PTR: Check param_bug_propagation or preconditions
+            elif bug_type in ('NULL_PTR', 'ATTRIBUTE_ERROR'):
+                # Check param_bug_propagation first
+                for param_idx, bug_types in summary.param_bug_propagation.items():
+                    if bug_type in bug_types:
+                        bug_variable = f"param_{param_idx}"
+                        break
+                
+                # Fallback: check preconditions
+                if bug_variable is None:
+                    for precond in summary.preconditions:
+                        if PRECONDITION_TO_BUG.get(precond.condition_type) == bug_type:
+                            bug_variable = f"param_{precond.param_index}"
+                            break
+            
+            # Generic fallback: check preconditions for any bug type
+            if bug_variable is None:
+                for precond in summary.preconditions:
+                    if PRECONDITION_TO_BUG.get(precond.condition_type) == bug_type:
+                        bug_variable = f"param_{precond.param_index}"
+                        break
+            
+            # Last resort: check guard_type_to_vars for clues
             if bug_variable is None:
                 from .interprocedural_guards import BUG_TYPE_TO_GUARD_TYPES
                 for guard_type in BUG_TYPE_TO_GUARD_TYPES.get(bug_type, set()):
                     guarded_vars = summary.get_all_guarded_variables(guard_type)
                     if guarded_vars:
-                        bug_variable = next(iter(guarded_vars))  # Take first
+                        bug_variable = next(iter(guarded_vars))
                         break
+            
+            # Ultimate fallback: use generic variable based on bug type
+            if bug_variable is None:
+                if bug_type == 'DIV_ZERO':
+                    bug_variable = 'divisor'
+                elif bug_type in ('NULL_PTR', 'ATTRIBUTE_ERROR'):
+                    bug_variable = 'obj'
+                elif bug_type == 'BOUNDS':
+                    bug_variable = 'index'
+                else:
+                    bug_variable = 'var'
             
             # EXTREME CONTEXT-AWARE VERIFICATION: ALL bugs now go through 25-paper verification
             # Layer 0 (fast barriers) will catch easy FPs in O(n) time before expensive layers
