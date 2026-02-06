@@ -25,6 +25,7 @@ results/
 *.log
 external_tools/
 RustFromScratch/
+copilot/
 venv/
 test_venv/
 .DS_Store
