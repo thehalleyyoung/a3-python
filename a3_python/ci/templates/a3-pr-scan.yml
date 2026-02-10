@@ -1,0 +1,98 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# a3 — Scan on every code change
+#
+# Runs a3 on every push and pull request that touches Python files,
+# triages findings with GitHub Copilot, diffs against the committed baseline,
+# and uploads SARIF to GitHub Code Scanning.
+#
+# Install:  a3 init .
+# Docs:     https://github.com/thehalleyyoung/A³
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: "A³: Scan"
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "**.py"
+  pull_request:
+    paths:
+      - "**.py"
+
+permissions:
+  contents: read
+  security-events: write   # needed for SARIF upload
+  pull-requests: write      # needed for PR comments (optional)
+
+jobs:
+  a3-scan:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for diff
+
+      # ── Python setup ─────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # ── Install a3 ────────────────────────────────────────
+      - name: Install a3
+        run: pip install "a3-python[ci] @ git+https://github.com/thehalleyyoung/PythonFromScratch.git"
+
+      # ── Collect changed Python files ─────────────────────────────────
+      - name: Get changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          git diff --name-only --diff-filter=ACMR "$BASE"...HEAD -- '*.py' > changed_files.txt
+          echo "count=$(wc -l < changed_files.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "Changed Python files:"
+          cat changed_files.txt
+
+      # ── Run analysis ─────────────────────────────────────────────────
+      - name: Run a3
+        if: steps.changed.outputs.count != '0'
+        run: |
+          a3 scan . \
+            --output-sarif a3-results.sarif
+        continue-on-error: true
+
+      # ── LLM triage via GitHub Copilot (zero-config — uses GITHUB_TOKEN) ──
+      - name: Copilot triage
+        if: steps.changed.outputs.count != '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          a3 triage \
+            --sarif a3-results.sarif \
+            --output-sarif a3-triaged.sarif \
+            --provider github \
+            --model gpt-4o \
+            --verbose
+          mv a3-triaged.sarif a3-results.sarif
+
+      # ── Baseline ratchet check ───────────────────────────────────────
+      - name: Check baseline
+        if: steps.changed.outputs.count != '0'
+        run: |
+          a3 baseline diff \
+            --sarif a3-results.sarif
+
+      # ── Upload SARIF to GitHub Code Scanning ─────────────────────────
+      - name: Upload SARIF
+        if: always() && steps.changed.outputs.count != '0'
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: a3-results.sarif
+          category: a3
