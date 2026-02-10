@@ -32,11 +32,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+
 
       # ── Install a3 ────────────────────────────────────────
       - name: Install a3
-        run: pip install "a3-python[ci] @ git+https://github.com/thehalleyyoung/PythonFromScratch.git"
+        run: pip install a3-python[ci]
 
       # ── Full scan ────────────────────────────────────────────────────
       - name: Run full analysis
