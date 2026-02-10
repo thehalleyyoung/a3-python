@@ -29,3 +29,8 @@ copilot/
 venv/
 test_venv/
 .DS_Store
+*.bak
+*.bak2
+*.bak3
+*.bak4
+*.backup
