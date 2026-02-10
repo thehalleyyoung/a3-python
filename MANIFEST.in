@@ -1,0 +1,34 @@
+# Include only the essentials in the sdist
+include README.md
+include pyproject.toml
+
+# Package source
+recursive-include a3_python *.py *.yml
+recursive-exclude a3_python *.bak *.bak2 *.bak3 *.bak4 test_*.py
+
+# Exclude everything else
+prune tests
+prune copilot
+prune docs
+prune scripts
+prune external_tools
+prune py_synthetic
+prune RustFromScratch
+prune results
+prune test_venv
+prune venv
+prune pyfromscratch
+prune pyfromscratch.egg-info
+
+# Exclude loose files
+exclude examples.py
+exclude examples_safe.py
+exclude Dockerfile
+exclude .dockerignore
+exclude .gitmodules
+exclude test_*.py
+exclude *.bak
+exclude *.bak2
+exclude *.bak3
+exclude *.bak4
+exclude README.md.bak*
