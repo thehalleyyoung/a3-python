@@ -1,10 +1,10 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # a3 — Continuous scan on every code change
 #
-# Triggers on every push / PR that touches Python files.  Scans ONLY the
-# changed files, runs agentic LLM triage (the LLM uses tools to explore
-# callers, tests, guards, and imports before deciding TP/FP), diffs
-# against the committed baseline, and uploads SARIF to Code Scanning.
+# Triggers on every push / PR that touches Python files.  Scans the repo,
+# runs agentic LLM triage (the LLM uses tools to explore callers, tests,
+# guards, and imports before deciding TP/FP), diffs against the committed
+# baseline, and uploads SARIF to Code Scanning.
 #
 # Install:  a3 init . --copilot
 # Docs:     https://github.com/thehalleyyoung/A³
@@ -60,11 +60,11 @@ jobs:
           echo "Changed Python files:"
           cat changed_files.txt
 
-      # ── Run analysis (only changed files) ────────────────────────────
+      # ── Run analysis ────────────────────────────────────────────────
       - name: Run a3
         if: steps.changed.outputs.count != '0'
         run: |
-          a3 scan $(cat changed_files.txt | tr '\n' ' ') \
+          a3 scan . \
             --output-sarif a3-results.sarif
         continue-on-error: true
 

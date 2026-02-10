@@ -87,7 +87,7 @@ Upload the SARIF file to GitHub's [Code Scanning](https://docs.github.com/en/cod
 
 A3 ships with GitHub Actions workflows that **continuously scan every push and every PR** using a **two-phase approach**:
 
-1. **Non-LLM static analysis** scans only the changed `.py` files and automatically proves 99% as false positives
+1. **Non-LLM static analysis** scans the repo and automatically proves 99% as false positives
 2. **Agentic LLM triage** investigates the remaining 1% — the LLM reads source files, searches for guard patterns, checks callers and tests, then classifies each finding — zero API keys needed
 
 Every GitHub Actions runner already has a `GITHUB_TOKEN`, which gives access to GitHub Models. That's all the agentic triage needs.
@@ -109,7 +109,7 @@ That's it. Every push to `main`/`master` and every PR that touches Python files 
 
 | File | What it does |
 |------|-------------|
-| `.github/workflows/a3-pr-scan.yml` | **On every push & PR:** scans only the changed `.py` files → agentic LLM investigates each finding (reads files, searches patterns, checks callers) → blocks if new bugs found → uploads SARIF |
+| `.github/workflows/a3-pr-scan.yml` | **On every push & PR:** scans the repo → agentic LLM investigates each finding (reads files, searches patterns, checks callers) → blocks if new bugs found → uploads SARIF |
 | `.github/workflows/a3-scheduled-scan.yml` | **Weekly (Monday 6 AM UTC):** full-repo scan → agentic triage → auto-files GitHub Issues for new TPs → updates baseline |
 | `.a3.yml` | Analysis configuration (what to scan, confidence thresholds, etc.) |
 | `.a3-baseline.json` | Known-findings baseline for the ratchet (starts empty) |
@@ -119,7 +119,7 @@ That's it. Every push to `main`/`master` and every PR that touches Python files 
 ```
 push to main/master — or — PR opened (touches .py files)
   │
-  ├─ 1. Non-LLM static analysis scans changed files
+  ├─ 1. Non-LLM static analysis scans the repo
   │     • Bytecode analysis + Z3 symbolic execution
   │     • Automatically proves 99% as false positives
   │     • Outputs SARIF with remaining 1% of findings
@@ -155,7 +155,7 @@ When you run `a3 init . --copilot`, it creates `.github/workflows/a3-pr-scan.yml
 
 - name: Run a3
   run: |
-    a3 scan $(cat changed_files.txt | tr '\n' ' ') \
+    a3 scan . \
       --output-sarif a3-results.sarif
 
 - name: Agentic triage                        # ← the magic step
