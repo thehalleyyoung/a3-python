@@ -1,11 +1,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# a3 — Scan on every code change
+# a3 — Continuous scan on every code change
 #
-# Runs a3 on every push and pull request that touches Python files,
-# triages findings with GitHub Copilot, diffs against the committed baseline,
-# and uploads SARIF to GitHub Code Scanning.
+# Triggers on every push / PR that touches Python files.  Scans ONLY the
+# changed files, runs agentic LLM triage (the LLM uses tools to explore
+# callers, tests, guards, and imports before deciding TP/FP), diffs
+# against the committed baseline, and uploads SARIF to Code Scanning.
 #
-# Install:  a3 init .
+# Install:  a3 init . --copilot
 # Docs:     https://github.com/thehalleyyoung/A³
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -59,15 +60,15 @@ jobs:
           echo "Changed Python files:"
           cat changed_files.txt
 
-      # ── Run analysis ─────────────────────────────────────────────────
+      # ── Run analysis (only changed files) ────────────────────────────
       - name: Run a3
         if: steps.changed.outputs.count != '0'
         run: |
-          a3 scan . \
+          a3 scan $(cat changed_files.txt | tr '\n' ' ') \
             --output-sarif a3-results.sarif
         continue-on-error: true
 
-      # ── Agentic LLM triage via GitHub Models (zero-config — uses GITHUB_TOKEN) ──
+      # ── Agentic triage (multi-turn — the LLM explores the repo) ──────
       - name: Agentic triage
         if: steps.changed.outputs.count != '0'
         env:
@@ -76,6 +77,7 @@ jobs:
           a3 triage \
             --sarif a3-results.sarif \
             --output-sarif a3-triaged.sarif \
+            --repo-root . \
             --provider github \
             --model gpt-4o \
             --agentic \

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "a3-python"
-version = "0.1.13"
+version = "0.1.15"
 description = "Catch real Python bugs before production — 99%+ accuracy, Z3 symbolic execution, LLM-powered false-positive filtering, zero-config GitHub CI"
 readme = "README.md"
 requires-python = ">=3.11"

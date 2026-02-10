@@ -27,6 +27,7 @@ import json
 import os
 import re
 import textwrap
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -402,23 +403,31 @@ def _tool_get_imports(repo_root: Path, path: str) -> str:
     return f"Imports in {path}:\n" + "\n".join(f"  {imp}" for imp in imports)
 
 
+_MAX_TOOL_OUTPUT_CHARS = 6000  # ~1500 tokens — keeps us under model limits
+
+
 def _dispatch_tool(repo_root: Path, name: str, arguments: dict[str, Any]) -> str:
-    """Route a tool call to the right implementation."""
+    """Route a tool call to the right implementation, truncating large outputs."""
     if name == "read_file":
-        return _tool_read_file(repo_root, **arguments)
+        result = _tool_read_file(repo_root, **arguments)
     elif name == "search_codebase":
-        return _tool_search_codebase(repo_root, **arguments)
+        result = _tool_search_codebase(repo_root, **arguments)
     elif name == "list_directory":
-        return _tool_list_directory(repo_root, **arguments)
+        result = _tool_list_directory(repo_root, **arguments)
     elif name == "get_function_source":
-        return _tool_get_function_source(repo_root, **arguments)
+        result = _tool_get_function_source(repo_root, **arguments)
     elif name == "get_imports":
-        return _tool_get_imports(repo_root, **arguments)
+        result = _tool_get_imports(repo_root, **arguments)
     elif name == "classify":
         # Handled by the caller — should not reach here
         return json.dumps(arguments)
     else:
         return f"Error: unknown tool '{name}'"
+
+    # Truncate long outputs to stay under token limits
+    if len(result) > _MAX_TOOL_OUTPUT_CHARS:
+        result = result[:_MAX_TOOL_OUTPUT_CHARS] + f"\n\n[... truncated — {len(result)} total chars]"
+    return result
 
 
 # ─── Agent system prompt ────────────────────────────────────────────────────
@@ -484,7 +493,9 @@ def _run_agent_openai(
 
     model = config.model
     if model == "claude-sonnet-4-20250514":
-        model = "gpt-5"
+        # gpt-4o-mini has much higher token limits on GitHub Models free tier
+        # gpt-5 has only 4K input tokens which is too small for agentic use
+        model = "gpt-4o-mini"
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _AGENT_SYSTEM_PROMPT},
@@ -494,13 +505,33 @@ def _run_agent_openai(
     for _turn in range(MAX_AGENT_TURNS):
         if verbose:
             print(f"    [agent turn {_turn + 1}] calling {model}...", flush=True)
-        response = client.chat.completions.create(
-            model=model,
-            max_completion_tokens=4096,
-            messages=messages,
-            tools=_TOOLS,
-            tool_choice="auto",
-        )
+
+        # Retry with exponential backoff for rate limits
+        for attempt in range(5):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    max_completion_tokens=4096,
+                    messages=messages,
+                    tools=_TOOLS,
+                    tool_choice="auto",
+                )
+                break
+            except Exception as e:
+                if "429" in str(e) or "RateLimitReached" in str(e) or "rate" in str(e).lower():
+                    wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+                    if verbose:
+                        print(f"    [rate limited, retrying in {wait}s...]", flush=True)
+                    time.sleep(wait)
+                else:
+                    raise
+        else:
+            # All retries exhausted
+            return TriageVerdict(
+                is_true_positive=True,
+                confidence=0.5,
+                rationale="Rate limit exceeded after retries",
+            )
 
         choice = response.choices[0]
         msg = choice.message
@@ -571,13 +602,31 @@ def _run_agent_anthropic(
     ]
 
     for _turn in range(MAX_AGENT_TURNS):
-        response = client.messages.create(
-            model=config.model,
-            max_tokens=4096,
-            system=_AGENT_SYSTEM_PROMPT,
-            messages=messages,
-            tools=_TOOLS_ANTHROPIC,
-        )
+        # Retry with exponential backoff for rate limits
+        for attempt in range(5):
+            try:
+                response = client.messages.create(
+                    model=config.model,
+                    max_tokens=4096,
+                    system=_AGENT_SYSTEM_PROMPT,
+                    messages=messages,
+                    tools=_TOOLS_ANTHROPIC,
+                )
+                break
+            except Exception as e:
+                if "429" in str(e) or "rate" in str(e).lower() or "overloaded" in str(e).lower():
+                    wait = 2 ** attempt
+                    if verbose:
+                        print(f"    [rate limited, retrying in {wait}s...]", flush=True)
+                    time.sleep(wait)
+                else:
+                    raise
+        else:
+            return TriageVerdict(
+                is_true_positive=True,
+                confidence=0.5,
+                rationale="Rate limit exceeded after retries",
+            )
 
         # Build the assistant message content
         assistant_content: list[dict[str, Any]] = []
@@ -756,10 +805,13 @@ def agentic_triage_sarif(
             work_items.append((i, result, bug_type, func_name, message, artifact_uri, start_line))
 
         # --- Phase 2: run agents (with limited parallelism) ---
-        # Agentic triage is more expensive per-finding, so we use fewer workers
+        # GitHub Models free tier only allows 1 concurrent request
         n = len(work_items)
         verdicts: list[TriageVerdict | None] = [None] * n
-        agent_concurrency = min(config.max_concurrent, 4)  # cap at 4 for agents
+        if config.provider == "github":
+            agent_concurrency = 1  # GitHub Models rate-limits concurrent requests
+        else:
+            agent_concurrency = min(config.max_concurrent, 4)
 
         if verbose:
             print(f"  🤖 Agentic triage of {n} findings ({agent_concurrency} parallel)...", flush=True)
@@ -874,7 +926,7 @@ def cmd_agentic_triage(
 
     display_model = model
     if model == "claude-sonnet-4-20250514" and provider in ("openai", "github"):
-        display_model = "gpt-5"
+        display_model = "gpt-4o-mini"
 
     print(f"🤖 Agentic triage with {provider}/{display_model}...")
     filtered, all_verdicts = agentic_triage_sarif(sarif, repo_root, config, verbose=verbose)

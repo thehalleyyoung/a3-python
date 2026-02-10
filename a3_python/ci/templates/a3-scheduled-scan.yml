@@ -1,10 +1,11 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # a3 — Scheduled Full Scan
 #
-# Runs a full-repo analysis weekly, triages via LLM, diffs against baseline,
-# and auto-files GitHub issues for new true positives.
+# Runs a full-repo analysis weekly with agentic LLM triage (the LLM uses
+# tools to explore callers, tests, guards, imports before classifying),
+# diffs against baseline, and auto-files GitHub issues for new TPs.
 #
-# Install:  a3 init .
+# Install:  a3 init . --copilot
 # Docs:     https://github.com/thehalleyyoung/A³
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ jobs:
           a3 scan . \
             --output-sarif a3-full.sarif
 
-      # ── Agentic LLM triage via GitHub Models (zero-config — uses GITHUB_TOKEN) ──
+      # ── Agentic triage (multi-turn — the LLM explores the repo) ──────
       - name: Agentic triage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,6 +53,7 @@ jobs:
           a3 triage \
             --sarif a3-full.sarif \
             --output-sarif a3-triaged.sarif \
+            --repo-root . \
             --provider github \
             --model gpt-4o \
             --agentic \
