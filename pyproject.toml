@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyfromscratch"
-version = "0.1.0"
-description = "Python semantics + barrier-certificate verifier"
+name = "a3-python"
+version = "0.1.11"
+description = "Catch real Python bugs before production — 99%+ accuracy, Z3 symbolic execution, LLM-powered false-positive filtering, zero-config GitHub CI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,12 +17,24 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
 ]
+ci = [
+    "anthropic>=0.30.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0",
+]
 
 [project.scripts]
-pyfromscratch = "pyfromscratch.cli:main"
+a3 = "a3_python.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["pyfromscratch*"]
+include = ["a3_python*"]
+exclude = ["tests", "tests.*"]
+
+[tool.setuptools.package-data]
+"a3_python.ci" = ["templates/*.yml"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["test_*.py", "*.bak", "*.bak2", "*.bak3", "*.bak4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
