@@ -67,8 +67,8 @@ jobs:
             --output-sarif a3-results.sarif
         continue-on-error: true
 
-      # ── LLM triage via GitHub Copilot (zero-config — uses GITHUB_TOKEN) ──
-      - name: Copilot triage
+      # ── Agentic LLM triage via GitHub Models (zero-config — uses GITHUB_TOKEN) ──
+      - name: Agentic triage
         if: steps.changed.outputs.count != '0'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,6 +78,7 @@ jobs:
             --output-sarif a3-triaged.sarif \
             --provider github \
             --model gpt-4o \
+            --agentic \
             --verbose
           mv a3-triaged.sarif a3-results.sarif
 

@@ -221,8 +221,6 @@ def _handle_init(args: argparse.Namespace) -> int:
 
 def _handle_triage(args: argparse.Namespace) -> int:
     """Handle ``a3 triage``."""
-    from .ci.triage import cmd_triage
-
     # Resolve API key based on the chosen provider so we don't send the
     # wrong provider's key (e.g. OPENAI_API_KEY to GitHub Models).
     if args.api_key:
@@ -234,6 +232,20 @@ def _handle_triage(args: argparse.Namespace) -> int:
     else:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
+    if getattr(args, "agentic", False):
+        from .ci.agentic_triage import cmd_agentic_triage
+        return cmd_agentic_triage(
+            sarif_path=args.sarif,
+            output_sarif_path=args.output_sarif,
+            repo_root=Path(args.repo_root).resolve() if args.repo_root else Path.cwd(),
+            model=args.model,
+            api_key=api_key,
+            provider=args.provider,
+            min_confidence=args.min_confidence,
+            verbose=args.verbose,
+        )
+
+    from .ci.triage import cmd_triage
     return cmd_triage(
         sarif_path=args.sarif,
         output_sarif_path=args.output_sarif,
@@ -349,6 +361,10 @@ def main():
     triage_parser.add_argument(
         "--verbose", action="store_true",
         help="Print classification details for each finding",
+    )
+    triage_parser.add_argument(
+        "--agentic", action="store_true",
+        help="Use agentic triage (multi-turn tool-use) instead of one-shot classification",
     )
 
     # ── baseline subcommand ──────────────────────────────────────────────
@@ -878,7 +894,7 @@ def _analyze_project(args):
 
     # ── Integrated triage (optional) ─────────────────────────────────────
     if triage_flag and sarif_path:
-        from .ci.triage import cmd_triage
+        from .ci.agentic_triage import cmd_agentic_triage as cmd_triage
 
         # Resolve provider
         if triage_flag == "auto":
