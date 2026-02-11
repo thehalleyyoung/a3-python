@@ -645,11 +645,27 @@ def build_call_graph_from_directory(
     """Build call graph from all Python files in a directory."""
     exclude_patterns = exclude_patterns or ['__pycache__', '.git', 'venv', '.venv', 'node_modules']
     
+    import fnmatch
+    
     combined = CallGraph()
     
     for py_file in root_path.rglob('*.py'):
-        # Check exclusions
-        if any(p in str(py_file) for p in exclude_patterns):
+        # Check exclusions using both substring and glob matching
+        rel_str = str(py_file.relative_to(root_path))
+        abs_str = str(py_file)
+        excluded = False
+        for p in exclude_patterns:
+            # Glob-style patterns (contain *, ?, [)
+            if any(c in p for c in ('*', '?', '[')):
+                if fnmatch.fnmatch(rel_str, p):
+                    excluded = True
+                    break
+            else:
+                # Simple substring match (for __pycache__, .git, etc.)
+                if p in abs_str:
+                    excluded = True
+                    break
+        if excluded:
             continue
         
         # Compute module name from path

@@ -192,6 +192,12 @@ def _apply_config_defaults(args: argparse.Namespace) -> None:
     if args.max_dse_steps == 100 and cfg.analysis.max_dse_steps != 100:
         args.max_dse_steps = cfg.analysis.max_dse_steps
 
+    # Store scan exclude/include patterns so _analyze_project can use them
+    if not hasattr(args, '_scan_excludes') or not args._scan_excludes:
+        args._scan_excludes = cfg.scan.exclude
+    if not hasattr(args, '_scan_includes') or not args._scan_includes:
+        args._scan_includes = cfg.scan.include
+
 
 # ── Subcommand handlers ─────────────────────────────────────────────────────
 
@@ -666,8 +672,13 @@ def _analyze_project(args):
 
     from .cfg.call_graph import build_call_graph_from_directory
 
+    # Collect exclude patterns from .a3.yml config
+    exclude_patterns = ['__pycache__', '.git', 'venv', '.venv', 'node_modules']
+    if hasattr(args, '_scan_excludes') and args._scan_excludes:
+        exclude_patterns.extend(args._scan_excludes)
+
     t0 = time.time()
-    call_graph = build_call_graph_from_directory(project_path)
+    call_graph = build_call_graph_from_directory(project_path, exclude_patterns=exclude_patterns)
     n_funcs = len(call_graph.functions)
     print(f"  Functions: {n_funcs}  ({time.time() - t0:.1f}s)")
 
