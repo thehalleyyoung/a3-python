@@ -131,7 +131,7 @@ class SymbolicValue:
         sym = z3.Bool(name)
         if solver:
             solver.add(True)
-        return SymbolicValue.bool(z3.If(sym, z3.IntVal(1), z3.IntVal(0)))
+        return SymbolicValue.bool(sym)
     
     @staticmethod
     def fresh_obj(name: str, solver: z3.Solver = None) -> 'SymbolicValue':
@@ -495,8 +495,23 @@ def binary_op_floordiv(left: SymbolicValue, right: SymbolicValue, solver: z3.Sol
         z3.And(right.is_float(), right.as_float() == z3.RealVal(0))
     )
     
-    # For int // int, use integer division; for any float involvement, use real division
-    result_int = left.as_int() / right.as_int()
+    # For int // int, use Python floor division.
+    # Z3's integer `/` is Euclidean division (remainder always non-negative),
+    # which differs from Python's floor division when the divisor is negative.
+    # Python: 7 // -2 = -4, but Z3: 7 / -2 = -3
+    # Fix: adjust when divisor is negative and there's a nonzero remainder.
+    # Guard: Z3's `%` requires IntSort, so only build this path for int payloads.
+    if z3.is_int(left.payload) and z3.is_int(right.payload):
+        euclid_div = left.as_int() / right.as_int()
+        euclid_mod = left.as_int() % right.as_int()
+        result_int = z3.If(
+            z3.And(right.as_int() < 0, euclid_mod != 0),
+            euclid_div - 1,
+            euclid_div
+        )
+    else:
+        # Float inputs: int path unused; dummy with correct sort for z3.If
+        result_int = z3.IntVal(0)
     
     # Convert to float using Z3 sort checking
     left_val = left.payload
@@ -512,7 +527,9 @@ def binary_op_floordiv(left: SymbolicValue, right: SymbolicValue, solver: z3.Sol
     else:
         right_as_float = right_val
     
-    result_float = left_as_float / right_as_float
+    # For float floor division, compute floor of the real quotient.
+    # z3.ToInt is floor for reals, then convert back to Real for float result.
+    result_float = z3.ToReal(z3.ToInt(left_as_float / right_as_float))
     
     is_numeric_float = z3.Or(both_floats, int_float, float_int)
     result_payload = z3.If(is_numeric_float, result_float, result_int)
@@ -552,8 +569,22 @@ def binary_op_mod(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) 
         z3.And(right.is_float(), right.as_float() == z3.RealVal(0))
     )
     
-    # For int % int, use integer modulo
-    result_int = left.as_int() % right.as_int()
+    # For int % int, use Python floor modulo.
+    # Z3's integer `%` is Euclidean mod (always non-negative),
+    # which differs from Python's floor mod when the divisor is negative.
+    # Python: 7 % -2 = -1, but Z3: 7 % -2 = 1
+    # Fix: adjust when divisor is negative and there's a nonzero remainder.
+    # Guard: Z3's `%` requires IntSort, so only build this path for int payloads.
+    if z3.is_int(left.payload) and z3.is_int(right.payload):
+        euclid_mod = left.as_int() % right.as_int()
+        result_int = z3.If(
+            z3.And(right.as_int() < 0, euclid_mod != 0),
+            euclid_mod + right.as_int(),
+            euclid_mod
+        )
+    else:
+        # Float inputs: int path unused; dummy with correct sort for z3.If
+        result_int = z3.IntVal(0)
     
     # For float modulo, we approximate (Z3 doesn't have built-in real modulo)
     # Convert to float using Z3 sort checking
@@ -759,16 +790,26 @@ def compare_op_lt(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) 
     """Symbolic less-than comparison."""
     # Accept OBJ types (conservative overapproximation for soundness)
     # OBJ might be anything, including comparable types
+    # Also accept float and mixed int/float comparisons
     type_ok = z3.Or(
         z3.And(left.is_int(), right.is_int()),
+        z3.And(left.is_float(), right.is_float()),
+        z3.And(left.is_int(), right.is_float()),
+        z3.And(left.is_float(), right.is_int()),
         left.is_obj(),
         right.is_obj()
     )
     # When OBJ involved, return nondeterministic result (sound overapproximation)
+    # For float comparisons, as_float() returns payload; Z3 auto-coerces Int→Real
+    any_float = z3.Or(left.is_float(), right.is_float())
     result_val = z3.If(
         z3.Or(left.is_obj(), right.is_obj()),
         z3.Int(f"cmp_lt_obj_{id(left)}_{id(right)}"),
-        z3.If(left.as_int() < right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        z3.If(
+            any_float,
+            z3.If(left.as_float() < right.as_float(), z3.IntVal(1), z3.IntVal(0)),
+            z3.If(left.as_int() < right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        )
     )
     return SymbolicValue(ValueTag.BOOL, result_val), type_ok
 
@@ -776,16 +817,25 @@ def compare_op_lt(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) 
 def compare_op_le(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) -> tuple[SymbolicValue, z3.ExprRef]:
     """Symbolic less-than-or-equal comparison."""
     # Accept OBJ types (conservative overapproximation for soundness)
+    # Also accept float and mixed int/float comparisons
     type_ok = z3.Or(
         z3.And(left.is_int(), right.is_int()),
+        z3.And(left.is_float(), right.is_float()),
+        z3.And(left.is_int(), right.is_float()),
+        z3.And(left.is_float(), right.is_int()),
         left.is_obj(),
         right.is_obj()
     )
     # When OBJ involved, return nondeterministic result (sound overapproximation)
+    any_float = z3.Or(left.is_float(), right.is_float())
     result_val = z3.If(
         z3.Or(left.is_obj(), right.is_obj()),
         z3.Int(f"cmp_le_obj_{id(left)}_{id(right)}"),
-        z3.If(left.as_int() <= right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        z3.If(
+            any_float,
+            z3.If(left.as_float() <= right.as_float(), z3.IntVal(1), z3.IntVal(0)),
+            z3.If(left.as_int() <= right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        )
     )
     return SymbolicValue(ValueTag.BOOL, result_val), type_ok
 
@@ -899,16 +949,25 @@ def compare_op_ne(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) 
 def compare_op_gt(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) -> tuple[SymbolicValue, z3.ExprRef]:
     """Symbolic greater-than comparison."""
     # Accept OBJ types (conservative overapproximation for soundness)
+    # Also accept float and mixed int/float comparisons
     type_ok = z3.Or(
         z3.And(left.is_int(), right.is_int()),
+        z3.And(left.is_float(), right.is_float()),
+        z3.And(left.is_int(), right.is_float()),
+        z3.And(left.is_float(), right.is_int()),
         left.is_obj(),
         right.is_obj()
     )
     # When OBJ involved, return nondeterministic result (sound overapproximation)
+    any_float = z3.Or(left.is_float(), right.is_float())
     result_val = z3.If(
         z3.Or(left.is_obj(), right.is_obj()),
         z3.Int(f"cmp_gt_obj_{id(left)}_{id(right)}"),
-        z3.If(left.as_int() > right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        z3.If(
+            any_float,
+            z3.If(left.as_float() > right.as_float(), z3.IntVal(1), z3.IntVal(0)),
+            z3.If(left.as_int() > right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        )
     )
     return SymbolicValue(ValueTag.BOOL, result_val), type_ok
 
@@ -916,16 +975,25 @@ def compare_op_gt(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) 
 def compare_op_ge(left: SymbolicValue, right: SymbolicValue, solver: z3.Solver) -> tuple[SymbolicValue, z3.ExprRef]:
     """Symbolic greater-than-or-equal comparison."""
     # Accept OBJ types (conservative overapproximation for soundness)
+    # Also accept float and mixed int/float comparisons
     type_ok = z3.Or(
         z3.And(left.is_int(), right.is_int()),
+        z3.And(left.is_float(), right.is_float()),
+        z3.And(left.is_int(), right.is_float()),
+        z3.And(left.is_float(), right.is_int()),
         left.is_obj(),
         right.is_obj()
     )
     # When OBJ involved, return nondeterministic result (sound overapproximation)
+    any_float = z3.Or(left.is_float(), right.is_float())
     result_val = z3.If(
         z3.Or(left.is_obj(), right.is_obj()),
         z3.Int(f"cmp_ge_obj_{id(left)}_{id(right)}"),
-        z3.If(left.as_int() >= right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        z3.If(
+            any_float,
+            z3.If(left.as_float() >= right.as_float(), z3.IntVal(1), z3.IntVal(0)),
+            z3.If(left.as_int() >= right.as_int(), z3.IntVal(1), z3.IntVal(0))
+        )
     )
     return SymbolicValue(ValueTag.BOOL, result_val), type_ok
 
@@ -992,8 +1060,14 @@ def is_true(value: SymbolicValue, solver: z3.Solver) -> z3.ExprRef:
         value.payload == z3.IntVal(0)
     )
     
-    # Value is false if it's None, False, or 0
-    is_false = z3.Or(is_none, is_false_bool, is_zero_int)
+    # Float 0.0 → False
+    is_zero_float = z3.And(
+        value.tag == z3.IntVal(ValueTag.FLOAT.value),
+        value.payload == z3.RealVal(0)
+    )
+    
+    # Value is false if it's None, False, 0, or 0.0
+    is_false = z3.Or(is_none, is_false_bool, is_zero_int, is_zero_float)
     
     # Value is true if it's not false
     return z3.Not(is_false)
@@ -1112,9 +1186,11 @@ def binary_op_subscript(container: SymbolicValue, index: SymbolicValue, heap, so
                             solver.pop()
                             return result, type_ok, bounds_violated, none_misuse
             
-            # Symbolic dict or symbolic key: conservatively assume may raise KeyError
+            # Symbolic dict or symbolic key: create symbolic bounds check
+            # KeyError is possible but not certain (e.g., if key is validated)
             result = SymbolicValue.fresh_int("dict_subscript_symbolic", solver)
-            bounds_violated = z3.BoolVal(True)  # Conservative: may raise KeyError
+            bounds_violated = z3.Bool(f"dict_key_missing_{id(container)}_{id(index)}")
+            # Add constraint: allow both paths (key exists / key missing)
             solver.pop()
             return result, type_ok, bounds_violated, none_misuse
         solver.pop()

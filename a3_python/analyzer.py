@@ -2135,13 +2135,13 @@ class Analyzer:
                     var_names = list(loop.modified_variables)
                     
                     # Generate sample positive/negative examples
-                    positive = set()
-                    negative = set()
+                    positive = []
+                    negative = []
                     implications = []
                     
                     # Add simple examples (heuristic)
-                    positive.add({v: 0 for v in var_names})
-                    positive.add({v: 1 for v in var_names})
+                    positive.append({v: 0 for v in var_names})
+                    positive.append({v: 1 for v in var_names})
                     
                     # Try ICE learning
                     result = learn_ice_invariant(
@@ -2912,13 +2912,19 @@ class Analyzer:
             # Compile the module
             module_code = compile(source, str(filepath), 'exec')
             
-            # Search for the function in the module's constants
-            for const in module_code.co_consts:
-                if isinstance(const, types.CodeType):
-                    if const.co_name == function_name:
-                        return const
+            # Search recursively for the function (handles class methods too)
+            def _find_code(code_obj, name):
+                for const in code_obj.co_consts:
+                    if isinstance(const, types.CodeType):
+                        if const.co_name == name:
+                            return const
+                        # Recurse into nested code objects (e.g., class bodies)
+                        result = _find_code(const, name)
+                        if result is not None:
+                            return result
+                return None
             
-            return None
+            return _find_code(module_code, function_name)
         except Exception as e:
             if self.verbose:
                 print(f"  Error extracting function {function_name}: {e}")
@@ -2974,8 +2980,9 @@ class Analyzer:
                     if isinstance(const, types.CodeType):
                         name = const.co_name
                         
-                        # Skip module-level code, lambdas, and comprehensions
-                        if name in ('<module>', '<lambda>', '<listcomp>', '<dictcomp>', '<setcomp>', '<genexpr>'):
+                        # Skip module-level code, lambdas, comprehensions, and
+                        # compiler-generated annotation functions (Python 3.14+ PEP 649)
+                        if name in ('<module>', '<lambda>', '<listcomp>', '<dictcomp>', '<setcomp>', '<genexpr>', '__annotate__'):
                             continue
                             
                         # Check if this is a class definition
@@ -3050,8 +3057,9 @@ class Analyzer:
             all_functions = {}
             for const in module_code.co_consts:
                 if isinstance(const, types.CodeType):
-                    # Skip module-level code and lambdas
-                    if const.co_name == '<module>' or const.co_name == '<lambda>':
+                    # Skip module-level code, lambdas, and compiler-generated
+                    # annotation functions (Python 3.14+ PEP 649)
+                    if const.co_name in ('<module>', '<lambda>', '__annotate__'):
                         continue
                     # Skip class definitions (they have __classdict__ in cellvars)
                     if '__classdict__' in const.co_cellvars:
@@ -3061,7 +3069,14 @@ class Analyzer:
             # Check if there's any executable code at module level beyond function definitions
             import dis
             has_executable_code = False
-            function_def_opcodes = {'MAKE_FUNCTION', 'STORE_NAME', 'STORE_GLOBAL', 'LOAD_CONST'}
+            # Include annotation bookkeeping opcodes (Python 3.14 PEP 649) so that
+            # annotation-only modules are still correctly classified as library files
+            function_def_opcodes = {
+                'MAKE_FUNCTION', 'STORE_NAME', 'STORE_GLOBAL', 'LOAD_CONST',
+                'MAKE_CELL', 'BUILD_SET', 'SET_ADD', 'POP_TOP',
+                'SET_FUNCTION_ATTRIBUTE', 'LOAD_SMALL_INT', 'LOAD_NAME',
+                'PUSH_NULL', 'SETUP_ANNOTATIONS',
+            }
             
             for instr in dis.get_instructions(module_code):
                 # Skip RESUME and function definition opcodes

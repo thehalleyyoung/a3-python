@@ -511,6 +511,12 @@ class SymbolicVM:
         self.verbose = verbose
         self.paths: List[SymbolicPath] = []
         self._instruction_cache: Dict[int, Dict[int, dis.Instruction]] = {}
+        self._obj_id_counter = 0
+
+    def fresh_obj_id(self) -> int:
+        """Return a fresh unique object ID for heap allocation."""
+        self._obj_id_counter += 1
+        return self._obj_id_counter
 
     def _solver_maybe_sat(self) -> bool:
         """
@@ -772,7 +778,16 @@ class SymbolicVM:
                     print(f"  Top of stack: {frame.operand_stack[-3:]}")
             
             # Increment per-instruction step counter (k-step reachability index).
-            state.step_count += 1
+            # Skip counting annotation bookkeeping instructions (Python 3.14 PEP 649)
+            # so that type annotations don't consume the exploration budget.
+            _annotation_bookkeeping = (
+                instruction.opname == 'SETUP_ANNOTATIONS'
+                or (instruction.opname == 'STORE_NAME' and instruction.argval in ('__annotate__', '__annotations__', '__conditional_annotations__'))
+                or (instruction.opname == 'LOAD_NAME' and instruction.argval == '__conditional_annotations__')
+                or (instruction.opname == 'SET_ADD' and hasattr(frame, 'locals') and '__conditional_annotations__' in getattr(frame, 'locals', {}))
+            )
+            if not _annotation_bookkeeping:
+                state.step_count += 1
 
             self._execute_instruction(state, frame, instruction)
             path.trace.append(f"{instruction.offset:4d}: {instruction.opname} {instruction.argrepr}")
@@ -1201,13 +1216,13 @@ class SymbolicVM:
         """Compute the next instruction offset."""
         code = frame.code
         
-        # Cache instructions to avoid repeated dis.get_instructions calls
-        # This is a major performance optimization for large functions
+        # Use a SEPARATE cache from _instruction_cache (which stores offset→Instruction).
+        # This cache stores offset→next_offset (int→int).
         cache_key = id(code)
-        if not hasattr(self, '_instruction_cache'):
-            self._instruction_cache = {}
+        if not hasattr(self, '_next_offset_cache'):
+            self._next_offset_cache = {}
         
-        if cache_key not in self._instruction_cache:
+        if cache_key not in self._next_offset_cache:
             instructions = list(dis.get_instructions(code))
             # Build offset -> next_offset map for O(1) lookup
             offset_map = {}
@@ -1216,9 +1231,9 @@ class SymbolicVM:
                     offset_map[inst.offset] = instructions[i + 1].offset
                 else:
                     offset_map[inst.offset] = len(code.co_code)
-            self._instruction_cache[cache_key] = offset_map
+            self._next_offset_cache[cache_key] = offset_map
         
-        offset_map = self._instruction_cache[cache_key]
+        offset_map = self._next_offset_cache[cache_key]
         return offset_map.get(instr.offset, instr.offset + 2)
     
     def _set_security_detection_flag(self, state: SymbolicMachineState, violation):
@@ -2744,8 +2759,9 @@ class SymbolicVM:
                         return
                     self.solver.pop()
                     
-                    # Unpack elements and push onto stack (in order)
-                    for i in range(count):
+                    # Unpack elements and push onto stack in REVERSE order
+                    # so that TOS = first element (matches CPython semantics)
+                    for i in range(count - 1, -1, -1):
                         if i in seq_obj.elements:
                             frame.operand_stack.append(seq_obj.elements[i])
                         else:
@@ -2754,12 +2770,12 @@ class SymbolicVM:
                             frame.operand_stack.append(sym_elem)
                 else:
                     # Sequence object not found in heap - create symbolic unpacked values
-                    for i in range(count):
+                    for i in range(count - 1, -1, -1):
                         sym_elem = SymbolicValue(ValueTag.OBJ, z3.Int(f"unpack_unknown_{id(seq)}_{i}"))
                         frame.operand_stack.append(sym_elem)
             else:
                 # Could not extract concrete obj_id - create symbolic unpacked values
-                for i in range(count):
+                for i in range(count - 1, -1, -1):
                     sym_elem = SymbolicValue(ValueTag.OBJ, z3.Int(f"unpack_symbolic_{id(seq)}_{i}"))
                     frame.operand_stack.append(sym_elem)
             
@@ -2767,15 +2783,16 @@ class SymbolicVM:
         
         elif opname == "STORE_SUBSCR":
             # STORE_SUBSCR: Implements container[index] = value
-            # Stack: value, container, index → (empty)
-            # Pops all three and stores value at container[index]
+            # CPython stack layout: [..., value, container, index]
+            # TOS=index, TOS1=container, TOS2=value
+            # Pop order: index, container, value
             if len(frame.operand_stack) < 3:
                 state.exception = "StackUnderflow"
                 return
             
-            value = frame.operand_stack.pop()
-            container = frame.operand_stack.pop()
-            index = frame.operand_stack.pop()
+            index = frame.operand_stack.pop()      # TOS
+            container = frame.operand_stack.pop()  # TOS1
+            value = frame.operand_stack.pop()      # TOS2
             
             # Check for None misuse on container
             self.solver.push()
@@ -5515,11 +5532,16 @@ class SymbolicVM:
             # argval is an index into a common constants table
             const_repr = instr.argrepr
             
-            # Common exception types
+            # Common exception types (including NotImplementedError which is
+            # raised by compiler-generated __annotate__ functions in Python 3.14+)
             exception_types = ['AssertionError', 'RuntimeError', 'ValueError', 'TypeError', 
                              'KeyError', 'IndexError', 'AttributeError', 'ImportError',
                              'NameError', 'OSError', 'IOError', 'ZeroDivisionError',
                              'StopIteration', 'StopAsyncIteration', 'SystemExit',
+                             'NotImplementedError', 'OverflowError', 'UnicodeError',
+                             'UnicodeDecodeError', 'UnicodeEncodeError',
+                             'FileNotFoundError', 'PermissionError', 'TimeoutError',
+                             'ConnectionError', 'BrokenPipeError',
                              'BaseException', 'Exception']
             
             matched_exc = None
@@ -5913,66 +5935,52 @@ class SymbolicVM:
                 state.exception = "InfeasiblePath"
         
         elif opname == "PUSH_EXC_INFO":
-            # Push exception info onto stack when entering exception handler
-            # In Python 3.11+, this pushes the current exception onto the stack
-            # Stack layout: [exc_type, exc_value, exc_traceback, ...]
+            # Python 3.11+: PUSH_EXC_INFO pushes (prev_exc, new_exc)
+            # prev_exc is the previous exception (None if none), new_exc is the current one
             if state.exception:
-                # Push exception info as symbolic values
-                # Look up the exception type from builtins to get the correct payload
+                # Create the exception value with proper type info
                 if state.exception in frame.builtins:
-                    exc_type_val = frame.builtins[state.exception]
+                    exc_val = frame.builtins[state.exception]
                 else:
-                    # Unknown exception, use a generic marker
-                    exc_type_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
-                    exc_type_val._exception_type = state.exception
+                    exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
+                    exc_val._exception_type = state.exception
                 
-                exc_value_val = state.exception_value if state.exception_value else SymbolicValue.none()
-                exc_tb_val = SymbolicValue.none()  # Traceback representation (simplified)
-                
-                frame.operand_stack.extend([exc_type_val, exc_value_val, exc_tb_val])
+                # Push prev_exc (simplified as None) and current exception
+                prev_exc = SymbolicValue.none()
+                frame.operand_stack.append(prev_exc)   # prev_exc
+                frame.operand_stack.append(exc_val)     # current exc
             frame.instruction_offset = self._next_offset(frame, instr)
         
         elif opname == "CHECK_EXC_MATCH":
-            # Check if TOS (exception type to match) matches current exception
-            # Stack before: [..., exc_type, exc_value, exc_tb, match_type]
-            # Stack after: [..., exc_type, exc_value, exc_tb, match_result]
-            if len(frame.operand_stack) < 4:
+            # Python 3.11+: CHECK_EXC_MATCH (left, right -- left, bool)
+            # TOS = match_type (exception class to compare against)
+            # TOS1 = exc_value (stays on stack)
+            # Result: pushes boolean indicating whether exc matches match_type
+            if len(frame.operand_stack) < 2:
                 state.exception = "StackUnderflow"
                 return
             
-            match_type = frame.operand_stack.pop()
-            # exc_tb, exc_value, exc_type are still on stack
+            match_type = frame.operand_stack.pop()    # TOS = type to match
+            exc_value = frame.operand_stack[-1]        # TOS1 = stays on stack
             
-            # Get the actual exception from the stack
-            if len(frame.operand_stack) >= 3:
-                exc_tb = frame.operand_stack[-1]
-                exc_value = frame.operand_stack[-2]
-                exc_type = frame.operand_stack[-3]
-                
-                # Check if exception matches by comparing payloads symbolically
-                # Exception types are represented as OBJ with distinct payload values
-                if exc_type.tag == ValueTag.OBJ and match_type.tag == ValueTag.OBJ:
-                    # Create symbolic comparison: exc_type.payload == match_type.payload
-                    matches_expr = exc_type.payload == match_type.payload
-                    match_result = SymbolicValue(ValueTag.BOOL, matches_expr)
-                    frame.operand_stack.append(match_result)
-                else:
-                    # Unknown types, conservatively assume it could match
-                    frame.operand_stack.append(SymbolicValue.bool(True))
+            # Compare exception types
+            if hasattr(exc_value, '_exception_type') and hasattr(match_type, '_exception_type'):
+                matches = exc_value._exception_type == match_type._exception_type
+                frame.operand_stack.append(SymbolicValue.bool(matches))
+            elif exc_value.tag == ValueTag.OBJ and match_type.tag == ValueTag.OBJ:
+                matches_expr = exc_value.payload == match_type.payload
+                match_result = SymbolicValue(ValueTag.BOOL, matches_expr)
+                frame.operand_stack.append(match_result)
             else:
-                state.exception = "StackUnderflow"
-                return
+                # Unknown types, conservatively assume it could match
+                frame.operand_stack.append(SymbolicValue.bool(True))
             
             frame.instruction_offset = self._next_offset(frame, instr)
         
         elif opname == "POP_EXCEPT":
-            # Pop exception state and clear current exception
-            # This happens when exiting an exception handler successfully
-            # Stack: [exc_type, exc_value, exc_tb, ...] -> [...]
-            if len(frame.operand_stack) >= 3:
-                frame.operand_stack.pop()  # exc_tb
-                frame.operand_stack.pop()  # exc_value
-                frame.operand_stack.pop()  # exc_type
+            # Python 3.11+: POP_EXCEPT pops one value (the exception)
+            if frame.operand_stack:
+                frame.operand_stack.pop()
             
             # Clear exception state
             state.exception = None
@@ -6015,11 +6023,11 @@ class SymbolicVM:
             elif var_index < num_varnames + num_cellvars:
                 # This is a cellvar (variable in this function that inner functions will reference)
                 cell_index = var_index - num_varnames
-                frame.cells[cell_index] = None  # Initialize as empty cell
+                frame.cells[cell_index] = SymbolicValue.none()  # Initialize as empty cell
             else:
                 # This is a freevar (variable from outer scope)
                 freevar_index = var_index - num_varnames - num_cellvars
-                frame.freevars[freevar_index] = None  # Initialize as empty
+                frame.freevars[freevar_index] = SymbolicValue.none()  # Initialize as empty
             
             frame.instruction_offset = self._next_offset(frame, instr)
         
@@ -6757,7 +6765,7 @@ class SymbolicVM:
             
             # Convert to boolean using is_true helper
             # is_true returns z3.ExprRef (BoolRef), we need to wrap it in a SymbolicValue
-            bool_expr = is_true(val, state)
+            bool_expr = is_true(val, self.solver)
             bool_val = SymbolicValue(
                 ValueTag.BOOL,
                 z3.If(bool_expr, z3.IntVal(1), z3.IntVal(0))
@@ -6835,11 +6843,12 @@ class SymbolicVM:
                 state.exception = "StackUnderflow"
                 return
             
-            value = frame.operand_stack.pop()
-            func = frame.operand_stack[-1]  # Keep function on stack
+            func = frame.operand_stack.pop()   # TOS = function
+            attr = frame.operand_stack.pop()   # TOS1 = attribute value (consumed)
+            frame.operand_stack.append(func)   # Push function back on stack
             
             # For symbolic execution, we don't need to track these attributes yet
-            # Just consume the value and keep the function
+            # Just consume the attr value and keep the function
             
             frame.instruction_offset = self._next_offset(frame, instr)
         
@@ -7822,7 +7831,7 @@ class SymbolicVM:
                 # Converts list to tuple (structural operation)
                 # Symbolically: create a fresh tuple object
                 tuple_id = z3.Int(f"intrinsic_tuple_{instr.offset}_{id(frame)}")
-                tuple_obj = SymbolicValue(ValueTag.OBJ, tuple_id)
+                tuple_obj = SymbolicValue(ValueTag.TUPLE, tuple_id)  # ✓ Correct: TUPLE not OBJ
                 frame.operand_stack.append(tuple_obj)
                 frame.instruction_offset = self._next_offset(frame, instr)
             else:
