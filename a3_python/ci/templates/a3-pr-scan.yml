@@ -25,6 +25,7 @@ permissions:
   contents: read
   security-events: write   # needed for SARIF upload
   pull-requests: write      # needed for PR comments (optional)
+  models: read              # needed for GitHub Models (agentic triage)
 
 jobs:
   a3-scan:

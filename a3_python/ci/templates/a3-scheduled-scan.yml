@@ -20,6 +20,7 @@ permissions:
   contents: write            # needed to update baseline
   security-events: write     # needed for SARIF upload
   issues: write              # needed for auto-issue creation
+  models: read               # needed for GitHub Models (agentic triage)
 
 jobs:
   a3-full-scan:
