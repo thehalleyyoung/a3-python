@@ -1,11 +1,11 @@
-# PythonFromScratch - Python Semantics + Barrier-Certificate Verifier
+# A3 Python - Advanced Automated Analysis for Python
 # Docker image for static analysis and security checking
 
 FROM python:3.11-slim
 
-LABEL maintainer="PythonFromScratch"
-LABEL description="Python semantics + barrier-certificate verifier for security analysis"
-LABEL version="0.1.0"
+LABEL maintainer="a3-python"
+LABEL description="Find real bugs in Python codebases automatically with A3"
+LABEL version="0.1.21"
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files
-COPY pyproject.toml README.md ./
-COPY pyfromscratch/ ./pyfromscratch/
+COPY pyproject.toml README.md MANIFEST.in ./
+COPY a3_python/ ./a3_python/
 
 # Install the package
 RUN pip install --no-cache-dir -e .
@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir -e .
 RUN mkdir -p /target
 
 # Set the entrypoint to the CLI
-ENTRYPOINT ["pyfromscratch"]
+ENTRYPOINT ["a3"]
 
 # Default to showing help if no arguments provided
 CMD ["--help"]
