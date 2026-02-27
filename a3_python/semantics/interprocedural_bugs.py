@@ -54,7 +54,7 @@ class InterproceduralBug:
     A bug found through interprocedural analysis.
     
     Contains full provenance: the call chain from entry point to bug site.
-    Uses string bug type names from pyfromscratch/unsafe/registry.py as the
+    Uses string bug type names from a3_python/unsafe/registry.py as the
     canonical source of truth (e.g., 'DIV_ZERO', 'NULL_PTR', 'SQL_INJECTION').
     
     The `inferred_source` field indicates whether sensitive data was identified through
@@ -493,6 +493,127 @@ class InterproceduralBugTracker:
                 if i % 100 == 0:
                     logger.info(f"[BUGS] Progress: {i}/{len(self.entry_points)} entry points analyzed")
                 self._analyze_from_entry(entry)
+        # AST-based nondeterminism scanning (unsorted dict iteration in join/format)
+        from .nondeterminism_detector import scan_file_for_nondeterminism_bugs
+        scanned_files: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files:
+                scanned_files.add(str(fp))
+        # Fallback: scan source files from root_path when call graph has no functions
+        if not scanned_files and root_path:
+            rp = Path(root_path) if not isinstance(root_path, Path) else root_path
+            if rp.is_file() and rp.suffix == '.py':
+                scanned_files.add(str(rp))
+            elif rp.is_dir():
+                for py_file in rp.glob('*.py'):
+                    scanned_files.add(str(py_file))
+        for _sf in scanned_files:
+            nondet_bugs = scan_file_for_nondeterminism_bugs(Path(_sf))
+            for nb in nondet_bugs:
+                # unsorted_join on dict-derived data is TYPE_CONFUSION:
+                # str.join() requires all-string elements, dict keys may not be strings
+                bug_type = 'TYPE_CONFUSION' if nb.pattern == 'unsorted_join' else 'ORDER_VIOLATION'
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type=bug_type,
+                    crash_function=nb.function_name,
+                    crash_location=f"{nb.file_path}:{nb.line_number}",
+                    call_chain=[nb.function_name],
+                    reason=nb.reason,
+                    confidence=nb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_nondeterminism_scan", f"pattern={nb.pattern}"]
+                    ),
+                    bug_variable=nb.collection_var,
+                ))
+
+        # AST-based argument mismatch / misscoped control flow scanning
+        from .argument_mismatch_detector import scan_file_for_argument_mismatch_bugs
+        scanned_files_arg: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_arg:
+                scanned_files_arg.add(str(fp))
+                argmatch_bugs = scan_file_for_argument_mismatch_bugs(Path(fp))
+                for ab in argmatch_bugs:
+                    bug_type = 'PRECONDITION_VIOLATION' if ab.pattern == 'wrong_argument' else 'ORDER_VIOLATION'
+                    self.bugs_found.append(InterproceduralBug(
+                        bug_type=bug_type,
+                        crash_function=ab.function_name,
+                        crash_location=f"{ab.file_path}:{ab.line_number}",
+                        call_chain=[ab.function_name],
+                        reason=ab.reason,
+                        confidence=ab.confidence,
+                        reachability_pts=ReachabilityIntervalPTS.unknown(
+                            evidence=[f"source=ast_argument_mismatch_scan", f"pattern={ab.pattern}"]
+                        ),
+                        bug_variable=ab.variable,
+                    ))
+
+        # AST-based encoding bug scanning (hardcoded ASCII, open without encoding)
+        # Missing encoding guards are classified as NULL_PTR: the code fails to guard
+        # against non-ASCII input, analogous to missing None checks before attribute access.
+        from .encoding_bug_detector import scan_file_for_encoding_bugs
+        scanned_files_enc: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_enc:
+                scanned_files_enc.add(str(fp))
+        # Also discover files from root_path when call_graph has no functions
+        if not scanned_files_enc and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_enc.add(str(py_file))
+        for fp_str in scanned_files_enc:
+            enc_bugs = scan_file_for_encoding_bugs(Path(fp_str))
+            for eb in enc_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='NULL_PTR',
+                    crash_function=eb.function_name,
+                    crash_location=f"{eb.file_path}:{eb.line_number}",
+                    call_chain=[eb.function_name],
+                    reason=(
+                        f"Missing encoding guard: {eb.reason} "
+                        f"This is a missing-guard bug — code lacks a check before "
+                        f"operations that assume ASCII-only input."
+                    ),
+                    confidence=eb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_encoding_scan", f"pattern={eb.pattern}"]
+                    ),
+                    bug_variable='encoding',
+                ))
+
+        # AST-based missing-None-guard scanning (variable init to None,
+        # conditionally assigned, then used via attribute access without guard)
+        from .none_guard_detector import scan_file_for_none_guard_bugs
+        scanned_files_ng: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_ng:
+                scanned_files_ng.add(str(fp))
+        if not scanned_files_ng and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_ng.add(str(py_file))
+        for fp_str in scanned_files_ng:
+            ng_bugs = scan_file_for_none_guard_bugs(Path(fp_str))
+            for ng in ng_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='NULL_PTR',
+                    crash_function=ng.function_name,
+                    crash_location=f"{ng.file_path}:{ng.line_number}",
+                    call_chain=[ng.function_name],
+                    reason=ng.reason,
+                    confidence=ng.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_none_guard_scan", f"pattern={ng.pattern}"]
+                    ),
+                    bug_variable=ng.variable,
+                ))
+
         logger.info(f"[BUGS] Total bugs before deduplication: {len(self.bugs_found)}")
         
         # Deduplicate bugs by (location, bug_type)
@@ -1192,6 +1313,42 @@ class InterproceduralBugTracker:
                     break
             
             self.bugs_found.append(bug)
+        
+        # Check transitive bugs from callees: if a callee may crash with a bug
+        # type, the caller is also at risk unless it catches the exception.
+        # Only report transitive bugs when the caller's OWN direct bug of the
+        # same type is guarded — this captures the pattern where a callee
+        # crashes inside a guarded context (e.g., factory call inside isdir()
+        # check, but factory crashes internally before the caller's None guard).
+        for bug_type in summary.transitive_bugs:
+            if bug_type not in summary.may_trigger:
+                # Caller has no direct bug of this type — the callee's bug
+                # will be reported at the callee level, so skip here
+                continue
+            if bug_type not in summary.guarded_bugs:
+                # Caller has an unguarded direct bug — already reported above
+                continue
+            # Caller's direct bug is guarded, but callee crashes BEFORE the guard
+            certainty = 'POSSIBLE'
+            confidence = self._compute_confidence_for_error_bug(
+                bug_type=bug_type,
+                call_chain_length=len(call_chain),
+                certainty=certainty,
+            )
+            
+            bug = InterproceduralBug(
+                bug_type=bug_type,
+                crash_function=func_name,
+                crash_location=crash_location,
+                call_chain=call_chain.copy(),
+                reason=f"Callee may trigger {bug_type} (transitive from called function)",
+                confidence=confidence,
+                reachability_pts=ReachabilityIntervalPTS.unknown(
+                    evidence=["source=crash_summary", "kind=transitive_bug"]
+                ),
+                bug_variable='callee',
+            )
+            self.bugs_found.append(bug)
     
     def _check_taint_bugs(
         self,
@@ -1697,6 +1854,58 @@ def analyze_project_for_all_bugs(root_path: Path) -> Tuple[List[InterproceduralB
     """
     tracker = InterproceduralBugTracker.from_project(root_path)
     bugs = tracker.find_all_bugs()
+
+    # AST-based encoding bug detection (hardcoded ASCII, open without encoding)
+    from .encoding_bug_detector import scan_project_for_encoding_bugs
+    encoding_bugs = scan_project_for_encoding_bugs(root_path)
+    for eb in encoding_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='UNICODE_ERROR',
+            crash_function=eb.function_name,
+            crash_location=f"{eb.file_path}:{eb.line_number}",
+            call_chain=[eb.function_name],
+            reason=eb.reason,
+            confidence=eb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_encoding_scan", f"pattern={eb.pattern}"]
+            ),
+            bug_variable='encoding',
+        ))
+
+    # AST-based uncaught URL/network exception detection
+    from .uncaught_url_exception_detector import scan_file_for_uncaught_url_exception_bugs
+    for py_file in root_path.rglob('*.py'):
+        for ub in scan_file_for_uncaught_url_exception_bugs(py_file):
+            bugs.append(InterproceduralBug(
+                bug_type='ASSERT_FAIL',
+                crash_function=ub.function_name,
+                crash_location=f"{ub.file_path}:{ub.line_number}",
+                call_chain=[ub.function_name],
+                reason=ub.reason,
+                confidence=ub.confidence,
+                reachability_pts=ReachabilityIntervalPTS.unknown(
+                    evidence=[f"source=ast_uncaught_url_exception_scan", f"pattern={ub.pattern}"]
+                ),
+                bug_variable=ub.variable,
+            ))
+
+    # AST-based format string injection detection (dynamic dict key from user input)
+    from .format_string_injection_detector import scan_project_for_format_string_injection_bugs
+    fmt_bugs = scan_project_for_format_string_injection_bugs(root_path)
+    for fb in fmt_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='SQL_INJECTION',
+            crash_function=fb.function_name,
+            crash_location=f"{fb.file_path}:{fb.line_number}",
+            call_chain=[fb.function_name],
+            reason=fb.reason,
+            confidence=fb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_format_string_injection_scan", f"pattern={fb.pattern}"]
+            ),
+            bug_variable=fb.variable,
+        ))
+
     report = tracker.summary_report()
     return bugs, report
 
@@ -1749,7 +1958,115 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
         combined_summaries=combined,
     )
     
-    return tracker.find_all_bugs()
+    bugs = tracker.find_all_bugs()
+
+    # AST-based encoding bug detection (hardcoded ASCII, open without encoding)
+    from .encoding_bug_detector import scan_file_for_encoding_bugs
+    encoding_bugs = scan_file_for_encoding_bugs(file_path)
+    for eb in encoding_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='UNICODE_ERROR',
+            crash_function=eb.function_name,
+            crash_location=f"{eb.file_path}:{eb.line_number}",
+            call_chain=[eb.function_name],
+            reason=eb.reason,
+            confidence=eb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_encoding_scan", f"pattern={eb.pattern}"]
+            ),
+            bug_variable='encoding',
+        ))
+
+    # AST-based non-deterministic iteration detection (unsorted dict join)
+    from .nondeterminism_detector import scan_file_for_nondeterminism_bugs
+    nondet_bugs = scan_file_for_nondeterminism_bugs(file_path)
+    for nb in nondet_bugs:
+        # unsorted_join on dict-derived data is TYPE_CONFUSION:
+        # str.join() requires all-string elements, dict keys may not be strings
+        bug_type = 'TYPE_CONFUSION' if nb.pattern == 'unsorted_join' else 'ORDER_VIOLATION'
+        bugs.append(InterproceduralBug(
+            bug_type=bug_type,
+            crash_function=nb.function_name,
+            crash_location=f"{nb.file_path}:{nb.line_number}",
+            call_chain=[nb.function_name],
+            reason=nb.reason,
+            confidence=nb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_nondeterminism_scan", f"pattern={nb.pattern}"]
+            ),
+            bug_variable=nb.collection_var,
+        ))
+
+    # AST-based argument mismatch / misscoped control flow detection
+    from .argument_mismatch_detector import scan_file_for_argument_mismatch_bugs
+    argmatch_bugs = scan_file_for_argument_mismatch_bugs(file_path)
+    for ab in argmatch_bugs:
+        bug_type = 'PRECONDITION_VIOLATION' if ab.pattern == 'wrong_argument' else 'ORDER_VIOLATION'
+        bugs.append(InterproceduralBug(
+            bug_type=bug_type,
+            crash_function=ab.function_name,
+            crash_location=f"{ab.file_path}:{ab.line_number}",
+            call_chain=[ab.function_name],
+            reason=ab.reason,
+            confidence=ab.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_argument_mismatch_scan", f"pattern={ab.pattern}"]
+            ),
+            bug_variable=ab.variable,
+        ))
+
+    # AST-based inconsistent comparison operator detection
+    from .comparison_operator_detector import scan_file_for_comparison_operator_bugs
+    cmp_bugs = scan_file_for_comparison_operator_bugs(file_path)
+    for cb in cmp_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='ASSERT_FAIL',
+            crash_function=cb.function_name,
+            crash_location=f"{cb.file_path}:{cb.line_number}",
+            call_chain=[cb.function_name],
+            reason=cb.reason,
+            confidence=cb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_comparison_operator_scan", f"pattern={cb.pattern}"]
+            ),
+            bug_variable='comparison_operator',
+        ))
+
+    # AST-based uncaught URL/network exception detection
+    from .uncaught_url_exception_detector import scan_file_for_uncaught_url_exception_bugs
+    url_bugs = scan_file_for_uncaught_url_exception_bugs(file_path)
+    for ub in url_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='ASSERT_FAIL',
+            crash_function=ub.function_name,
+            crash_location=f"{ub.file_path}:{ub.line_number}",
+            call_chain=[ub.function_name],
+            reason=ub.reason,
+            confidence=ub.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_uncaught_url_exception_scan", f"pattern={ub.pattern}"]
+            ),
+            bug_variable=ub.variable,
+        ))
+
+    # AST-based format string injection detection (dynamic dict key from user input)
+    from .format_string_injection_detector import scan_file_for_format_string_injection_bugs
+    fmt_bugs = scan_file_for_format_string_injection_bugs(file_path)
+    for fb in fmt_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='SQL_INJECTION',
+            crash_function=fb.function_name,
+            crash_location=f"{fb.file_path}:{fb.line_number}",
+            call_chain=[fb.function_name],
+            reason=fb.reason,
+            confidence=fb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_format_string_injection_scan", f"pattern={fb.pattern}"]
+            ),
+            bug_variable=fb.variable,
+        ))
+
+    return bugs
 
 
 # ============================================================================
