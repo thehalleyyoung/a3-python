@@ -169,6 +169,8 @@ class _NoneGuardVisitor(ast.NodeVisitor):
         self._scan_for_last_element_attr_assumption(func_node)
         self._scan_for_call_result_none_passthrough(func_node)
         self._scan_for_param_binop_without_none_guard(func_node)
+        self._scan_for_regex_search_dynamic_pattern(func_node)
+        self._scan_for_compat_flag_ternary(func_node)
 
     def _scan_statement_list(self, stmts: list):
         """Scan a flat list of statements for the None-init-then-use pattern."""
@@ -1702,6 +1704,231 @@ class _NoneGuardVisitor(ast.NodeVisitor):
                         if node.func.value.id == list_var:
                             return True
         return False
+
+    # ------------------------------------------------------------------
+    # Pattern: re.search/re.match with dynamically-constructed regex
+    # containing a mandatory prefix that prevents position-0 matches
+    # ------------------------------------------------------------------
+
+    _RE_OPTIONAL_FUNCS = frozenset({'search', 'match', 'fullmatch'})
+
+    def _scan_for_regex_search_dynamic_pattern(self, func_node):
+        """Detect re.search/re.match with dynamically-constructed regex
+        whose literal prefix contains a mandatory character class.
+
+        Pattern (BugsInPy httpie#5):
+            regex = '[^\\\\\\\\]' + sep
+            match = re.search(regex, string)
+            if match:
+                found[match.start() + 1] = sep
+
+        The prefix '[^\\\\]' requires a non-backslash character BEFORE the
+        separator, so re.search returns None when the separator appears at
+        position 0 of the input.  This causes valid inputs to be
+        incorrectly rejected (the 'found' dict stays empty).
+        """
+        import re as _re
+
+        for node in ast.walk(func_node):
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name):
+                continue
+
+            # Match: var = re.search(REGEX, ...) / re.match(...)
+            call = node.value
+            if not isinstance(call, ast.Call):
+                continue
+            if not (isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == 're'
+                    and call.func.attr in self._RE_OPTIONAL_FUNCS):
+                continue
+            if not call.args:
+                continue
+
+            # Check if first arg (regex pattern) is built via concatenation.
+            # The pattern may be directly in the call:  re.search(LIT + var, ...)
+            # or assigned to an intermediate variable:  regex = LIT + var
+            #                                           re.search(regex, ...)
+            regex_arg = call.args[0]
+            prefix = self._regex_concat_prefix(regex_arg)
+            if prefix is None and isinstance(regex_arg, ast.Name):
+                prefix = self._resolve_concat_prefix(func_node, regex_arg.id)
+            if prefix is None:
+                continue
+
+            # Does the prefix contain a mandatory char class like [^...] or
+            # a lone dot that requires a preceding character?
+            if not _re.search(r'\[[^\]]+\]|(?<!\\)\.', prefix):
+                continue
+
+            var_name = target.id
+
+            # Verify the result is used with attribute access (.start, .group, etc.)
+            has_attr_use = False
+            for child in ast.walk(func_node):
+                if isinstance(child, ast.Attribute):
+                    if (isinstance(child.value, ast.Name)
+                            and child.value.id == var_name):
+                        has_attr_use = True
+                        break
+            if not has_attr_use:
+                continue
+
+            self.bugs.append(NoneGuardBug(
+                file_path=self.file_path,
+                line_number=node.lineno,
+                function_name=self._current_function or '<module>',
+                pattern='regex_dynamic_prefix_none',
+                reason=(
+                    f"re.{call.func.attr}() called with dynamically-"
+                    f"constructed regex whose literal prefix "
+                    f"'{prefix}' requires a preceding character "
+                    f"(line {node.lineno}). re.{call.func.attr}() "
+                    f"returns None when the target is at position 0, "
+                    f"so variable '{var_name}' may be None for valid "
+                    f"inputs."
+                ),
+                confidence=0.75,
+                variable=f'call:re.{call.func.attr}',
+            ))
+
+    @staticmethod
+    def _regex_concat_prefix(node: ast.expr) -> Optional[str]:
+        """Return the string-literal left operand of a ``LITERAL + expr``
+        concatenation, or None if the node isn't that shape."""
+        if (isinstance(node, ast.BinOp)
+                and isinstance(node.op, ast.Add)
+                and isinstance(node.left, ast.Constant)
+                and isinstance(node.left.value, str)):
+            return node.left.value
+        return None
+
+    @staticmethod
+    def _resolve_concat_prefix(func_node, var_name: str) -> Optional[str]:
+        """Resolve a variable name to a concat prefix by finding its
+        assignment in the same function body.
+
+        Handles:  regex = LITERAL + sep  →  returns LITERAL
+        """
+        for node in ast.walk(func_node):
+            if (isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == var_name):
+                if (isinstance(node.value, ast.BinOp)
+                        and isinstance(node.value.op, ast.Add)
+                        and isinstance(node.value.left, ast.Constant)
+                        and isinstance(node.value.left.value, str)):
+                    return node.value.left.value
+        return None
+
+    # ------------------------------------------------------------------
+    # Pattern 12: Compat flag (six.PY2, sys.version_info, etc.) used in
+    #             a compound condition inside a ternary (IfExp), indicating
+    #             incomplete version-specific handling.
+    # ------------------------------------------------------------------
+
+    # Module attributes that act as version/compat flags
+    _COMPAT_FLAG_ATTRS: Dict[str, Set[str]] = {
+        'six': {'PY2', 'PY3'},
+        'sys': {'version_info', 'version'},
+    }
+
+    def _scan_for_compat_flag_ternary(self, func_node):
+        """Detect compat flag used in compound ternary condition.
+
+        Pattern (BugsInPy keras#15):
+            self.file_flags = 'b' if six.PY2 and os.name == 'nt' else ''
+
+        Fix pattern:
+            if six.PY2:
+                self.file_flags = 'b'
+                self._open_args = {}
+            else:
+                self.file_flags = ''
+                self._open_args = {'newline': '\\n'}
+
+        The ternary conflates the version guard with another condition,
+        leading to incomplete version-specific handling.  The fix uses a
+        full if/else block keyed *only* on the compat flag.
+        """
+        for node in ast.walk(func_node):
+            if not isinstance(node, ast.Assign):
+                continue
+            if not isinstance(node.value, ast.IfExp):
+                continue
+            ifexp = node.value
+            # Check if the ternary test is a compound bool using a compat flag
+            flag_name = self._find_compat_flag_in_compound(ifexp.test)
+            if flag_name is None:
+                continue
+            # Determine the target variable name for reporting
+            target = node.targets[0] if node.targets else None
+            var_str = self._target_str(target)
+            self.bugs.append(NoneGuardBug(
+                file_path=self.file_path,
+                line_number=node.lineno,
+                function_name=self._current_function or '<module>',
+                pattern='compat_flag_compound_ternary',
+                reason=(
+                    f"Compatibility flag '{flag_name}' is used in a compound "
+                    f"condition inside a ternary expression (line {node.lineno}) "
+                    f"to assign '{var_str}'. This often indicates incomplete "
+                    f"version-specific handling — the different branches "
+                    f"typically require additional attribute/variable setup "
+                    f"that a single ternary cannot express."
+                ),
+                confidence=0.72,
+                variable=var_str,
+            ))
+
+    def _find_compat_flag_in_compound(self, test_node) -> Optional[str]:
+        """Return the compat flag name (e.g. 'six.PY2') if *test_node* is a
+        compound BoolOp (and/or) containing a compat flag attribute access.
+        Returns None otherwise."""
+        if not isinstance(test_node, ast.BoolOp):
+            return None
+        for value in test_node.values:
+            name = self._is_compat_flag(value)
+            if name is not None:
+                return name
+        return None
+
+    @classmethod
+    def _is_compat_flag(cls, node) -> Optional[str]:
+        """Return 'mod.attr' if *node* is a compat flag access like six.PY2."""
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.value, ast.Name):
+                mod = node.value.id
+                attr = node.attr
+                if mod in cls._COMPAT_FLAG_ATTRS:
+                    if attr in cls._COMPAT_FLAG_ATTRS[mod]:
+                        return f"{mod}.{attr}"
+        # Also match sys.version_info comparisons like sys.version_info[0] >= 3
+        if isinstance(node, ast.Compare):
+            left = node.left
+            if isinstance(left, ast.Subscript):
+                if isinstance(left.value, ast.Attribute):
+                    name = cls._is_compat_flag(left.value)
+                    if name is not None:
+                        return name
+            name = cls._is_compat_flag(left)
+            if name is not None:
+                return name
+        return None
+
+    @staticmethod
+    def _target_str(target) -> str:
+        """Convert an assignment target AST node to a readable string."""
+        if isinstance(target, ast.Name):
+            return target.id
+        if isinstance(target, ast.Attribute):
+            if isinstance(target.value, ast.Name):
+                return f"{target.value.id}.{target.attr}"
+        return '<expr>'
 
 
 def _is_none(node) -> bool:
