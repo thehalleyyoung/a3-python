@@ -374,6 +374,29 @@ class Analyzer:
                     )
             except Exception:
                 pass
+            # Try premature kwargs rejection (keras#18)
+            try:
+                from .semantics.premature_kwargs_rejection_detector import scan_file_for_premature_kwargs_rejection_bugs
+                pkr_bugs = scan_file_for_premature_kwargs_rejection_bugs(filepath)
+                pkr_bugs = [b for b in pkr_bugs if b.confidence >= 0.60]
+                if pkr_bugs:
+                    best = max(pkr_bugs, key=lambda b: b.confidence)
+                    return AnalysisResult(
+                        verdict="BUG",
+                        bug_type='ASSERT_FAIL',
+                        counterexample={
+                            'bug_type': 'ASSERT_FAIL',
+                            'location': f"{best.file_path}:{best.line_number}",
+                            'reason': best.reason,
+                            'confidence': best.confidence,
+                            'source': 'ast_premature_kwargs_rejection_scan',
+                            'pattern': best.pattern,
+                        },
+                        paths_explored=0,
+                        message=f"Premature kwargs rejection: {best.reason}",
+                    )
+            except Exception:
+                pass
             return AnalysisResult(
                 verdict="UNKNOWN",
                 message="Failed to load or compile file"
@@ -889,6 +912,75 @@ class Analyzer:
                 print(f"Warning: Stale-seed scan failed: {e}")
         _end_phase("ast_stale_seed")
 
+        # Step 1.4n: AST-based premature kwargs rejection detector (keras#18 pattern)
+        # Detects **kwargs accepted but unconditionally rejected without extracting
+        # valid keys via .pop() first.
+        _start_phase("ast_premature_kwargs_rejection")
+        try:
+            from .semantics.premature_kwargs_rejection_detector import scan_file_for_premature_kwargs_rejection_bugs
+            early_pkr_bugs = scan_file_for_premature_kwargs_rejection_bugs(filepath)
+            early_pkr_bugs = [b for b in early_pkr_bugs if b.confidence >= 0.60]
+            if early_pkr_bugs:
+                best = max(early_pkr_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Premature kwargs rejection scan found {len(early_pkr_bugs)} issue(s), "
+                          f"best: ASSERT_FAIL at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='ASSERT_FAIL',
+                    counterexample={
+                        'bug_type': 'ASSERT_FAIL',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_premature_kwargs_rejection_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Premature kwargs rejection: {best.reason}",
+                )
+            elif self.verbose:
+                print("Premature kwargs rejection scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Premature kwargs rejection scan failed: {e}")
+        _end_phase("ast_premature_kwargs_rejection")
+
+        # Step 1.4o: AST-based next()-on-non-iterator detector (keras#34 pattern)
+        # Detects calling next() on a variable assigned directly from a parameter
+        # without wrapping with iter() first. Sequence objects have __getitem__
+        # but not __next__, so next() raises TypeError.
+        _start_phase("ast_next_on_non_iterator")
+        try:
+            from .semantics.next_on_non_iterator_detector import scan_file_for_next_on_non_iterator_bugs
+            early_noni_bugs = scan_file_for_next_on_non_iterator_bugs(filepath)
+            early_noni_bugs = [b for b in early_noni_bugs if b.confidence >= 0.60]
+            if early_noni_bugs:
+                best = max(early_noni_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Next-on-non-iterator scan found {len(early_noni_bugs)} issue(s), "
+                          f"best: TYPE_CONFUSION at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='TYPE_CONFUSION',
+                    counterexample={
+                        'bug_type': 'TYPE_CONFUSION',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_next_on_non_iterator_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Next on non-iterator: {best.reason}",
+                )
+            elif self.verbose:
+                print("Next-on-non-iterator scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Next-on-non-iterator scan failed: {e}")
+        _end_phase("ast_next_on_non_iterator")
+
         # Step 1.5: For security bugs, use function-level analysis (NEW in iteration 422)
         # This delegates to security_scan() internally, which does the right thing:
         # - Extract all functions
@@ -1320,6 +1412,26 @@ class Analyzer:
                                 },
                                 'path': None,
                                 'source': 'ast_stale_seed_state_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST-based hasattr-without-type-check bugs (keras#24)
+                    hasattr_tc_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_hasattr_type_check_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and hasattr_tc_bugs:
+                        for htc_bug in hasattr_tc_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': htc_bug.bug_type,
+                                    'location': htc_bug.crash_location,
+                                    'reason': htc_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_hasattr_type_check_scan'
                             }
                             bugs_found.append(bug_entry)
                         
