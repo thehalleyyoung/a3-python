@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Set, Optional, Tuple, Any
 from pathlib import Path
 import ast
+import sys
 import types
 import dis
 
@@ -618,16 +619,34 @@ def build_call_graph_from_file(file_path: Path, module_name: str = None) -> Call
     if module_name is None:
         module_name = file_path.stem
     
-    with open(file_path, 'r', encoding='utf-8') as f:
-        source = f.read()
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            source = f.read()
+    except (OSError, IOError):
+        return CallGraph()
     
     try:
         tree = ast.parse(source, filename=str(file_path))
     except SyntaxError:
-        return CallGraph()  # Return empty graph on parse error
+        # Try to handle partial/indented code snippets (e.g., from diff extraction)
+        tree = _try_parse_partial(source, str(file_path))
+        if tree is None:
+            return CallGraph()
     
     builder = CallGraphBuilder(str(file_path), module_name)
-    builder.visit(tree)
+    
+    # Temporarily increase recursion limit for deeply nested ASTs,
+    # and catch RecursionError so one problematic file doesn't crash
+    # the entire scan.
+    old_limit = sys.getrecursionlimit()
+    try:
+        sys.setrecursionlimit(max(old_limit, 8000))
+        builder.visit(tree)
+    except RecursionError:
+        # File has excessively deep nesting — return whatever we collected
+        pass
+    finally:
+        sys.setrecursionlimit(old_limit)
     
     # Populate FunctionInfo.call_sites from call_sites_by_caller
     for caller_qname, call_sites in builder.graph.call_sites_by_caller.items():
@@ -638,12 +657,180 @@ def build_call_graph_from_file(file_path: Path, module_name: str = None) -> Call
     return builder.graph
 
 
+def _try_parse_partial(source: str, filename: str):
+    """Try to parse partial/indented code by dedenting or wrapping in a function.
+    
+    Handles code snippets extracted from diffs that may be indented or incomplete.
+    """
+    import textwrap
+    import re
+    dedented = textwrap.dedent(source)
+    
+    # Try 1: Parse dedented source directly
+    for src in (dedented, source):
+        try:
+            return ast.parse(src, filename=filename)
+        except SyntaxError:
+            pass
+    
+    # Try 2: Complete trailing incomplete blocks (e.g., 'if x:' with no body)
+    # by appending 'pass' at the right indentation
+    completed = _complete_trailing_blocks(dedented)
+    if completed != dedented:
+        try:
+            return ast.parse(completed, filename=filename)
+        except SyntaxError:
+            pass
+    
+    # Try 3: Wrap in a function
+    for src in (completed, dedented):
+        try:
+            wrapped = "def _a3_snippet_wrapper_():\n" + textwrap.indent(src, "    ") + "\n"
+            return ast.parse(wrapped, filename=filename)
+        except SyntaxError:
+            pass
+    
+    # Try 4: Split multi-hunk diff fragments and wrap each hunk separately
+    result = _try_parse_multi_hunk(source, filename)
+    if result is not None:
+        return result
+    
+    return None
+
+
+def _try_parse_multi_hunk(source: str, filename: str):
+    """Parse multi-hunk diff fragments by splitting and wrapping each hunk.
+    
+    Diff-extracted code often has multiple '# @@ hunk @@' markers separating
+    fragments at different indent levels, plus non-Python metadata lines.
+    We split at hunk markers, dedent each hunk individually, wrap in functions,
+    and combine into a single module.
+    """
+    import textwrap
+    import re
+    
+    # Check if this looks like a multi-hunk fragment
+    if '# @@ hunk @@' not in source:
+        return None
+    
+    # Strip non-Python metadata lines (e.g., "index 635eba2..8318674 100644")
+    cleaned_lines = []
+    for line in source.splitlines(keepends=True):
+        stripped = line.strip()
+        # Skip git diff metadata lines
+        if re.match(r'^index\s+[0-9a-f]+\.\.[0-9a-f]+', stripped):
+            continue
+        if re.match(r'^(old|new) mode \d+', stripped):
+            continue
+        cleaned_lines.append(line)
+    cleaned = ''.join(cleaned_lines)
+    
+    # Split at hunk markers
+    hunks = re.split(r'^# @@ hunk @@\s*$', cleaned, flags=re.MULTILINE)
+    # Strip only leading/trailing blank lines, preserving internal indentation
+    hunks = [h.strip('\n\r') for h in hunks if h.strip()]
+    
+    if not hunks:
+        return None
+    
+    # Try to wrap each hunk in a function and combine
+    func_defs = []
+    for i, hunk in enumerate(hunks):
+        wrapped = _wrap_hunk_as_function(hunk, i)
+        if wrapped:
+            func_defs.append(wrapped)
+    
+    if not func_defs:
+        return None
+    
+    combined = '\n\n'.join(func_defs) + '\n'
+    try:
+        return ast.parse(combined, filename=filename)
+    except SyntaxError:
+        return None
+
+
+def _wrap_hunk_as_function(hunk_source: str, index: int) -> Optional[str]:
+    """Wrap a single code hunk in a function definition.
+    
+    Handles break/continue by adding a loop wrapper, and dedents the code
+    to normalize indentation.
+    """
+    import textwrap
+    
+    dedented = textwrap.dedent(hunk_source)
+    if not dedented.strip():
+        return None
+    
+    completed = _complete_trailing_blocks(dedented)
+    
+    # Check if the hunk contains break/continue that need a loop wrapper
+    needs_loop = _hunk_needs_loop_wrapper(completed)
+    
+    if needs_loop:
+        body = textwrap.indent(completed, "        ")  # 8 spaces (func + while)
+        wrapped = f"def _a3_hunk_{index}():\n    while True:\n{body}\n        break\n"
+    else:
+        body = textwrap.indent(completed, "    ")
+        wrapped = f"def _a3_hunk_{index}():\n{body}\n"
+    
+    # Verify this compiles
+    try:
+        ast.parse(wrapped)
+        return wrapped
+    except SyntaxError:
+        # Try without loop wrapper as fallback
+        if needs_loop:
+            body = textwrap.indent(completed, "    ")
+            wrapped = f"def _a3_hunk_{index}():\n{body}\n"
+            try:
+                ast.parse(wrapped)
+                return wrapped
+            except SyntaxError:
+                pass
+        return None
+
+
+def _hunk_needs_loop_wrapper(source: str) -> bool:
+    """Check if a code hunk has break/continue at a level without an enclosing loop.
+    
+    Note: ast.parse() accepts break/continue outside loops, but compile() rejects them.
+    We use compile() to detect this.
+    """
+    import textwrap as _tw
+    wrapped = f"def _tmp():\n" + _tw.indent(source, "    ") + "\n"
+    try:
+        compile(wrapped, '<test>', 'exec')
+        return False  # Compiles fine without loop
+    except SyntaxError as e:
+        msg = str(e).lower()
+        if 'break' in msg or 'continue' in msg:
+            return True
+        return False
+
+
+def _complete_trailing_blocks(source: str) -> str:
+    """Add 'pass' to trailing incomplete blocks (if/for/while/with/try without body)."""
+    lines = source.rstrip().split('\n')
+    if not lines:
+        return source
+    last = lines[-1]
+    stripped = last.rstrip()
+    if stripped.endswith(':'):
+        indent = len(last) - len(last.lstrip())
+        lines.append(' ' * (indent + 4) + 'pass')
+    return '\n'.join(lines) + '\n'
+
+
 def build_call_graph_from_directory(
     root_path: Path,
     exclude_patterns: List[str] = None
 ) -> CallGraph:
     """Build call graph from all Python files in a directory."""
-    exclude_patterns = exclude_patterns or ['__pycache__', '.git', 'venv', '.venv', 'node_modules']
+    exclude_patterns = exclude_patterns or [
+        '__pycache__', '.git', 'venv', '.venv', 'node_modules',
+        '.egg-info', 'dist', 'build', '.tox', '.mypy_cache',
+    ]
     
     import fnmatch
     

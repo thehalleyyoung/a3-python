@@ -614,6 +614,34 @@ class InterproceduralBugTracker:
                     bug_variable=ng.variable,
                 ))
 
+        # AST-based union-type attribute access detection (missing isinstance guard)
+        from .union_attr_detector import scan_file_for_union_attr_bugs
+        scanned_files_ua: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_ua:
+                scanned_files_ua.add(str(fp))
+        if not scanned_files_ua and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_ua.add(str(py_file))
+        for fp_str in scanned_files_ua:
+            ua_bugs = scan_file_for_union_attr_bugs(Path(fp_str))
+            for ub in ua_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='TYPE_CONFUSION',
+                    crash_function=ub.function_name,
+                    crash_location=f"{ub.file_path}:{ub.line_number}",
+                    call_chain=[ub.function_name],
+                    reason=ub.reason,
+                    confidence=ub.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_union_attr_scan", f"pattern={ub.pattern}"]
+                    ),
+                    bug_variable=ub.variable,
+                ))
+
         logger.info(f"[BUGS] Total bugs before deduplication: {len(self.bugs_found)}")
         
         # Deduplicate bugs by (location, bug_type)
@@ -702,6 +730,11 @@ class InterproceduralBugTracker:
         if not crash_summary:
             return False
         
+        # If there are unguarded instances, don't suppress the bug
+        if crash_summary.get_unguarded_count(bug.bug_type) > 0:
+            self._guard_cache[cache_key] = False
+            return False
+        
         # Run context-aware verification
         verification_result = verify_bug_context_aware(
             bug_type=bug.bug_type,
@@ -711,6 +744,7 @@ class InterproceduralBugTracker:
             code_object=None  # Would need function.__code__
         )
         
+        self._guard_cache[cache_key] = verification_result.is_safe
         return verification_result.is_safe
     
     def verify_bugs_with_dse(
@@ -1266,7 +1300,9 @@ class InterproceduralBugTracker:
             # Run EXTREME context-aware verification (Layer 0 + Layers 1-5)
             # But ONLY for bugs that are marked as guarded - unguarded bugs should be reported!
             # If may_trigger contains the bug but guarded_bugs doesn't, it's definitely unguarded
-            if bug_type in summary.guarded_bugs:
+            # If a bug has BOTH guarded and unguarded instances, treat as unguarded (has real risk)
+            has_unguarded = summary.get_unguarded_count(bug_type) > 0
+            if bug_type in summary.guarded_bugs and not has_unguarded:
                 # Bug is guarded - this means guards were detected in the bytecode
                 # We trust the guard detection and skip this bug unless verification explicitly
                 # proves it's still reachable (which would be a guard bypass bug)
@@ -2064,6 +2100,23 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
                 evidence=[f"source=ast_format_string_injection_scan", f"pattern={fb.pattern}"]
             ),
             bug_variable=fb.variable,
+        ))
+
+    # AST-based union-type attribute access detection (missing isinstance guard)
+    from .union_attr_detector import scan_file_for_union_attr_bugs
+    union_bugs = scan_file_for_union_attr_bugs(file_path)
+    for ub in union_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='TYPE_CONFUSION',
+            crash_function=ub.function_name,
+            crash_location=f"{ub.file_path}:{ub.line_number}",
+            call_chain=[ub.function_name],
+            reason=ub.reason,
+            confidence=ub.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_union_attr_scan", f"pattern={ub.pattern}"]
+            ),
+            bug_variable=ub.variable,
         ))
 
     return bugs
