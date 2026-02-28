@@ -855,6 +855,40 @@ class Analyzer:
                 print(f"Warning: Incomplete isinstance dispatch scan failed: {e}")
         _end_phase("ast_isinstance_dispatch")
 
+        # Step 1.4m: AST + CFG + Z3 stale-seed / stale-state scan (keras#1 pattern)
+        # Detects methods that read self.seed (or similar) and pass it to stochastic
+        # calls without ever incrementing it, causing repeated identical output.
+        _start_phase("ast_stale_seed")
+        try:
+            from .semantics.stale_seed_state_detector import scan_file_for_stale_seed_state_bugs
+            early_seed_bugs = scan_file_for_stale_seed_state_bugs(filepath)
+            early_seed_bugs = [b for b in early_seed_bugs if b.confidence >= 0.6]
+            if early_seed_bugs:
+                best = max(early_seed_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Stale-seed scan found {len(early_seed_bugs)} issue(s), "
+                          f"best: STALE_STATE at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='STALE_STATE',
+                    counterexample={
+                        'bug_type': 'STALE_STATE',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_stale_seed_state_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Stale-seed scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Stale-seed scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Stale-seed scan failed: {e}")
+        _end_phase("ast_stale_seed")
+
         # Step 1.5: For security bugs, use function-level analysis (NEW in iteration 422)
         # This delegates to security_scan() internally, which does the right thing:
         # - Extract all functions
@@ -1206,6 +1240,27 @@ class Analyzer:
                             }
                             bugs_found.append(bug_entry)
 
+                    # AST-based missing-capability-guard bugs (keras#3 pattern)
+                    # Method called without checking a boolean capability attribute.
+                    cap_guard_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_capability_guard_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and cap_guard_bugs:
+                        for cg_bug in cap_guard_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': cg_bug.bug_type,
+                                    'location': cg_bug.crash_location,
+                                    'reason': cg_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_capability_guard_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
                     # AST + Z3 symbolic config dispatch completeness bugs
                     # Detects incomplete enum-to-feature-set mappings (black#6).
                     config_dispatch_bugs = [
@@ -1245,6 +1300,26 @@ class Analyzer:
                                 },
                                 'path': None,
                                 'source': 'ast_incomplete_predicate_subfield_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST + CFG + Z3 stale-seed / stale-state bugs (keras#1)
+                    stale_seed_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_stale_seed_state_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and stale_seed_bugs:
+                        for ss_bug in stale_seed_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': ss_bug.bug_type,
+                                    'location': ss_bug.crash_location,
+                                    'reason': ss_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_stale_seed_state_scan'
                             }
                             bugs_found.append(bug_entry)
                         

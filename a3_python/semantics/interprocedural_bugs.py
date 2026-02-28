@@ -619,6 +619,35 @@ class InterproceduralBugTracker:
                     bug_variable=ng.variable,
                 ))
 
+        # AST-based missing-capability-guard scanning (method called without
+        # checking a boolean capability attribute like supports_X, has_X, can_X)
+        from .missing_capability_guard_detector import scan_project_for_capability_guard_bugs
+        cap_guard_files: list = []
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in {str(p) for p in cap_guard_files}:
+                cap_guard_files.append(Path(str(fp)))
+        if not cap_guard_files and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    cap_guard_files.append(py_file)
+        if cap_guard_files:
+            cg_bugs = scan_project_for_capability_guard_bugs(cap_guard_files)
+            for cg in cg_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='NULL_PTR',
+                    crash_function=cg.function_name,
+                    crash_location=f"{cg.file_path}:{cg.line_number}",
+                    call_chain=[cg.function_name],
+                    reason=cg.reason,
+                    confidence=cg.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_capability_guard_scan", f"pattern={cg.pattern}"]
+                    ),
+                    bug_variable=cg.variable,
+                ))
+
         # AST-based union-type attribute access detection (missing isinstance guard)
         from .union_attr_detector import scan_file_for_union_attr_bugs
         scanned_files_ua: set = set()
@@ -730,6 +759,34 @@ class InterproceduralBugTracker:
                         evidence=[f"source=ast_incomplete_isinstance_dispatch_scan", f"pattern={ib.pattern}"]
                     ),
                     bug_variable=ib.variable,
+                ))
+
+        # AST-based missing HTTP session config propagation (httpie#2 pattern)
+        from .missing_session_config_detector import scan_file_for_missing_session_config_bugs
+        scanned_files_sc: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_sc:
+                scanned_files_sc.add(str(fp))
+        if not scanned_files_sc and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_sc.add(str(py_file))
+        for fp_str in scanned_files_sc:
+            sc_bugs = scan_file_for_missing_session_config_bugs(Path(fp_str))
+            for sb in sc_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='ASSERT_FAIL',
+                    crash_function=sb.function_name,
+                    crash_location=f"{sb.file_path}:{sb.line_number}",
+                    call_chain=[sb.function_name],
+                    reason=sb.reason,
+                    confidence=sb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_missing_session_config_scan", f"pattern={sb.pattern}"]
+                    ),
+                    bug_variable=sb.variable,
                 ))
 
         logger.info(f"[BUGS] Total bugs before deduplication: {len(self.bugs_found)}")
@@ -2044,6 +2101,23 @@ def analyze_project_for_all_bugs(root_path: Path) -> Tuple[List[InterproceduralB
             bug_variable=fb.variable,
         ))
 
+    # AST-based missing HTTP session config propagation detection (httpie#2)
+    from .missing_session_config_detector import scan_file_for_missing_session_config_bugs
+    for py_file in root_path.rglob('*.py'):
+        for sb in scan_file_for_missing_session_config_bugs(py_file):
+            bugs.append(InterproceduralBug(
+                bug_type='ASSERT_FAIL',
+                crash_function=sb.function_name,
+                crash_location=f"{sb.file_path}:{sb.line_number}",
+                call_chain=[sb.function_name],
+                reason=sb.reason,
+                confidence=sb.confidence,
+                reachability_pts=ReachabilityIntervalPTS.unknown(
+                    evidence=[f"source=ast_missing_session_config_scan", f"pattern={sb.pattern}"]
+                ),
+                bug_variable=sb.variable,
+            ))
+
     report = tracker.summary_report()
     return bugs, report
 
@@ -2240,6 +2314,40 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
                 evidence=[f"source=ast_unhandled_path_exception_scan", f"pattern={pb.pattern}"]
             ),
             bug_variable=pb.variable,
+        ))
+
+    # AST-based missing HTTP session config propagation detection (httpie#2)
+    from .missing_session_config_detector import scan_file_for_missing_session_config_bugs
+    session_bugs = scan_file_for_missing_session_config_bugs(file_path)
+    for sb in session_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='ASSERT_FAIL',
+            crash_function=sb.function_name,
+            crash_location=f"{sb.file_path}:{sb.line_number}",
+            call_chain=[sb.function_name],
+            reason=sb.reason,
+            confidence=sb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_missing_session_config_scan", f"pattern={sb.pattern}"]
+            ),
+            bug_variable=sb.variable,
+        ))
+
+    # AST + CFG + Z3 stale-seed / stale-state detection (keras#1)
+    from .stale_seed_state_detector import scan_file_for_stale_seed_state_bugs
+    seed_bugs = scan_file_for_stale_seed_state_bugs(file_path)
+    for sb in seed_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='STALE_STATE',
+            crash_function=sb.function_name,
+            crash_location=f"{sb.file_path}:{sb.line_number}",
+            call_chain=[sb.function_name],
+            reason=sb.reason,
+            confidence=sb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_stale_seed_state_scan", f"pattern={sb.pattern}"]
+            ),
+            bug_variable=sb.variable,
         ))
 
     return bugs
