@@ -27,6 +27,8 @@ import os
 import sys
 from pathlib import Path
 
+from . import __version__
+
 
 # ── Shared scan arguments (used by both legacy mode and "scan" subcommand) ───
 
@@ -227,6 +229,10 @@ def _handle_init(args: argparse.Namespace) -> int:
 
 def _handle_triage(args: argparse.Namespace) -> int:
     """Handle ``a3 triage``."""
+    if not Path(args.sarif).exists():
+        print(f"Error: SARIF file not found: {args.sarif}", file=sys.stderr)
+        return 3
+
     # Resolve API key based on the chosen provider so we don't send the
     # wrong provider's key (e.g. OPENAI_API_KEY to GitHub Models).
     if args.api_key:
@@ -237,6 +243,15 @@ def _handle_triage(args: argparse.Namespace) -> int:
         api_key = os.environ.get("OPENAI_API_KEY", "")
     else:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    # Resolve model from provider if not explicitly set
+    _PROVIDER_DEFAULT_MODELS = {
+        "github": "gpt-4o",
+        "openai": "gpt-4o",
+        "anthropic": "claude-sonnet-4-20250514",
+    }
+    if not args.model:
+        args.model = _PROVIDER_DEFAULT_MODELS.get(args.provider, "gpt-4o")
 
     if getattr(args, "agentic", False):
         from .ci.agentic_triage import cmd_agentic_triage
@@ -295,6 +310,10 @@ def main():
         prog="a3",
         description="A³: Python semantics + barrier-certificate verifier",
     )
+    parser.add_argument(
+        "--version", action="version",
+        version=f"%(prog)s {__version__}",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
 
@@ -349,12 +368,12 @@ def main():
         help="Repository root for source context (default: cwd)",
     )
     triage_parser.add_argument(
-        "--model", default="claude-sonnet-4-20250514",
-        help="LLM model to use (default: claude-sonnet-4-20250514)",
+        "--model", default=None,
+        help="LLM model to use (default: auto per provider — gpt-4o for github/openai, claude-sonnet for anthropic)",
     )
     triage_parser.add_argument(
-        "--provider", default="anthropic", choices=["anthropic", "openai", "github"],
-        help="LLM provider: 'github' uses GITHUB_TOKEN with GitHub Models (default: anthropic)",
+        "--provider", default="github", choices=["anthropic", "openai", "github"],
+        help="LLM provider: 'github' uses GITHUB_TOKEN with GitHub Models (default: github)",
     )
     triage_parser.add_argument(
         "--api-key", default="",
@@ -431,6 +450,25 @@ def main():
     else:
         parser.print_help()
         return 0
+
+
+def _main_wrapper():
+    """Wrapper around main() with top-level error handling for clean UX."""
+    try:
+        return main()
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
+    except BrokenPipeError:
+        # e.g. a3 scan . | head
+        return 0
+    except Exception as e:
+        print(f"\n❌  a3: internal error: {e}", file=sys.stderr)
+        print("    Please report this at https://github.com/thehalleyyoung/a3-python/issues", file=sys.stderr)
+        import traceback
+        if os.environ.get("A3_DEBUG"):
+            traceback.print_exc()
+        return 3
 
 
 def _analyze_file(args):
@@ -515,13 +553,45 @@ def _analyze_file(args):
             root_path=tracker.root_path,
         )
         
+        # Also run AST-based semantic detectors (subprocess exit code, etc.)
+        # These complement interprocedural analysis for patterns that require
+        # control-flow analysis within individual functions.
+        ast_bugs = []
+        try:
+            from .semantics.subprocess_exit_code_detector import scan_file_for_subprocess_exit_code_bugs
+            subproc_bugs = scan_file_for_subprocess_exit_code_bugs(args.target)
+            subproc_bugs = [b for b in subproc_bugs if b.confidence >= args.min_confidence]
+            ast_bugs.extend(subproc_bugs)
+        except Exception:
+            pass
+
+        # AST-based incomplete kwarg forwarding detector (fastapi#1 pattern)
+        kwarg_bugs = []
+        try:
+            from .semantics.incomplete_kwarg_forwarding_detector import scan_file_for_incomplete_kwarg_forwarding_bugs
+            kw_bugs = scan_file_for_incomplete_kwarg_forwarding_bugs(args.target)
+            kw_bugs = [b for b in kw_bugs if b.confidence >= max(args.min_confidence, 0.60)]
+            kwarg_bugs.extend(kw_bugs)
+        except Exception:
+            pass
+
+        # AST-based missing isinstance guard on Any-typed params (fastapi#10 pattern)
+        isinstance_bugs = []
+        try:
+            from .semantics.missing_isinstance_any_detector import scan_file_for_missing_isinstance_any_bugs
+            ia_bugs = scan_file_for_missing_isinstance_any_bugs(args.target)
+            ia_bugs = [b for b in ia_bugs if b.confidence >= max(args.min_confidence, 0.45)]
+            isinstance_bugs.extend(ia_bugs)
+        except Exception:
+            pass
+        
         # Report results
         print(f"\n{'='*60}")
         print("INTERPROCEDURAL ANALYSIS RESULTS")
         if use_intent_filter:
             print(f"(High-confidence TPs only, threshold={args.min_confidence})")
         print(f"{'='*60}")
-        print(f"Total bugs found: {len(bugs)}")
+        print(f"Total bugs found: {len(bugs) + len(ast_bugs) + len(kwarg_bugs) + len(isinstance_bugs)}")
         
         # Group bugs by type
         bugs_by_type = {}
@@ -533,14 +603,37 @@ def _analyze_file(args):
         for bug_type, type_bugs in sorted(bugs_by_type.items()):
             print(f"\n{bug_type} ({len(type_bugs)})")
             for bug in type_bugs[:5]:  # Show first 5 of each type
+                print(f"  [BUG] {bug.bug_type} (line {bug.crash_location.split(':')[-1] if ':' in str(bug.crash_location) else '0'})")
                 print(f"  - {bug.crash_function}")
                 print(f"    {bug.crash_location}")
                 print(f"    Confidence: {bug.confidence:.2f}")
             if len(type_bugs) > 5:
                 print(f"  ... and {len(type_bugs) - 5} more")
         
+        # Print AST-based bugs in parseable format
+        for ab in ast_bugs:
+            print(f"\n  [BUG] UNCHECKED_RETURN (line {ab.line_number})")
+            print(f"  - {ab.function_name}")
+            print(f"    {ab.reason}")
+            print(f"    Confidence: {ab.confidence:.2f}")
+
+        # Print kwarg forwarding bugs in parseable format
+        for kb in kwarg_bugs:
+            bt = 'API_MISUSE' if kb.pattern == 'deprecated_kwarg' else 'INCOMPLETE_API'
+            print(f"\n  [BUG] {bt} (line {kb.line_number})")
+            print(f"  - {kb.function_name}")
+            print(f"    {kb.reason}")
+            print(f"    Confidence: {kb.confidence:.2f}")
+
+        # Print missing isinstance guard bugs in parseable format
+        for ib in isinstance_bugs:
+            print(f"\n  [BUG] TYPE_CONFUSION (line {ib.line_number})")
+            print(f"  - {ib.function_name}")
+            print(f"    {ib.reason}")
+            print(f"    Confidence: {ib.confidence:.2f}")
+        
         # Return exit code
-        return 1 if bugs else 0
+        return 1 if (bugs or ast_bugs or kwarg_bugs or isinstance_bugs) else 0
     
     elif args.all_functions:
         # Analyze ALL functions with tainted parameters
@@ -673,7 +766,10 @@ def _analyze_project(args):
     from .cfg.call_graph import build_call_graph_from_directory
 
     # Collect exclude patterns from .a3.yml config
-    exclude_patterns = ['__pycache__', '.git', 'venv', '.venv', 'node_modules']
+    exclude_patterns = [
+        '__pycache__', '.git', 'venv', '.venv', 'node_modules',
+        '.egg-info', 'dist', 'build', '.tox', '.mypy_cache',
+    ]
     if hasattr(args, '_scan_excludes') and args._scan_excludes:
         exclude_patterns.extend(args._scan_excludes)
 
@@ -756,7 +852,10 @@ def _analyze_project(args):
     remaining = []
     barrier_counts = Counter()
 
-    for func_name, bug_type, summary in unguarded_bugs:
+    n_ug = len(unguarded_bugs)
+    for i, (func_name, bug_type, summary) in enumerate(unguarded_bugs, 1):
+        if n_ug > 20 and i % max(1, n_ug // 20) == 0:
+            print(f"  [{i}/{n_ug}] verifying ...", end="\r", file=sys.stderr)
         is_safe, cert = engine.verify_via_deep_barriers(bug_type, "<v>", summary)
         if is_safe:
             proven_fp += 1
@@ -764,6 +863,8 @@ def _analyze_project(args):
         else:
             remaining.append((func_name, bug_type, summary))
 
+    if n_ug > 20:
+        print(f"  [{n_ug}/{n_ug}] done.          ", file=sys.stderr)
     grand_fp = fully_guarded + proven_fp
     elapsed = time.time() - t3
 
@@ -933,7 +1034,12 @@ def _analyze_project(args):
             else:
                 triage_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
-        triage_model = getattr(args, "triage_model", None) or "claude-sonnet-4-20250514"
+        _TRIAGE_MODEL_DEFAULTS = {
+            "github": "gpt-4o",
+            "openai": "gpt-4o",
+            "anthropic": "claude-sonnet-4-20250514",
+        }
+        triage_model = getattr(args, "triage_model", None) or _TRIAGE_MODEL_DEFAULTS.get(provider, "gpt-4o")
 
         # Output triaged SARIF alongside the original
         triaged_path = str(sarif_path).replace(".sarif", "_triaged.sarif")
@@ -948,6 +1054,7 @@ def _analyze_project(args):
             model=triage_model,
             api_key=triage_api_key,
             provider=provider,
+            min_confidence=args.min_confidence,
             verbose=getattr(args, "verbose", False),
         )
 
@@ -966,5 +1073,5 @@ def _analyze_project(args):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(_main_wrapper())
 

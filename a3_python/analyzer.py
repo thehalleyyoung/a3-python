@@ -303,6 +303,54 @@ class Analyzer:
         code = load_python_file(filepath)
         _end_phase("compile")
         if not code:
+            # File can't compile (e.g., diff-extracted fragment).
+            # Still try AST-based detectors that handle partial/multi-hunk code.
+            try:
+                from .semantics.incomplete_kwarg_forwarding_detector import scan_file_for_incomplete_kwarg_forwarding_bugs
+                kwarg_bugs = scan_file_for_incomplete_kwarg_forwarding_bugs(filepath)
+                kwarg_bugs = [b for b in kwarg_bugs if b.confidence >= 0.60]
+                if kwarg_bugs:
+                    best = max(kwarg_bugs, key=lambda b: b.confidence)
+                    bug_type = 'API_MISUSE' if best.pattern == 'deprecated_kwarg' else 'INCOMPLETE_API'
+                    return AnalysisResult(
+                        verdict="BUG",
+                        bug_type=bug_type,
+                        counterexample={
+                            'bug_type': bug_type,
+                            'location': f"{best.file_path}:{best.line_number}",
+                            'reason': best.reason,
+                            'confidence': best.confidence,
+                            'source': 'ast_kwarg_forwarding_scan',
+                            'pattern': best.pattern,
+                        },
+                        paths_explored=0,
+                        message=f"Incomplete kwarg forwarding: {best.reason}",
+                    )
+            except Exception:
+                pass
+            # Try missing isinstance guard on Any-typed params (fastapi#10)
+            try:
+                from .semantics.missing_isinstance_any_detector import scan_file_for_missing_isinstance_any_bugs
+                ia_bugs = scan_file_for_missing_isinstance_any_bugs(filepath)
+                ia_bugs = [b for b in ia_bugs if b.confidence >= 0.45]
+                if ia_bugs:
+                    best = max(ia_bugs, key=lambda b: b.confidence)
+                    return AnalysisResult(
+                        verdict="BUG",
+                        bug_type='TYPE_CONFUSION',
+                        counterexample={
+                            'bug_type': 'TYPE_CONFUSION',
+                            'location': f"{best.file_path}:{best.line_number}",
+                            'reason': best.reason,
+                            'confidence': best.confidence,
+                            'source': 'ast_missing_isinstance_scan',
+                            'pattern': best.pattern,
+                        },
+                        paths_explored=0,
+                        message=f"Missing isinstance guard on Any-typed param: {best.reason}",
+                    )
+            except Exception:
+                pass
             return AnalysisResult(
                 verdict="UNKNOWN",
                 message="Failed to load or compile file"
@@ -315,7 +363,13 @@ class Analyzer:
         # allowed to produce a BUG verdict when module-level symbolic execution
         # finds no issues.
         import dis
-        _def_only_opcodes = {'MAKE_FUNCTION', 'STORE_NAME', 'STORE_GLOBAL', 'LOAD_CONST'}
+        _def_only_opcodes = {
+            'MAKE_FUNCTION', 'STORE_NAME', 'STORE_GLOBAL', 'LOAD_CONST',
+            'LOAD_SMALL_INT', 'LOAD_NAME', 'PUSH_NULL', 'POP_TOP',
+            'IMPORT_NAME', 'IMPORT_FROM', 'COPY_FREE_VARS',
+            'SET_FUNCTION_ATTRIBUTE', 'MAKE_CELL',
+            'SETUP_ANNOTATIONS',
+        }
         module_has_executable_code = False
         for instr in dis.get_instructions(code):
             if instr.opname in ('RESUME', 'RETURN_VALUE', 'RETURN_CONST'):
@@ -394,6 +448,322 @@ class Analyzer:
             elif self.verbose:
                 print("  No loops detected")
         
+        # Step 1.4c: Fast AST-based argument mismatch / misscoped control flow scan
+        # This is a pure AST analysis (no symbolic execution) so it runs in milliseconds
+        # even on large files.  It detects:
+        #   - Wrong arguments passed to functions when the correct variable is in scope
+        #   - Control-flow statements (break/continue) at the wrong indentation level
+        # These patterns are high-signal and independent of reachability, so we run
+        # them before the expensive security/error scans.
+        _start_phase("ast_argmatch")
+        try:
+            from .semantics.argument_mismatch_detector import scan_file_for_argument_mismatch_bugs
+            early_argmatch_bugs = scan_file_for_argument_mismatch_bugs(filepath)
+            # Keep only high-confidence bugs (>= 0.6)
+            early_argmatch_bugs = [b for b in early_argmatch_bugs if b.confidence >= 0.65]
+            if early_argmatch_bugs:
+                # Pick the highest-confidence bug
+                best = max(early_argmatch_bugs, key=lambda b: b.confidence)
+                bug_type = 'PRECONDITION_VIOLATION' if best.pattern == 'wrong_argument' else 'ORDER_VIOLATION'
+                if self.verbose:
+                    print(f"AST argument-mismatch scan found {len(early_argmatch_bugs)} issue(s), "
+                          f"best: {bug_type} at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type=bug_type,
+                    counterexample={
+                        'bug_type': bug_type,
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_argument_mismatch_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"AST argument-mismatch scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("AST argument-mismatch scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: AST argument-mismatch scan failed: {e}")
+        _end_phase("ast_argmatch")
+
+        # Step 1.4c: AST + Z3 config dispatch completeness scan (black#6 pattern)
+        # Detects incomplete enum-to-feature-set mappings where multiple version
+        # entries map to identical feature sets due to missing enum members.
+        _start_phase("ast_config_dispatch")
+        try:
+            from .semantics.config_dispatch_detector import scan_file_for_config_dispatch_bugs
+            early_cd_bugs = scan_file_for_config_dispatch_bugs(filepath)
+            early_cd_bugs = [b for b in early_cd_bugs if b.confidence >= 0.6]
+            if early_cd_bugs:
+                best = max(early_cd_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Config dispatch scan found {len(early_cd_bugs)} issue(s), "
+                          f"best at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='TYPE_CONFUSION',
+                    counterexample={
+                        'bug_type': 'TYPE_CONFUSION',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_config_dispatch_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Config dispatch scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Config dispatch scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Config dispatch scan failed: {e}")
+        _end_phase("ast_config_dispatch")
+
+        # Step 1.4d: AST + Z3 exception-control-flow state-mutation scan (black#15 pattern)
+        # Detects methods that catch exceptions used for control flow, mutate
+        # self.<attr>, and then re-raise — leaving the object in inconsistent state.
+        _start_phase("ast_exception_cf")
+        try:
+            from .semantics.exception_control_flow_detector import scan_file_for_exception_control_flow_bugs
+            early_ecf_bugs = scan_file_for_exception_control_flow_bugs(filepath)
+            early_ecf_bugs = [b for b in early_ecf_bugs if b.confidence >= 0.60]
+            if early_ecf_bugs:
+                best = max(early_ecf_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Exception control-flow scan found {len(early_ecf_bugs)} issue(s), "
+                          f"best at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='EXCEPTION_CONTROL_FLOW',
+                    counterexample={
+                        'bug_type': 'EXCEPTION_CONTROL_FLOW',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_exception_control_flow_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Exception control-flow scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Exception control-flow scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Exception control-flow scan failed: {e}")
+        _end_phase("ast_exception_cf")
+
+        # Step 1.4e: AST + Z3 unhandled Path.relative_to() exception scan (black#16 pattern)
+        # Detects Path.relative_to() calls not wrapped in try/except ValueError,
+        # especially inside directory iteration loops where symlinks may point
+        # outside the expected root directory.
+        _start_phase("ast_path_exception")
+        try:
+            from .semantics.unhandled_path_exception_detector import scan_file_for_unhandled_path_exception_bugs
+            early_path_bugs = scan_file_for_unhandled_path_exception_bugs(filepath)
+            early_path_bugs = [b for b in early_path_bugs if b.confidence >= 0.60]
+            if early_path_bugs:
+                best = max(early_path_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Unhandled path exception scan found {len(early_path_bugs)} issue(s), "
+                          f"best at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='UNHANDLED_PATH_EXCEPTION',
+                    counterexample={
+                        'bug_type': 'UNHANDLED_PATH_EXCEPTION',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_unhandled_path_exception_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Unhandled path exception scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Unhandled path exception scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Unhandled path exception scan failed: {e}")
+        _end_phase("ast_path_exception")
+
+        # Step 1.4f: AST + Z3 parallel-collection desync scan (black#22 pattern)
+        # Detects methods that mutate one of two related collection attributes
+        # (e.g. self.leaves.pop()) without updating the other (e.g. self.comments),
+        # leaving the two data structures out of sync.
+        _start_phase("ast_collection_desync")
+        try:
+            from .semantics.collection_desync_detector import scan_file_for_collection_desync_bugs
+            early_desync_bugs = scan_file_for_collection_desync_bugs(filepath)
+            early_desync_bugs = [b for b in early_desync_bugs if b.confidence >= 0.60]
+            if early_desync_bugs:
+                best = max(early_desync_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Collection desync scan found {len(early_desync_bugs)} issue(s), "
+                          f"best at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='COLLECTION_DESYNC',
+                    counterexample={
+                        'bug_type': 'COLLECTION_DESYNC',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_collection_desync_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Collection desync scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Collection desync scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Collection desync scan failed: {e}")
+        _end_phase("ast_collection_desync")
+
+        # Step 1.4g: AST + Z3 missing-fallback-strategy scan (black#23 pattern)
+        # Detects functions that catch an exception from a configurable operation
+        # and immediately raise a different exception type, without trying
+        # alternative strategies that exist in the same module.
+        _start_phase("ast_missing_fallback")
+        try:
+            from .semantics.missing_fallback_strategy_detector import scan_file_for_missing_fallback_strategy_bugs
+            early_fallback_bugs = scan_file_for_missing_fallback_strategy_bugs(filepath)
+            early_fallback_bugs = [b for b in early_fallback_bugs if b.confidence >= 0.60]
+            if early_fallback_bugs:
+                best = max(early_fallback_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Missing fallback strategy scan found {len(early_fallback_bugs)} issue(s), "
+                          f"best at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='MISSING_FALLBACK_STRATEGY',
+                    counterexample={
+                        'bug_type': 'MISSING_FALLBACK_STRATEGY',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_missing_fallback_strategy_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Missing fallback strategy scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Missing fallback strategy scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Missing fallback strategy scan failed: {e}")
+        _end_phase("ast_missing_fallback")
+
+        # Step 1.4g: AST + CFG + Z3 subprocess exit code detector (cookiecutter#4 pattern)
+        # Detects functions that call subprocess.Popen, invoke .wait(), and return
+        # the exit code without checking for non-zero status or raising an exception.
+        _start_phase("ast_subprocess_exit")
+        try:
+            from .semantics.subprocess_exit_code_detector import scan_file_for_subprocess_exit_code_bugs
+            early_subproc_bugs = scan_file_for_subprocess_exit_code_bugs(filepath)
+            early_subproc_bugs = [b for b in early_subproc_bugs if b.confidence >= 0.60]
+            if early_subproc_bugs:
+                best = max(early_subproc_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Subprocess exit code scan found {len(early_subproc_bugs)} issue(s), "
+                          f"best at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='UNCHECKED_RETURN',
+                    counterexample={
+                        'bug_type': 'UNCHECKED_RETURN',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_subprocess_exit_code_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Subprocess exit code scan: {best.reason}",
+                )
+            elif self.verbose:
+                print("Subprocess exit code scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Subprocess exit code scan failed: {e}")
+        _end_phase("ast_subprocess_exit")
+
+        # Step 1.4h: AST-based incomplete keyword argument forwarding detector (fastapi#1 pattern)
+        # Detects deprecated/renamed keyword args (e.g. include_none → exclude_none)
+        # and incomplete forwarding of kwarg groups (e.g. passing exclude_unset
+        # but not exclude_defaults/exclude_none).
+        _start_phase("ast_kwarg_forwarding")
+        try:
+            from .semantics.incomplete_kwarg_forwarding_detector import scan_file_for_incomplete_kwarg_forwarding_bugs
+            early_kwarg_bugs = scan_file_for_incomplete_kwarg_forwarding_bugs(filepath)
+            early_kwarg_bugs = [b for b in early_kwarg_bugs if b.confidence >= 0.60]
+            if early_kwarg_bugs:
+                best = max(early_kwarg_bugs, key=lambda b: b.confidence)
+                bug_type = 'API_MISUSE' if best.pattern == 'deprecated_kwarg' else 'INCOMPLETE_API'
+                if self.verbose:
+                    print(f"Incomplete kwarg forwarding scan found {len(early_kwarg_bugs)} issue(s), "
+                          f"best: {bug_type} at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type=bug_type,
+                    counterexample={
+                        'bug_type': bug_type,
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_kwarg_forwarding_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Incomplete kwarg forwarding: {best.reason}",
+                )
+            elif self.verbose:
+                print("Incomplete kwarg forwarding scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Incomplete kwarg forwarding scan failed: {e}")
+        _end_phase("ast_kwarg_forwarding")
+
+        # Step 1.4i: AST-based missing isinstance guard on Any-typed params (fastapi#10 pattern)
+        _start_phase("ast_missing_isinstance")
+        try:
+            from .semantics.missing_isinstance_any_detector import scan_file_for_missing_isinstance_any_bugs
+            early_ia_bugs = scan_file_for_missing_isinstance_any_bugs(filepath)
+            early_ia_bugs = [b for b in early_ia_bugs if b.confidence >= 0.45]
+            if early_ia_bugs:
+                best = max(early_ia_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Missing isinstance guard scan found {len(early_ia_bugs)} issue(s), "
+                          f"best: TYPE_CONFUSION at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='TYPE_CONFUSION',
+                    counterexample={
+                        'bug_type': 'TYPE_CONFUSION',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_missing_isinstance_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Missing isinstance guard on Any-typed param: {best.reason}",
+                )
+            elif self.verbose:
+                print("Missing isinstance guard scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Missing isinstance guard scan failed: {e}")
+        _end_phase("ast_missing_isinstance")
+
         # Step 1.5: For security bugs, use function-level analysis (NEW in iteration 422)
         # This delegates to security_scan() internally, which does the right thing:
         # - Extract all functions
@@ -564,7 +934,8 @@ class Analyzer:
 
         crash_bug_types = {
             'NULL_PTR', 'BOUNDS', 'DIV_ZERO', 'TYPE_CONFUSION', 'ASSERT_FAIL', 'PANIC',
-            'STACK_OVERFLOW', 'INTEGER_OVERFLOW', 'FP_DOMAIN',
+            'STACK_OVERFLOW', 'INTEGER_OVERFLOW', 'FP_DOMAIN', 'UNICODE_ERROR',
+            'ORDER_VIOLATION',
         }
         security_bug_types = {
             'SQL_INJECTION', 'COMMAND_INJECTION', 'PATH_INJECTION', 'CODE_INJECTION',
@@ -590,6 +961,8 @@ class Analyzer:
             
             try:
                 interprocedural_bugs = analyze_file_for_bugs(filepath)
+                # Keep unfiltered copy for AST-based pattern bugs that don't need reachability
+                all_interprocedural_bugs = list(interprocedural_bugs)
                 
                 if interprocedural_bugs:
                     # Separate crash bugs from security bugs
@@ -655,6 +1028,111 @@ class Analyzer:
                                 },
                                 'path': None,  # Summary-based analysis doesn't have symbolic paths
                                 'source': 'interprocedural_summary'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST-based encoding bugs (hardcoded ASCII, open without encoding)
+                    # are high-signal pattern matches independent of symbolic execution
+                    # and reachability analysis, so use the unfiltered bug list.
+                    encoding_crash_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.bug_type == 'UNICODE_ERROR' and b.confidence >= 0.7
+                    ]
+                    if not bugs_found and encoding_crash_bugs:
+                        for enc_bug in encoding_crash_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': enc_bug.bug_type,
+                                    'location': enc_bug.crash_location,
+                                    'reason': enc_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_encoding_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST-based non-deterministic iteration bugs (unsorted dict join)
+                    # are high-signal pattern matches independent of symbolic execution
+                    # and reachability analysis, so use the unfiltered bug list.
+                    nondet_crash_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.bug_type == 'ORDER_VIOLATION' and b.confidence >= 0.7
+                    ]
+                    if not bugs_found and nondet_crash_bugs:
+                        for nd_bug in nondet_crash_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': nd_bug.bug_type,
+                                    'location': nd_bug.crash_location,
+                                    'reason': nd_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_nondeterminism_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST-based argument mismatch / misscoped control flow bugs
+                    # are high-signal pattern matches independent of symbolic execution
+                    # and reachability analysis, so use the unfiltered bug list.
+                    argmatch_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_argument_mismatch_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and argmatch_bugs:
+                        for am_bug in argmatch_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': am_bug.bug_type,
+                                    'location': am_bug.crash_location,
+                                    'reason': am_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_argument_mismatch_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST-based missing-None-guard bugs on self attributes
+                    # are high-signal pattern matches independent of symbolic
+                    # execution and reachability analysis.
+                    none_guard_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_none_guard_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and none_guard_bugs:
+                        for ng_bug in none_guard_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': ng_bug.bug_type,
+                                    'location': ng_bug.crash_location,
+                                    'reason': ng_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_none_guard_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST + Z3 symbolic config dispatch completeness bugs
+                    # Detects incomplete enum-to-feature-set mappings (black#6).
+                    config_dispatch_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_config_dispatch_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and config_dispatch_bugs:
+                        for cd_bug in config_dispatch_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': cd_bug.bug_type,
+                                    'location': cd_bug.crash_location,
+                                    'reason': cd_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_config_dispatch_scan'
                             }
                             bugs_found.append(bug_entry)
                         
@@ -3076,6 +3554,7 @@ class Analyzer:
                 'MAKE_CELL', 'BUILD_SET', 'SET_ADD', 'POP_TOP',
                 'SET_FUNCTION_ATTRIBUTE', 'LOAD_SMALL_INT', 'LOAD_NAME',
                 'PUSH_NULL', 'SETUP_ANNOTATIONS',
+                'IMPORT_NAME', 'IMPORT_FROM', 'COPY_FREE_VARS',
             }
             
             for instr in dis.get_instructions(module_code):
