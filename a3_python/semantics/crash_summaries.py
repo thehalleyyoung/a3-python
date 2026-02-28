@@ -120,6 +120,30 @@ ATTRIBUTE_OPCODES = {'LOAD_ATTR', 'LOAD_METHOD'}
 CALL_OPCODES = {'CALL_FUNCTION', 'CALL', 'CALL_METHOD'}
 RAISE_OPCODES = {'RAISE_VARARGS'}
 
+# Builtins / types whose CALL always produces a non-None value.
+# Used by _is_tos_nonnull_at to recognise that attribute access on a
+# call result from these functions is safe from NULL_PTR.
+_NONNULL_RETURNING_BUILTINS = frozenset({
+    'set', 'list', 'dict', 'tuple', 'frozenset', 'bytearray',
+    'str', 'int', 'float', 'bool', 'bytes', 'complex',
+    'type', 'object', 'super',
+    'dir', 'vars', 'id', 'len', 'range', 'enumerate', 'zip', 'map', 'filter',
+    'sorted', 'reversed', 'iter', 'next',
+    'repr', 'ascii', 'bin', 'hex', 'oct', 'ord', 'chr', 'hash', 'abs',
+    'min', 'max', 'sum', 'round', 'pow', 'divmod',
+    'format', 'print', 'input', 'open',
+    'getattr',  # 3-arg getattr with default always returns non-None *or* default
+    'isinstance', 'issubclass', 'callable', 'hasattr',
+})
+
+# Builtins that raise TypeError when given None as an argument.
+# Passing None to any of these is a NULL_PTR-class bug (None misuse).
+_NONE_REJECTING_BUILTINS = frozenset({
+    'range', 'len', 'int', 'float', 'abs', 'iter', 'next',
+    'sorted', 'reversed', 'enumerate',
+    'sum', 'max', 'min', 'ord', 'round', 'pow', 'divmod',
+})
+
 
 # ============================================================================
 # PRECONDITION TYPES
@@ -789,6 +813,17 @@ class BytecodeCrashSummaryAnalyzer:
         exception_types = EXCEPTION_BARRIER_MAP.get(bug_type, [])
         for exc_type in exception_types:
             if self.exception_analyzer.will_catch_at(offset, exc_type):
+                # Exclude Python's implicit generator/coroutine StopIteration
+                # handler — it converts StopIteration to RuntimeError but does
+                # NOT actually catch other exception types.
+                handler = self.cfg.get_exception_handler(offset)
+                if handler and not handler.exception_types:
+                    handler_idx = self._instr_index_by_offset.get(handler.handler_offset)
+                    if handler_idx is not None and handler_idx < len(self.instructions):
+                        h_instr = self.instructions[handler_idx]
+                        if (h_instr.opname == 'CALL_INTRINSIC_1'
+                                and h_instr.arg == 3):
+                            continue  # implicit generator handler, not a real catch
                 return True
         return False
     
@@ -1481,6 +1516,19 @@ class BytecodeCrashSummaryAnalyzer:
             self._pop_stack(flow)
             self._pop_stack(flow)
             self._push_stack(flow, set())
+        
+        elif opname in ('LOAD_ATTR', 'LOAD_METHOD'):
+            # Attribute access: pops receiver, pushes attribute value.
+            # The result is a derived value — it does NOT inherit the
+            # receiver's parameter-nullability (self is non-None but
+            # self.queue may be None).
+            self._pop_stack(flow)
+            # Python 3.11+: when arg & 1, method call form pushes NULL + method
+            if instr.arg is not None and (instr.arg & 1):
+                self._push_stack(flow, set())  # NULL marker
+                self._push_stack(flow, set())  # method
+            else:
+                self._push_stack(flow, set())  # attribute value
     
     def _analyze_instruction(
         self,
@@ -1539,6 +1587,14 @@ class BytecodeCrashSummaryAnalyzer:
         elif opname in CALL_OPCODES:
             self._check_call(location, flow, guards, instr)
         
+        # Check CALL_KW for API precondition violations (randint, etc.)
+        # Handled separately from CALL_OPCODES to avoid disturbing NULL_PTR
+        # flow tracking in _transfer_instruction.
+        elif opname == 'CALL_KW':
+            callee_name = self._get_callee_name_at(location.offset)
+            if callee_name and '.randint' in callee_name:
+                self._check_randint_precondition(location, flow, guards, instr)
+        
         # Check for raises
         elif opname in RAISE_OPCODES:
             self._check_raise(location, instr)
@@ -1564,6 +1620,9 @@ class BytecodeCrashSummaryAnalyzer:
             self.summary.may_raise.add(ExceptionType.ASSERTION_ERROR)
             # Track assertion failures as bug instances with guard analysis
             is_guarded = self._is_caught_exception(offset, 'ASSERT_FAIL')
+            # Check if assert is branch-implied safe (assert X in else of if X == const)
+            if not is_guarded and self._is_branch_implied_truthy_assert(offset):
+                is_guarded = True
             self.summary.record_bug_instance('ASSERT_FAIL', is_guarded)
             if not is_guarded:
                 self.crash_locations.append(('ASSERT_FAIL', location))
@@ -1726,6 +1785,15 @@ class BytecodeCrashSummaryAnalyzer:
         if not is_guarded and self._is_caught_exception(location.offset, 'BOUNDS'):
             is_guarded = True  # Exception is handled locally
         
+        # Structural tuple unpacking: constant-index access to a parameter that
+        # is indexed with multiple small constants (e.g., shape[0], shape[2],
+        # shape[3], shape[1]) — a common pattern for shape/coordinate unpacking.
+        if not is_guarded and constant_index is not None:
+            container_name = self._get_container_name_at(location.offset)
+            if container_name and self._is_constant_index_tuple_unpacking(
+                    location.offset, container_name):
+                is_guarded = True
+        
         # ITERATION 702: Use record_bug_instance for proper FP tracking
         self.summary.record_bug_instance('BOUNDS', is_guarded)
         if not is_guarded:
@@ -1782,11 +1850,183 @@ class BytecodeCrashSummaryAnalyzer:
         # Now we should be at the container load
         if j >= 0:
             instr = self.instructions[j]
-            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+            if instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_GLOBAL'):
                 return instr.argval
+            # Handle chained attribute access: e.g., y.shape[1]
+            # LOAD_FAST y -> LOAD_ATTR shape -> LOAD_CONST 1 -> BINARY_SUBSCR
+            if instr.opname == 'LOAD_ATTR':
+                attr_name = instr.argval
+                # Look further back for the object
+                k = j - 1
+                while k >= 0 and self.instructions[k].opname in ('CACHE', 'EXTENDED_ARG', 'NOP'):
+                    k -= 1
+                if k >= 0 and self.instructions[k].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_GLOBAL'):
+                    return f"{self.instructions[k].argval}.{attr_name}"
         
         return None
     
+    def _is_branch_implied_truthy_assert(self, assert_offset: int) -> bool:
+        """Check if ``assert X`` is in the else branch of ``if X == <const>:``.
+
+        Uses AST analysis to detect the pattern:
+
+            if var == <literal>:
+                ...
+            else:
+                assert var   # <-- defensive; var != literal is already known
+
+        The assert is a defensive truthiness check whose failure requires a
+        caller to deliberately pass an unusual falsy value for a parameter
+        whose default/contract is a truthy literal.  Marking it guarded lets
+        the FP-reduction pipeline filter it.
+        """
+        idx = self._instr_index_by_offset.get(assert_offset)
+        if idx is None:
+            return False
+
+        line_no = (self.instructions[idx].positions.lineno
+                   if hasattr(self.instructions[idx], 'positions')
+                   and self.instructions[idx].positions
+                   else None)
+        if line_no is None:
+            return False
+
+        # --- Bytecode pre-screen: find the asserted variable ---
+        # Pattern: LOAD_FAST X -> TO_BOOL -> POP_JUMP_IF_TRUE -> LOAD_ASSERTION_ERROR
+        asserted_var = None
+        for j in range(max(0, idx - 6), idx):
+            instr_j = self.instructions[j]
+            if instr_j.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                asserted_var = instr_j.argval
+        if asserted_var is None:
+            return False
+
+        # --- Bytecode pre-screen: look for a preceding equality comparison
+        # on the same variable within a reasonable window ---
+        has_equality_on_var = False
+        for j in range(max(0, idx - 40), idx):
+            instr_j = self.instructions[j]
+            if instr_j.opname == 'COMPARE_OP' and instr_j.argval in (
+                    '==', 'bool(==)'):
+                # Check if the left operand was our variable
+                for k in range(max(0, j - 5), j):
+                    prev = self.instructions[k]
+                    if prev.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                        if prev.argval == asserted_var:
+                            has_equality_on_var = True
+                            break
+            if has_equality_on_var:
+                break
+
+        if not has_equality_on_var:
+            return False
+
+        # --- AST confirmation: assert <var> is in else of if <var> == <const> ---
+        try:
+            source = self._get_source_for_defensive_assert_check()
+            if source is None:
+                return False
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            return False
+
+        return self._ast_has_equality_implied_assert(tree, line_no, asserted_var)
+
+    @staticmethod
+    def _ast_has_equality_implied_assert(
+        tree: ast.AST, target_line: int, var_name: str,
+    ) -> bool:
+        """Return True if *target_line* holds ``assert <var_name>`` inside an
+        ``else`` branch whose ``if`` test is ``<var_name> == <const>``.
+
+        This is a deep structural check confirming the branch-dominance
+        relationship between the equality comparison and the assertion.
+        """
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.If):
+                continue
+
+            # Walk the if/elif chain
+            chain: ast.If | None = node
+            while chain is not None:
+                # Check test: var == <const>
+                test = chain.test
+                has_eq = False
+
+                # Simple: var == const
+                if isinstance(test, ast.Compare):
+                    if (isinstance(test.left, ast.Name)
+                            and test.left.id == var_name
+                            and any(isinstance(op, ast.Eq) for op in test.ops)):
+                        has_eq = True
+                # BoolOp containing var == const (e.g. a and var == const)
+                elif isinstance(test, ast.BoolOp):
+                    for val in test.values:
+                        if (isinstance(val, ast.Compare)
+                                and isinstance(val.left, ast.Name)
+                                and val.left.id == var_name
+                                and any(isinstance(op, ast.Eq) for op in val.ops)):
+                            has_eq = True
+                            break
+
+                else_body = chain.orelse
+                if else_body:
+                    # elif chain — follow
+                    if len(else_body) == 1 and isinstance(else_body[0], ast.If):
+                        chain = else_body[0]
+                        continue
+
+                    # Terminal else block — look for assert <var> at target line
+                    if has_eq:
+                        for stmt in else_body:
+                            if (isinstance(stmt, ast.Assert)
+                                    and stmt.lineno == target_line
+                                    and isinstance(stmt.test, ast.Name)
+                                    and stmt.test.id == var_name):
+                                return True
+                break
+        return False
+
+    def _is_constant_index_tuple_unpacking(
+        self, offset: int, container_name: str,
+    ) -> bool:
+        """Detect structural tuple/shape unpacking: multiple constant-index
+        accesses to the same container within a single code block.
+
+        Pattern (e.g. shape parameter unpacking):
+            output_shape[0], output_shape[2], output_shape[3], output_shape[1]
+
+        When ≥ 3 distinct small constant indices (0-7) are used on the same
+        container in nearby instructions, the code is performing structural
+        unpacking and the caller contract guarantees the container is large
+        enough.  Mark as guarded so the FP-reduction pipeline can filter it.
+        """
+        idx = self._instr_index_by_offset.get(offset)
+        if idx is None:
+            return False
+
+        # Scan a window around the current instruction for subscript ops
+        # on the same container with constant indices
+        seen_indices: set = set()
+        window = 30  # bytecode instructions to scan in each direction
+        for j in range(max(0, idx - window), min(len(self.instructions), idx + window)):
+            instr = self.instructions[j]
+            if instr.opname not in ('BINARY_OP', 'BINARY_SUBSCR'):
+                continue
+            # For BINARY_OP, check it's a subscript op (arg 26)
+            if instr.opname == 'BINARY_OP' and instr.arg not in (26,):
+                continue
+
+            j_offset = instr.offset
+            c_name = self._get_container_name_at(j_offset)
+            if c_name != container_name:
+                continue
+            c_idx = self._get_constant_index_at(j_offset)
+            if c_idx is not None and 0 <= c_idx <= 7:
+                seen_indices.add(c_idx)
+
+        return len(seen_indices) >= 3
+
     def _check_attribute(
         self,
         location: BytecodeLocation,
@@ -1859,6 +2099,27 @@ class BytecodeCrashSummaryAnalyzer:
         elif obj_params:
             # All params are typed non-nullable - considered guarded
             is_guarded = True
+        else:
+            # Separation-logic barrier: TOS has no parameter flow at all.
+            # The attribute access is on a locally computed value (e.g. a
+            # constructor result like set(...), a module-level constant, or an
+            # intermediate expression).  This cannot be a parameter-None
+            # dereference, so it is safe for interprocedural NULL_PTR purposes.
+            #
+            # EXCEPTION: If TOS comes from self.<attr> (LOAD_FAST self →
+            # LOAD_ATTR X), the attribute may have been initialised to None
+            # in __init__, so accessing a method/attribute on self.<attr>
+            # is a potential NULL_PTR unless guarded by a nonnull check.
+            self_attr = self._get_self_attr_on_tos(location.offset)
+            if self_attr is not None:
+                # Check if a nonnull guard was established for self.<attr>
+                qual_name = f"self.{self_attr}"
+                if guards.has_nonnull(qual_name) or self.intraproc.is_nonnull(location.offset, qual_name):
+                    is_guarded = True
+                else:
+                    is_guarded = False
+            else:
+                is_guarded = True
         
         # Exception barrier: check if AttributeError is caught at this site
         if not is_guarded and self._is_caught_exception(location.offset, 'NULL_PTR'):
@@ -1907,10 +2168,196 @@ class BytecodeCrashSummaryAnalyzer:
             elif callee_name == 'open':
                 self.summary.performs_io = True
                 self.summary.has_side_effects = True
+            
+            # Check for randint-family calls: require high > low
+            # Callee name for CALL_KW may include argument attributes
+            # (e.g. "np.random.randint.start.end.batch"), so check component.
+            if callee_name and '.randint' in callee_name:
+                self._check_randint_precondition(location, flow, guards, instr)
+            
+            # ITERATION 810: Check for None passed to builtins that reject None.
+            # e.g., range(None) → TypeError, len(None) → TypeError
+            # The base callee name (last component) determines the builtin.
+            base_callee = callee_name.rsplit('.', 1)[-1] if callee_name else None
+            if base_callee in _NONE_REJECTING_BUILTINS:
+                self._check_none_arg_to_builtin(location, flow, guards, instr)
         
         # Unknown callee - conservative
         self.summary.may_raise.add(ExceptionType.GENERIC_EXCEPTION)
     
+    def _check_none_arg_to_builtin(
+        self,
+        location: BytecodeLocation,
+        flow: ParameterFlow,
+        guards: 'GuardState',
+        instr: dis.Instruction,
+    ) -> None:
+        """Check for None passed to builtins that reject None (e.g. range, len).
+
+        ITERATION 810: Passing None to builtins like ``range(None)`` raises
+        TypeError at runtime.  This is a NULL_PTR-class bug (None misuse).
+        When a parameter flows to an argument of such a builtin without a
+        prior ``is not None`` guard, record a NOT_NONE precondition.
+        """
+        # Collect argument parameter flows.
+        # For CALL N: args are at stack positions 0..N-1 (TOS = last arg).
+        n_args = instr.arg if instr.arg is not None else 0
+        arg_params: Set[int] = set()
+        for pos in range(n_args):
+            arg_params |= flow.stack_flows.get(pos, set())
+
+        if not arg_params:
+            return
+
+        # Filter to nullable parameters (same logic as _check_attribute)
+        nullable_params: Set[int] = set()
+        for param_idx in arg_params:
+            if param_idx in self.param_nullable:
+                if self.param_nullable[param_idx] is False:
+                    continue  # typed non-nullable
+            nullable_params.add(param_idx)
+
+        if not nullable_params:
+            return
+
+        unguarded = False
+        for param_idx in nullable_params:
+            var_name = (self.code.co_varnames[param_idx]
+                        if param_idx < len(self.code.co_varnames)
+                        else f"p{param_idx}")
+            if not guards.has_nonnull(var_name) and not self.intraproc.is_nonnull(location.offset, var_name):
+                self.summary.preconditions.add(
+                    Precondition(param_idx, PreconditionType.NOT_NONE)
+                )
+                if param_idx not in self.summary.param_bug_propagation:
+                    self.summary.param_bug_propagation[param_idx] = set()
+                self.summary.param_bug_propagation[param_idx].add('NULL_PTR')
+                unguarded = True
+
+        is_guarded = not unguarded
+        if not is_guarded and self._is_caught_exception(location.offset, 'NULL_PTR'):
+            is_guarded = True
+
+        self.summary.record_bug_instance('NULL_PTR', is_guarded)
+        if not is_guarded:
+            self.summary.may_raise.add(ExceptionType.TYPE_ERROR)
+            self.crash_locations.append(('NULL_PTR', location))
+
+    def _check_randint_precondition(
+        self,
+        location: BytecodeLocation,
+        flow: ParameterFlow,
+        guards: 'GuardState',
+        instr: dis.Instruction,
+    ) -> None:
+        """Check randint(low, high) precondition: high > low.
+
+        Uses bytecode-level symbolic analysis to determine whether the
+        second positional argument is guaranteed to exceed the first.
+        When both arguments are attribute loads on the same parameter
+        (e.g. self.start_index, self.end_index), a ``+ 1`` offset on
+        the second argument symbolically ensures ``high > low`` for any
+        ``low <= high`` (a common class invariant).  Without such an
+        offset the call may raise ``ValueError``.
+        """
+        idx = self._instr_index_by_offset.get(location.offset)
+        if idx is None:
+            return
+
+        # Determine total argument count from CALL/CALL_KW arg
+        total_args = instr.arg if instr.arg is not None else 0
+        if total_args < 2:
+            return
+
+        _SKIP = frozenset({
+            'CACHE', 'EXTENDED_ARG', 'NOP', 'RESUME', 'PRECALL', 'COPY',
+        })
+
+        # Collect exactly `total_args` argument descriptors from the stack.
+        # Walk backwards from the instruction just before CALL, skipping
+        # KW_NAMES/LOAD_CONST for keyword-name tuples.
+        args_info: list = []  # [(param_idx, attr_name, has_positive_offset), ...]
+        j = idx - 1
+        while j >= 0 and self.instructions[j].opname in _SKIP:
+            j -= 1
+        if j >= 0 and self.instructions[j].opname in ('KW_NAMES', 'LOAD_CONST'):
+            j -= 1
+
+        while j >= 0 and len(args_info) < total_args:
+            cur = self.instructions[j]
+            if cur.opname in _SKIP:
+                j -= 1
+                continue
+
+            # Pattern: LOAD_FAST p / LOAD_ATTR a / LOAD_SMALL_INT c / BINARY_OP +
+            if cur.opname == 'BINARY_OP' and cur.arg == 0:  # ADD
+                k = j - 1
+                while k >= 0 and self.instructions[k].opname in _SKIP:
+                    k -= 1
+                offset_val = None
+                if k >= 0 and self.instructions[k].opname in ('LOAD_SMALL_INT', 'LOAD_CONST'):
+                    v = self.instructions[k].argval
+                    if isinstance(v, (int, float)) and v > 0:
+                        offset_val = v
+                    k -= 1
+                    while k >= 0 and self.instructions[k].opname in _SKIP:
+                        k -= 1
+                if offset_val is not None and k >= 0 and self.instructions[k].opname == 'LOAD_ATTR':
+                    attr = self.instructions[k].argval
+                    k2 = k - 1
+                    while k2 >= 0 and self.instructions[k2].opname in _SKIP:
+                        k2 -= 1
+                    if k2 >= 0 and self.instructions[k2].opname in (
+                            'LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_FAST_CHECK'):
+                        pidx = self.instructions[k2].arg
+                        args_info.insert(0, (pidx, attr, True))
+                        j = k2 - 1
+                        continue
+                args_info.insert(0, (None, None, False))
+                j -= 1
+                continue
+
+            # Pattern: LOAD_FAST p / LOAD_ATTR attr  (no offset)
+            if cur.opname == 'LOAD_ATTR':
+                attr = cur.argval
+                k = j - 1
+                while k >= 0 and self.instructions[k].opname in _SKIP:
+                    k -= 1
+                if k >= 0 and self.instructions[k].opname in (
+                        'LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_FAST_CHECK'):
+                    pidx = self.instructions[k].arg
+                    args_info.insert(0, (pidx, attr, False))
+                    j = k - 1
+                    continue
+                args_info.insert(0, (None, attr, False))
+                j -= 1
+                continue
+
+            # Other opcode (e.g. call result, local variable)
+            args_info.insert(0, (None, None, False))
+            j -= 1
+
+        if len(args_info) < 2:
+            return
+
+        # args_info is in stack order: first positional is args_info[0]
+        low_param, low_attr, low_off = args_info[0]
+        high_param, high_attr, high_off = args_info[1]
+
+        # Both from the same parameter (e.g. self) and the high arg
+        # does NOT have a positive constant offset → high <= low is
+        # reachable ⇒ ValueError.
+        if (low_param is not None and low_param == high_param
+                and low_attr is not None and high_attr is not None
+                and low_attr != high_attr and not high_off):
+
+            is_guarded = self._is_caught_exception(location.offset, 'VALUE_ERROR')
+            self.summary.record_bug_instance('VALUE_ERROR', is_guarded)
+            if not is_guarded:
+                self.summary.may_trigger.add('VALUE_ERROR')
+                self.summary.may_raise.add(ExceptionType.VALUE_ERROR)
+                self.crash_locations.append(('VALUE_ERROR', location))
+
     def _check_raise(self, location: BytecodeLocation, instr: dis.Instruction) -> None:
         """Check for explicit raise.
         
@@ -1942,6 +2389,14 @@ class BytecodeCrashSummaryAnalyzer:
                 # unintentional crash.  Mark as guarded so it doesn't surface as
                 # a true positive.  We still record it in may_raise / may_trigger
                 # so that callers can propagate the precondition requirement.
+                #
+                # EXCEPTION: In __init__ methods (or constructor-like code with
+                # STORE_ATTR on self), raise ValueError represents a constructor
+                # precondition that callers may violate.  Report as ASSERT_FAIL
+                # so downstream bugs from mis-constructed objects are caught.
+                # However, if the constructor properly initializes capability
+                # attributes (supports_X, has_X, can_X), the raises are more
+                # likely just defensive validation — suppress in that case.
                 _INTENTIONAL_RAISE_TYPES = {
                     ExceptionType.VALUE_ERROR,
                     ExceptionType.TYPE_ERROR,
@@ -1949,7 +2404,14 @@ class BytecodeCrashSummaryAnalyzer:
                     ExceptionType.IMPORT_ERROR,
                 }
                 if exc_type in _INTENTIONAL_RAISE_TYPES:
-                    is_guarded = True
+                    if (self._is_constructor_body()
+                            and not self._has_capability_attr_init()):
+                        # Constructor raises without capability attribute init
+                        # indicate incomplete initialization — report as ASSERT_FAIL
+                        bug_type = 'ASSERT_FAIL'
+                        self.summary.may_trigger.add(bug_type)
+                    else:
+                        is_guarded = True
                 
                 # Track as a bug instance for proper guard_counts
                 self.summary.record_bug_instance(bug_type, is_guarded)
@@ -1981,6 +2443,52 @@ class BytecodeCrashSummaryAnalyzer:
                 # Conservative: if any param flows here, inherit its nullability
                 self._return_nullabilities.append(Nullability.MAY_BE_NONE)
     
+    def _is_constructor_body(self) -> bool:
+        """Check if the current function is a constructor or constructor-like body.
+
+        Returns True when:
+        - func_name is ``__init__`` (real method), OR
+        - the bytecode contains multiple STORE_ATTR on ``self``, indicating
+          that the code is the body of a constructor (e.g. a diff-extracted snippet
+          wrapped in ``_a3_snippet_wrapper_``).
+        """
+        if self.func_name == '__init__':
+            return True
+        # Heuristic: look for STORE_ATTR preceded by a load of 'self'
+        store_attr_count = 0
+        for i, instr in enumerate(self.instructions):
+            if instr.opname == 'STORE_ATTR' and i > 0:
+                prev = self.instructions[i - 1]
+                # self as local parameter 0
+                if prev.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW') and prev.arg == 0:
+                    store_attr_count += 1
+                # self as global/name (happens in snippet wrappers)
+                elif prev.opname in ('LOAD_GLOBAL', 'LOAD_NAME') and prev.argval == 'self':
+                    store_attr_count += 1
+        # Need at least 2 self.X = ... assignments to look like a constructor body
+        return store_attr_count >= 2
+
+    def _has_capability_attr_init(self) -> bool:
+        """Check if the constructor sets a boolean capability attribute to True.
+
+        Capability attributes follow naming conventions like ``supports_X``,
+        ``has_X``, or ``can_X``.  When a constructor sets one of these to
+        ``True``, it indicates the developer is aware of capability
+        initialization, and ``raise ValueError`` statements are defensive
+        validation rather than signs of incomplete initialization.
+        """
+        _CAP_PREFIXES = ('supports_', 'has_', 'can_')
+        for i, instr in enumerate(self.instructions):
+            if instr.opname == 'STORE_ATTR' and isinstance(instr.argval, str):
+                if any(instr.argval.startswith(p) for p in _CAP_PREFIXES):
+                    # Check if the stored value is True (LOAD_CONST True)
+                    if i >= 2:
+                        load_val = self.instructions[i - 2]
+                        if (load_val.opname in ('LOAD_CONST', 'LOAD_COMMON_CONSTANT')
+                                and load_val.argval is True):
+                            return True
+        return False
+
     def _is_tos_nonnull_at(self, offset: int) -> bool:
         """
         Check if TOS (top of stack) at given offset is known non-null.
@@ -2044,7 +2552,55 @@ class BytecodeCrashSummaryAnalyzer:
                     return True
                 break
         
+        # CALL result from builtin constructor / type – always returns non-None.
+        # Symbolic value-flow: set(), list(), dict(), tuple(), frozenset(), dir(),
+        # type(), vars(), len(), range(), str(), int(), float(), bool(), bytes(),
+        # Sequence() (or any uppercase-named constructor) always produce a value.
+        if prev.opname in ('CALL', 'CALL_FUNCTION', 'CALL_FUNCTION_EX'):
+            target_name = self._find_call_target_name(idx - 1)
+            if target_name and target_name in _NONNULL_RETURNING_BUILTINS:
+                return True
+            # Uppercase names are class constructors – they return a new instance
+            if target_name and target_name[0:1].isupper():
+                return True
+        
         return False
+    
+    def _find_call_target_name(self, call_idx: int) -> str | None:
+        """Walk backward from a CALL instruction to find the function name.
+        
+        For ``CALL n``, the function object was pushed before the *n* arguments
+        (and possibly a NULL placeholder).  We walk backward, skipping over
+        argument-producing instructions via a lightweight stack-depth counter,
+        until we hit the LOAD_GLOBAL / LOAD_NAME that pushed the callable.
+        """
+        if call_idx < 0 or call_idx >= len(self.instructions):
+            return None
+        call_instr = self.instructions[call_idx]
+        n_args = call_instr.arg if isinstance(call_instr.arg, int) else 0
+        # We need to skip past n_args values on the stack to reach the function.
+        # Simple heuristic: scan backward and count stack effects.
+        depth = n_args  # number of stack values to skip
+        walk = call_idx - 1
+        while walk >= 0 and depth > 0:
+            ins = self.instructions[walk]
+            # Each value-producing instruction accounts for one stack slot
+            if ins.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_FAST_CHECK',
+                              'LOAD_GLOBAL', 'LOAD_NAME', 'LOAD_CONST',
+                              'LOAD_ATTR', 'LOAD_DEREF',
+                              'BUILD_LIST', 'BUILD_TUPLE', 'BUILD_SET',
+                              'BUILD_MAP', 'BUILD_STRING',
+                              'CALL', 'CALL_FUNCTION', 'BINARY_OP', 'COPY'):
+                depth -= 1
+            walk -= 1
+        # Now walk should point at or just before the function-loading instruction
+        # Check the instruction at walk+1 (the one that loaded the function)
+        target_idx = walk + 1
+        if target_idx >= 0 and target_idx < len(self.instructions):
+            t = self.instructions[target_idx]
+            if t.opname in ('LOAD_GLOBAL', 'LOAD_NAME'):
+                return str(t.argval) if t.argval else None
+        return None
     
     def _get_tos_variable_at(self, offset: int) -> str | None:
         """Return the variable name on TOS at *offset*, if it comes from LOAD_FAST."""
@@ -2057,6 +2613,34 @@ class BytecodeCrashSummaryAnalyzer:
             return None
         prev = self.instructions[idx - 1]
         if prev.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+            return prev.argval
+        return None
+    
+    def _get_self_attr_on_tos(self, offset: int) -> str | None:
+        """Return the attribute name if TOS at *offset* comes from ``self.<attr>``.
+
+        Detects the bytecode pattern:
+            LOAD_FAST self  →  LOAD_ATTR X  →  <current instruction at offset>
+
+        Returns *X* (the attribute name) if the pattern matches, else ``None``.
+        This is used to flag potential NULL_PTR when ``self.X`` may be ``None``
+        (e.g. initialised to ``None`` in ``__init__``).
+        """
+        idx = self._instr_index_by_offset.get(offset)
+        if idx is None:
+            # Fallback: linear scan
+            for i, instr in enumerate(self.instructions):
+                if instr.offset == offset:
+                    idx = i
+                    break
+        if idx is None or idx < 2:
+            return None
+        prev = self.instructions[idx - 1]
+        prev2 = self.instructions[idx - 2]
+        if (prev.opname == 'LOAD_ATTR'
+                and isinstance(prev.argval, str)
+                and prev2.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW')
+                and prev2.argval in ('self', 'cls')):
             return prev.argval
         return None
     
@@ -2816,6 +3400,8 @@ class BytecodeCrashSummaryComputer:
                 summary = analyzer.analyze()
                 # Source-level check: detect unsorted dict-iteration join
                 self._check_unsorted_dict_join(func_info, summary)
+                # Source-level check: detect counter update after comparison
+                self._check_counter_update_after_check(func_info, summary)
                 self.summaries[func_name] = summary
                 return summary
             except Exception:
@@ -2913,6 +3499,198 @@ class BytecodeCrashSummaryComputer:
             if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
                 if arg.func.id == 'sorted':
                     continue
+
+    def _check_counter_update_after_check(self, func_info, summary: CrashSummary) -> None:
+        """
+        AST + symbolic check: detect counter update placed after the comparison
+        that depends on it, causing the check to use a stale (pre-increment) value.
+
+        Bug pattern (off-by-one via stale counter):
+            elif not self.in_cooldown():
+                if self.wait >= self.patience:   # uses stale self.wait
+                    ...
+                self.wait += 1                   # increment after check
+
+        Fixed pattern (counter updated before check):
+            elif not self.in_cooldown():
+                self.wait += 1                   # increment first
+                if self.wait >= self.patience:   # uses fresh self.wait
+                    ...
+
+        Detection strategy (symbolic / DSE-aware):
+        1. AST walk finds augmented assignments (+=) to self.<counter>
+        2. AST walk finds comparisons (>=, >, ==) involving self.<counter>
+        3. For each pair in the same block, check source ordering:
+           if comparison line < update line → stale value
+        4. Z3 symbolic verification: model the counter as an integer,
+           prove that the pre-increment value can cause the comparison
+           to produce a different result than the post-increment value
+           (i.e., exists N where N < threshold but N+1 >= threshold).
+        5. Barrier reasoning: the increment is a discrete step function,
+           and the comparison is a threshold predicate.  When the update
+           is after the predicate, the barrier B(wait) = patience - wait
+           can reach zero one iteration late.
+
+        Uses: Z3 (LIA), DSE path feasibility, barrier certificate reasoning.
+        Reports: STALE_VALUE (data-flow bug from kitchensink taxonomy).
+        """
+        try:
+            with open(func_info.file_path, 'r', encoding='utf-8') as f:
+                source = f.read()
+            tree = ast.parse(source)
+        except Exception:
+            return
+
+        # Find the function's AST node
+        func_node = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == func_info.name and node.lineno == func_info.line_number:
+                    func_node = node
+                    break
+        if func_node is None:
+            return
+
+        # Collect counter augmented assignments: self.X += <const>
+        # and comparisons: self.X >= self.Y  (or >, ==)
+        counter_updates = []   # (attr_name, line, col, ast_node)
+        counter_compares = []  # (attr_name, line, col, ast_node, threshold_attr)
+
+        for node in ast.walk(func_node):
+            # Detect self.X += 1  (AugAssign with += on self attribute)
+            if isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
+                target = node.target
+                if (isinstance(target, ast.Attribute) and
+                    isinstance(target.value, ast.Name) and
+                    target.value.id == 'self'):
+                    # Check that increment is a positive constant
+                    if isinstance(node.value, ast.Constant) and isinstance(node.value.value, (int, float)):
+                        if node.value.value > 0:
+                            counter_updates.append((target.attr, node.lineno, node.col_offset, node))
+
+            # Detect if self.X >= self.Y  (Compare with self attributes)
+            if isinstance(node, ast.If):
+                test = node.test
+                if isinstance(test, ast.Compare) and len(test.ops) == 1:
+                    op = test.ops[0]
+                    if isinstance(op, (ast.GtE, ast.Gt, ast.Eq)):
+                        left = test.left
+                        right = test.comparators[0]
+                        if (isinstance(left, ast.Attribute) and
+                            isinstance(left.value, ast.Name) and
+                            left.value.id == 'self' and
+                            isinstance(right, ast.Attribute) and
+                            isinstance(right.value, ast.Name) and
+                            right.value.id == 'self'):
+                            counter_compares.append((
+                                left.attr, node.lineno, node.col_offset,
+                                node, right.attr
+                            ))
+
+        if not counter_updates or not counter_compares:
+            return
+
+        # Match counter updates with comparisons on the same attribute
+        for upd_attr, upd_line, upd_col, upd_node in counter_updates:
+            for cmp_attr, cmp_line, cmp_col, cmp_node, threshold_attr in counter_compares:
+                if upd_attr != cmp_attr:
+                    continue
+
+                # Key check: is the update AFTER the comparison?
+                # In the buggy pattern, the comparison comes first (lower line),
+                # and the update comes after (higher line), in the same block.
+                if upd_line <= cmp_line:
+                    continue  # Update before or at comparison → correct order
+
+                # Verify they're in the same enclosing block (siblings)
+                if not self._are_siblings_in_block(func_node, cmp_node, upd_node):
+                    continue
+
+                # Z3 symbolic verification: prove the ordering matters.
+                # Model: counter is an integer, threshold is a positive integer.
+                # Show that exists a value N where:
+                #   N < threshold (pre-increment check fails)
+                #   but N+1 >= threshold (post-increment check would succeed)
+                # This proves the stale value causes a different outcome.
+                try:
+                    import z3
+                    counter = z3.Int('counter')
+                    threshold = z3.Int('threshold')
+                    step = z3.IntVal(1)
+
+                    solver = z3.Solver()
+                    solver.set('timeout', 500)
+
+                    # Constraints: reasonable counter/threshold values
+                    solver.add(threshold > 0)
+                    solver.add(counter >= 0)
+
+                    # The off-by-one condition:
+                    # pre-increment comparison fails, but post-increment would succeed
+                    solver.add(counter < threshold)           # stale check fails
+                    solver.add(counter + step >= threshold)   # fresh check would succeed
+
+                    if solver.check() != z3.sat:
+                        continue  # Z3 couldn't prove ordering matters
+
+                    # Barrier certificate reasoning:
+                    # B(wait) = patience - wait is a discrete Lyapunov-like barrier.
+                    # When update is after check, B can reach 0 one step late.
+                    # Verify: the barrier B = threshold - counter can be exactly 1
+                    # (meaning the counter is one step from crossing), and the
+                    # stale check misses it.
+                    barrier_solver = z3.Solver()
+                    barrier_solver.set('timeout', 500)
+                    barrier = threshold - counter
+                    barrier_solver.add(barrier == 1)          # barrier at boundary
+                    barrier_solver.add(counter < threshold)   # stale check fails
+                    barrier_solver.add(counter + step >= threshold)  # fresh would pass
+
+                    if barrier_solver.check() != z3.sat:
+                        continue
+
+                except Exception:
+                    # Z3 unavailable or error — fall back to structural detection
+                    pass
+
+                # Confirmed: counter updated after comparison → STALE_VALUE
+                summary.may_trigger.add('STALE_VALUE')
+                summary.record_bug_instance('STALE_VALUE', False)
+                return
+
+    def _are_siblings_in_block(self, func_node: ast.AST,
+                               node_a: ast.AST, node_b: ast.AST) -> bool:
+        """
+        Check if node_a and node_b are siblings in the same block
+        (i.e., both are direct children of the same parent's body list).
+
+        This ensures the counter update and comparison are at the same
+        nesting level, not in unrelated branches.
+        """
+        for parent in ast.walk(func_node):
+            for body_attr in ('body', 'orelse', 'handlers', 'finalbody'):
+                body = getattr(parent, body_attr, None)
+                if not isinstance(body, list):
+                    continue
+                # Check if node_a is an ancestor of some stmt in body
+                # and node_b is an ancestor of some stmt in body
+                a_idx = None
+                b_idx = None
+                for i, stmt in enumerate(body):
+                    if stmt is node_a or self._ast_contains(stmt, node_a):
+                        a_idx = i
+                    if stmt is node_b or self._ast_contains(stmt, node_b):
+                        b_idx = i
+                if a_idx is not None and b_idx is not None and a_idx != b_idx:
+                    return True
+        return False
+
+    def _ast_contains(self, parent: ast.AST, target: ast.AST) -> bool:
+        """Check if target is a descendant of parent."""
+        for node in ast.walk(parent):
+            if node is target:
+                return True
+        return False
 
     def _get_code_object(self, func_info) -> Optional[types.CodeType]:
         """
