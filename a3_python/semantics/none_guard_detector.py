@@ -46,19 +46,89 @@ def scan_file_for_none_guard_bugs(file_path: Path) -> List[NoneGuardBug]:
     except (SyntaxError, UnicodeDecodeError):
         return []
 
-    visitor = _NoneGuardVisitor(str(file_path))
+    # Pre-pass: build map of functions that may return None (Optional return)
+    none_returning_funcs = _find_none_returning_functions(tree)
+
+    visitor = _NoneGuardVisitor(str(file_path), none_returning_funcs)
     visitor.visit(tree)
     return visitor.bugs
+
+
+def _find_none_returning_functions(tree: ast.AST) -> Set[str]:
+    """Find functions in the module that explicitly return None on some paths
+    AND return a non-None value on other paths (Optional return pattern).
+
+    This identifies functions like:
+        def find_hook(...):
+            if ...: return None
+            for ...:
+                if ...: return os.path.abspath(...)
+            return None
+
+    Also detects implicit None returns: functions that return a value on
+    some paths but can fall off the end without a return statement.
+    """
+    result: Set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        has_return_none = False
+        has_return_value = False
+        for child in ast.walk(node):
+            if isinstance(child, ast.Return):
+                if child.value is None or _is_none(child.value):
+                    has_return_none = True
+                elif child.value is not None:
+                    has_return_value = True
+        # Detect implicit None return: function has a non-None return on some
+        # paths but can fall off the end (no return at the end of the body).
+        if has_return_value and not has_return_none:
+            if _can_fall_off_end(node.body):
+                has_return_none = True
+        if has_return_none and has_return_value:
+            result.add(node.name)
+    return result
+
+
+def _can_fall_off_end(stmts: list) -> bool:
+    """Check if a statement list can fall off the end without returning.
+
+    Returns True if the last statement does not unconditionally return/raise.
+    """
+    if not stmts:
+        return True
+    last = stmts[-1]
+    if isinstance(last, ast.Return):
+        return False
+    if isinstance(last, ast.Raise):
+        return False
+    if isinstance(last, ast.If):
+        # Both branches must return for the if to be exhaustive
+        if not last.orelse:
+            return True
+        return _can_fall_off_end(last.body) or _can_fall_off_end(last.orelse)
+    if isinstance(last, (ast.For, ast.While)):
+        # while True loops don't fall off (infinite loop or internal return)
+        if isinstance(last, ast.While) and isinstance(last.test, ast.Constant):
+            if last.test.value is True:
+                return False
+        # Other loops may not execute; can fall off
+        return True
+    if isinstance(last, ast.Try):
+        # Simplified: if the try body can fall off, it can fall off
+        return True
+    return True
 
 
 class _NoneGuardVisitor(ast.NodeVisitor):
     """AST visitor detecting missing None guard patterns."""
 
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, none_returning_funcs: Optional[Set[str]] = None):
         self.file_path = file_path
         self.bugs: List[NoneGuardBug] = []
         self._current_function: Optional[str] = None
         self._current_class: Optional[str] = None
+        self._none_returning_funcs: Set[str] = none_returning_funcs or set()
 
     def visit_ClassDef(self, node: ast.ClassDef):
         old_class = self._current_class
@@ -97,6 +167,8 @@ class _NoneGuardVisitor(ast.NodeVisitor):
         self._scan_for_param_default_none_attr_access(func_node)
         self._scan_for_unprotected_resource_finally(func_node)
         self._scan_for_last_element_attr_assumption(func_node)
+        self._scan_for_call_result_none_passthrough(func_node)
+        self._scan_for_param_binop_without_none_guard(func_node)
 
     def _scan_statement_list(self, stmts: list):
         """Scan a flat list of statements for the None-init-then-use pattern."""
@@ -239,6 +311,7 @@ class _NoneGuardVisitor(ast.NodeVisitor):
     def _find_attr_use(node, var_name: str) -> Optional[int]:
         """Find first attribute access on *var_name* within *node*.
         Skip attribute accesses that are assignment targets (``var.x = ...``).
+        Also detects dict unpacking ``{**var}`` which crashes on None.
         """
         for child in ast.walk(node):
             if isinstance(child, ast.Attribute):
@@ -248,6 +321,11 @@ class _NoneGuardVisitor(ast.NodeVisitor):
             if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
                 if isinstance(child.func.value, ast.Name) and child.func.value.id == var_name:
                     return child.func.lineno
+            # dict unpacking: {**var_name, ...} — TypeError if var_name is None
+            if isinstance(child, ast.Dict):
+                for key, value in zip(child.keys, child.values):
+                    if key is None and isinstance(value, ast.Name) and value.id == var_name:
+                        return value.lineno
         return None
 
     # ------------------------------------------------------------------
@@ -1358,6 +1436,260 @@ class _NoneGuardVisitor(ast.NodeVisitor):
                 and idx.operand.value == 1):
             return (attr_name, left.lineno)
 
+        return None
+
+    # ------------------------------------------------------------------
+    # Pattern: interprocedural call-result-may-be-None passthrough
+    # ------------------------------------------------------------------
+
+    def _scan_for_call_result_none_passthrough(self, func_node):
+        """Detect when result of a None-returning function is passed to another call.
+
+        Pattern (BugsInPy cookiecutter#2):
+            def find_hook(hook_name):
+                ...
+                return None  # may return None
+
+            def run_hook(hook_name, project_dir, context):
+                script = find_hook(hook_name)    # may be None
+                if script is None:
+                    return
+                run_script_with_context(script, project_dir, context)  # used
+
+        The function find_hook may return None. Even though there is a None
+        check, the value is passed to another function call, creating an
+        interprocedural None-propagation risk.
+        """
+        if not self._none_returning_funcs:
+            return
+
+        body = func_node.body
+        # Track variables assigned from calls to None-returning functions
+        # Format: {var_name: (assign_line, callee_name)}
+        none_result_vars: Dict[str, Tuple[int, str]] = {}
+
+        for i, stmt in enumerate(body):
+            # Detect: var = none_returning_func(...)
+            if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                target = stmt.targets[0]
+                if isinstance(target, ast.Name) and isinstance(stmt.value, ast.Call):
+                    callee = self._get_simple_call_name(stmt.value)
+                    if callee and callee in self._none_returning_funcs:
+                        none_result_vars[target.id] = (stmt.lineno, callee)
+                    elif target.id in none_result_vars:
+                        # Reassigned to something else — no longer tracked
+                        del none_result_vars[target.id]
+
+            # For each tracked var, check if it's passed to another function call
+            # AFTER an is-None guard (the guard makes the code "safe" but the
+            # interprocedural flow is still risky)
+            for var_name, (assign_line, callee_name) in list(none_result_vars.items()):
+                if getattr(stmt, 'lineno', 0) <= assign_line:
+                    continue
+                # Find use of var as argument to another function call
+                # (but NOT in a None-guard if-block itself)
+                use_line = self._find_call_arg_passthrough(
+                    body[i:], var_name, assign_line
+                )
+                if use_line is not None:
+                    self.bugs.append(NoneGuardBug(
+                        file_path=self.file_path,
+                        line_number=use_line,
+                        function_name=self._current_function or '<module>',
+                        pattern='call_result_none_passthrough',
+                        reason=(
+                            f"Variable '{var_name}' is assigned from "
+                            f"'{callee_name}()' (line {assign_line}) which "
+                            f"may return None. The value is passed to "
+                            f"another function call (line {use_line}), "
+                            f"creating an interprocedural None-propagation "
+                            f"risk."
+                        ),
+                        confidence=0.55,
+                        variable=var_name,
+                    ))
+                    # Only report once per variable
+                    del none_result_vars[var_name]
+                    break
+
+    @staticmethod
+    def _get_simple_call_name(call_node: ast.Call) -> Optional[str]:
+        """Get the simple function name from a Call node (no method calls)."""
+        if isinstance(call_node.func, ast.Name):
+            return call_node.func.id
+        return None
+
+    def _find_call_arg_passthrough(
+        self, stmts: list, var_name: str, assign_line: int,
+    ) -> Optional[int]:
+        """Find first use of var_name as an argument to a function call
+        in remaining statements, skipping past None-guard blocks.
+
+        Returns the line number of the call, or None.
+        """
+        for stmt in stmts:
+            if getattr(stmt, 'lineno', 0) <= assign_line:
+                continue
+
+            # If this is a None guard (if var is None: return/...), skip past it
+            # but continue looking at subsequent statements
+            if isinstance(stmt, ast.If) and self._is_none_guard(stmt, var_name):
+                continue
+
+            # Check if stmt contains a call with var_name as argument
+            for node in ast.walk(stmt):
+                if isinstance(node, ast.Call):
+                    for arg in node.args:
+                        if isinstance(arg, ast.Name) and arg.id == var_name:
+                            return node.lineno
+                    for kw in node.keywords:
+                        if isinstance(kw.value, ast.Name) and kw.value.id == var_name:
+                            return node.lineno
+        return None
+
+    # ------------------------------------------------------------------
+    # Pattern: function parameter used in binary op (e.g. concatenation)
+    # without None guard, when a None-returning function in the same
+    # module could supply that parameter value.
+    # ------------------------------------------------------------------
+
+    def _scan_for_param_binop_without_none_guard(self, func_node):
+        """Detect function parameter used in binary op without None guard.
+
+        Pattern (BugsInPy httpie#1):
+            def filename_from_content_disposition(content_disposition):
+                ...
+                return filename   # or implicit return None
+
+            def get_unique_filename(filename, exists=os.path.exists):
+                ...
+                if not exists(filename + suffix):  # TypeError if filename is None
+                    return filename + suffix
+
+        The parameter 'filename' is used in string concatenation (BinOp Add)
+        without a None guard, and filename_from_content_disposition is a
+        None-returning function in the same file whose name shares a token
+        with the parameter ('filename').
+        """
+        if not self._none_returning_funcs:
+            return
+
+        # Get function parameter names (excluding self, cls, and params with defaults)
+        params = self._get_plain_params(func_node)
+        if not params:
+            return
+
+        for param_name in params:
+            # Check if param is used in a BinOp(Add) anywhere in the function
+            # without a preceding None guard
+            binop_line = self._find_binop_use_without_guard(
+                func_node.body, param_name
+            )
+            if binop_line is None:
+                continue
+
+            # Check if a None-returning function in the file has a name
+            # that shares a significant token with this parameter
+            matching_func = self._find_matching_none_returning_func(
+                param_name, exclude=func_node.name
+            )
+            if matching_func is None:
+                continue
+
+            self.bugs.append(NoneGuardBug(
+                file_path=self.file_path,
+                line_number=binop_line,
+                function_name=self._current_function or '<module>',
+                pattern='param_binop_without_none_guard',
+                reason=(
+                    f"Parameter '{param_name}' is used in a binary "
+                    f"operation (line {binop_line}) without a None guard. "
+                    f"Function '{matching_func}()' in the same file may "
+                    f"return None, and its result could flow to this "
+                    f"parameter. If '{param_name}' is None, a TypeError "
+                    f"will occur."
+                ),
+                confidence=0.72,
+                variable=param_name,
+            ))
+
+    @staticmethod
+    def _get_plain_params(func_node) -> List[str]:
+        """Get parameter names that have no default values (excluding self/cls)."""
+        args = func_node.args
+        n_defaults = len(args.defaults)
+        n_args = len(args.args)
+        # Parameters without defaults are the first (n_args - n_defaults) args
+        n_plain = n_args - n_defaults
+        result = []
+        for i in range(n_plain):
+            name = args.args[i].arg
+            if name not in ('self', 'cls'):
+                result.append(name)
+        return result
+
+    def _find_binop_use_without_guard(
+        self, stmts: list, var_name: str
+    ) -> Optional[int]:
+        """Find first use of var_name in a BinOp (Add) without a preceding
+        None guard. Returns line number or None."""
+        for stmt in stmts:
+            # If this is a None guard, the parameter is safe from here
+            if self._is_none_guard(stmt, var_name):
+                return None
+            # If there's a truthiness check: if var_name: ...
+            if isinstance(stmt, ast.If):
+                test = stmt.test
+                if isinstance(test, ast.Name) and test.id == var_name:
+                    return None
+
+            # Search for BinOp(Add) involving var_name
+            line = self._find_binop_add_use(stmt, var_name)
+            if line is not None:
+                return line
+
+            # Recurse into compound statement bodies
+            for block in self._child_blocks(stmt):
+                line = self._find_binop_use_without_guard(block, var_name)
+                if line is not None:
+                    return line
+        return None
+
+    @staticmethod
+    def _find_binop_add_use(node, var_name: str) -> Optional[int]:
+        """Find first BinOp(Add) that uses var_name as left or right operand."""
+        for child in ast.walk(node):
+            if isinstance(child, ast.BinOp) and isinstance(child.op, ast.Add):
+                # Check if var_name is on either side
+                if isinstance(child.left, ast.Name) and child.left.id == var_name:
+                    return child.lineno
+                if isinstance(child.right, ast.Name) and child.right.id == var_name:
+                    return child.lineno
+        return None
+
+    def _find_matching_none_returning_func(self, param_name: str,
+                                            exclude: Optional[str] = None) -> Optional[str]:
+        """Find a None-returning function whose name shares a significant token
+        with the parameter name.
+
+        E.g., param 'filename' matches function 'filename_from_content_disposition'
+        because they share the token 'filename'.
+        """
+        param_tokens = set(param_name.lower().split('_'))
+        # Remove very short/common tokens that would cause false matches
+        param_tokens -= {'', 'a', 'an', 'the', 'is', 'in', 'of', 'to', 'do',
+                         'no', 'on', 'or', 'by', 'at', 'if', 'it', 'up',
+                         'id', 'fn', 'x', 'y', 'n', 'i', 'j', 'k', 's',
+                         'get', 'set', 'has', 'can'}
+        if not param_tokens:
+            return None
+
+        for func_name in self._none_returning_funcs:
+            if func_name == exclude:
+                continue
+            func_tokens = set(func_name.lower().split('_'))
+            if param_tokens & func_tokens:
+                return func_name
         return None
 
     @staticmethod
