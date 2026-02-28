@@ -750,6 +750,28 @@ def _try_parse_multi_hunk(source: str, filename: str):
         return None
 
 
+def _strip_orphaned_triple_quotes(source: str) -> str:
+    """Strip orphaned triple-quote lines from diff-extracted code fragments.
+
+    Diff extraction often captures the closing '\"\"\"' of a docstring without
+    its opening counterpart. A lone triple-quote line at the beginning of a
+    fragment makes the code unparseable when wrapped in a synthetic function.
+    This helper removes such leading orphaned triple-quote lines.
+    """
+    lines = source.splitlines(keepends=True)
+    # Strip leading blank/whitespace-only lines to find the first real line
+    first_real = 0
+    while first_real < len(lines) and not lines[first_real].strip():
+        first_real += 1
+    if first_real >= len(lines):
+        return source
+    # If the first real line is just a triple-quote (end of docstring), remove it
+    first_content = lines[first_real].strip()
+    if first_content in ('"""', "'''"):
+        return ''.join(lines[:first_real] + lines[first_real + 1:])
+    return source
+
+
 def _wrap_hunk_as_function(hunk_source: str, index: int) -> Optional[str]:
     """Wrap a single code hunk in a function definition.
     
@@ -759,6 +781,13 @@ def _wrap_hunk_as_function(hunk_source: str, index: int) -> Optional[str]:
     import textwrap
     
     dedented = textwrap.dedent(hunk_source)
+    if not dedented.strip():
+        return None
+    
+    # Strip orphaned triple-quote lines from diff fragments.
+    # Diff extraction often captures the tail end of a docstring (a lone '"""')
+    # without the opening, which causes SyntaxError when wrapped in a function.
+    dedented = _strip_orphaned_triple_quotes(dedented)
     if not dedented.strip():
         return None
     

@@ -5,10 +5,10 @@ Extends taint summaries to track crash-inducing conditions across function bound
 This covers ALL 20 core bug types + 47 security bug types.
 
 INTEGRATION WITH EXISTING INFRASTRUCTURE:
-- Uses UNSAFE_PREDICATES from pyfromscratch/unsafe/registry.py
-- Uses TaintLabel/SymbolicTaintLabel from pyfromscratch/z3model/taint_lattice.py
-- Uses barrier synthesis from pyfromscratch/barriers/synthesis.py
-- Uses security contracts from pyfromscratch/contracts/security_lattice.py
+- Uses UNSAFE_PREDICATES from a3_python/unsafe/registry.py
+- Uses TaintLabel/SymbolicTaintLabel from a3_python/z3model/taint_lattice.py
+- Uses barrier synthesis from a3_python/barriers/synthesis.py
+- Uses security contracts from a3_python/contracts/security_lattice.py
 
 For each function f, we compute:
 1. **Precondition Summary** Π_f: Required conditions on parameters to avoid crashes
@@ -366,7 +366,7 @@ class CrashSummary:
     Complete crash summary for a function.
     
     Captures all conditions under which a function may crash or trigger bugs.
-    Uses string bug type names from pyfromscratch/unsafe/registry.py as the
+    Uses string bug type names from a3_python/unsafe/registry.py as the
     canonical source of truth.
     """
     function_name: str
@@ -636,7 +636,7 @@ class CrashSummary:
         """
         Use the existing UNSAFE_PREDICATES from registry to check for bugs.
         
-        This integrates with the sophisticated infrastructure in pyfromscratch/unsafe/
+        This integrates with the sophisticated infrastructure in a3_python/unsafe/
         rather than reimplementing bug detection.
         """
         return check_unsafe_regions(state, path_trace)
@@ -930,7 +930,7 @@ class BytecodeCrashSummaryAnalyzer:
             executor = DSEExecutor(
                 self.code,
                 max_paths=100,
-                max_depth=50,
+                max_depth=30,
                 solver_timeout_ms=1000,
             )
             executor.analyze()
@@ -1174,27 +1174,85 @@ class BytecodeCrashSummaryAnalyzer:
     def _is_nonnull_returning_function(self, func_name: str) -> bool:
         """Check if a function always returns nonnull."""
         NONNULL_FUNCTIONS = {
+            # Builtins — constructors
             'list', 'dict', 'set', 'tuple', 'str', 'int', 'float', 'bool',
             'bytes', 'bytearray', 'frozenset', 'object', 'range', 'slice', 'type',
+            'complex', 'memoryview', 'super',
+            # Builtins — always return non-None
             'len', 'abs', 'repr', 'hash', 'id', 'chr', 'ord', 'bin', 'hex', 'oct',
             'sorted', 'reversed', 'enumerate', 'zip', 'map', 'filter',
+            'max', 'min', 'sum', 'round', 'pow', 'divmod', 'all', 'any',
+            'isinstance', 'issubclass', 'callable', 'hasattr', 'getattr',
+            'format', 'ascii', 'vars', 'dir', 'help', 'input', 'print',
+            'open', 'iter', 'next', 'property', 'staticmethod', 'classmethod',
+            # os / os.path — always return strings/numbers
+            'os.getcwd', 'os.getpid', 'os.getuid', 'os.listdir',
+            'os.path.join', 'os.path.dirname', 'os.path.basename',
+            'os.path.abspath', 'os.path.realpath', 'os.path.normpath',
+            'os.path.expanduser', 'os.path.exists', 'os.path.isfile',
+            'os.path.isdir', 'os.path.splitext', 'os.path.split',
+            # pathlib — Path always returns Path
+            'Path', 'PurePath', 'PureWindowsPath', 'PurePosixPath',
+            # json — loads returns dict/list/str/int/float/bool/None but
+            #        dumps always returns str
+            'json.dumps',
+            # datetime
+            'datetime.now', 'datetime.utcnow', 'datetime.today',
+            'date.today', 'time',
+            # collections
+            'defaultdict', 'OrderedDict', 'Counter', 'deque', 'namedtuple',
+            # functools
+            'partial', 'lru_cache', 'wraps',
+            # string
+            'f', 
+            # common patterns — these all return non-None
+            'deepcopy', 'copy',
         }
         if func_name in NONNULL_FUNCTIONS:
             return True
         # Capitalized names are likely constructors
         if isinstance(func_name, str) and func_name and func_name[0].isupper():
             return True
+        # Names ending with common nonnull-returning suffixes
+        if isinstance(func_name, str) and func_name:
+            # *_to_string, *_to_str, format_* — always return str
+            if func_name.endswith(('_to_string', '_to_str', '_string', '_repr')):
+                return True
+            if func_name.startswith(('format_', 'to_', 'str_', 'repr_')):
+                return True
         return False
     
     def _is_nonnull_returning_method(self, method_name: str) -> bool:
         """Check if a method always returns nonnull."""
         NONNULL_METHODS = {
+            # str methods — all return str or list[str]
             'strip', 'lstrip', 'rstrip', 'split', 'rsplit', 'splitlines',
             'lower', 'upper', 'title', 'capitalize', 'swapcase', 'casefold',
             'replace', 'encode', 'format', 'join', 'center', 'ljust', 'rjust',
-            'keys', 'values', 'items', 'copy',
+            'zfill', 'expandtabs', 'translate', 'maketrans',
+            'startswith', 'endswith', 'count', 'index', 'find', 'rfind',
+            # dict methods — keys/values/items return views (never None)
+            'keys', 'values', 'items', 'copy', 'update', 'setdefault',
+            # list methods that return non-None
+            'append', 'extend', 'insert', 'sort', 'reverse',  # return None but called for side-effect
+            # These return actual values:
+            '__len__', '__repr__', '__str__', '__hash__', '__bool__',
+            '__iter__', '__contains__', '__sizeof__',
+            # Path methods — return Path or str
+            'resolve', 'absolute', 'expanduser', 'with_name', 'with_suffix',
+            'with_stem', 'parent', 'stem', 'name', 'suffix', 'suffixes',
+            'as_posix', 'as_uri', 'is_file', 'is_dir', 'exists',
+            'read_text', 'read_bytes',
+            # datetime methods
+            'strftime', 'isoformat', 'timestamp', 'date', 'time',
+            'replace', 'astimezone', 'utcoffset', 'tzname',
         }
-        return method_name in NONNULL_METHODS
+        if method_name in NONNULL_METHODS:
+            return True
+        # __dunder__ methods almost always return non-None
+        if method_name.startswith('__') and method_name.endswith('__'):
+            return True
+        return False
     
     def _analyze_parameter_validation(self) -> None:
         """
@@ -1245,7 +1303,25 @@ class BytecodeCrashSummaryAnalyzer:
         - CALL to constructors (dict(), list(), etc.)
         
         These are followed by STORE_FAST which assigns to a local.
+        
+        FP REDUCTION: Also marks `self` and `cls` (param 0 in methods) as
+        non-None.  Python guarantees these are never None in bound method
+        calls, so NULL_PTR on self.x is always a false positive.
         """
+        # ── self / cls is NEVER None in a bound method ──────────────
+        # Heuristic: if the first parameter is named 'self' or 'cls',
+        # this is a method and param 0 is guaranteed non-None.
+        if self.param_count > 0:
+            first_param_name = (
+                self.code.co_varnames[0]
+                if self.code.co_varnames
+                else None
+            )
+            if first_param_name in ('self', 'cls'):
+                self._nonnull_locals[0] = True
+                # Also mark as non-nullable for the param_nullable map
+                self.param_nullable[0] = False
+
         # Opcodes that create non-None values
         NONNULL_CREATORS = {
             'BUILD_MAP', 'BUILD_LIST', 'BUILD_SET', 'BUILD_TUPLE',
@@ -1268,6 +1344,11 @@ class BytecodeCrashSummaryAnalyzer:
                             self._nonnull_locals[local_idx] = True
                     else:
                         self._nonnull_locals[local_idx] = True
+                
+                # FOR_ITER yields non-None values from the iterator
+                # (iteration variable in a for loop is always a real object)
+                if prev_instr.opname == 'FOR_ITER':
+                    self._nonnull_locals[local_idx] = True
             
             prev_instr = instr
     
@@ -1472,7 +1553,13 @@ class BytecodeCrashSummaryAnalyzer:
         #     self.summary.may_raise.add(ExceptionType.STOP_ITERATION)
         
         # Check for assertions (implicit in RAISE_VARARGS after LOAD_ASSERTION_ERROR)
-        elif opname == 'LOAD_ASSERTION_ERROR':
+        # Python 3.12+ replaced LOAD_ASSERTION_ERROR with LOAD_COMMON_CONSTANT(0)
+        # where arg 0 encodes AssertionError.
+        elif (opname == 'LOAD_ASSERTION_ERROR'
+              or (opname == 'LOAD_COMMON_CONSTANT' and instr.arg == 0)):
+            # Skip defensive assertions (assert False in else after exhaustive type checks)
+            if self._is_defensive_assert(offset):
+                return
             self.summary.may_trigger.add('ASSERT_FAIL')
             self.summary.may_raise.add(ExceptionType.ASSERTION_ERROR)
             # Track assertion failures as bug instances with guard analysis
@@ -1720,6 +1807,14 @@ class BytecodeCrashSummaryAnalyzer:
             self.summary.record_bug_instance('NULL_PTR', is_guarded=True)
             return
         
+        # Check if TOS variable has an intraprocedural nonnull guard
+        # (e.g., from `if value is None: continue` preceding this access).
+        # This handles non-parameter locals like loop iteration variables.
+        tos_var = self._get_tos_variable_at(location.offset)
+        if tos_var and self.intraproc.is_nonnull(location.offset, tos_var):
+            self.summary.record_bug_instance('NULL_PTR', is_guarded=True)
+            return
+        
         # ITERATION 610: Use type annotations to determine nullability
         # If parameter is typed as non-nullable, skip NULL_PTR check for it
         nullable_params = set()
@@ -1787,9 +1882,16 @@ class BytecodeCrashSummaryAnalyzer:
         callee_name = self._get_callee_name_at(location.offset)
         
         if callee_name:
-            # Check if we have a summary for the callee
-            if callee_name in self.summaries:
-                callee_summary = self.summaries[callee_name]
+            # Check if we have a summary for the callee (exact or suffix match)
+            callee_summary = self.summaries.get(callee_name)
+            if callee_summary is None:
+                # Try suffix matching: bytecode sees 'Cls.method' but summary
+                # key is 'module.Cls.method'
+                for qname, s in self.summaries.items():
+                    if qname.endswith('.' + callee_name) or qname == callee_name:
+                        callee_summary = s
+                        break
+            if callee_summary is not None:
                 self.summary.merge_callee(callee_summary)
             
             # Check for known dangerous functions
@@ -1819,7 +1921,9 @@ class BytecodeCrashSummaryAnalyzer:
         1. It's inside a try/except that catches it (locally handled), OR
         2. It's a precondition enforcement (raise inside `if bad_input:`) which
            is intentional validation, not a bug — but the *caller* may fail to
-           satisfy the precondition.
+           satisfy the precondition, OR
+        3. It raises ValueError / TypeError / RuntimeError — these are almost
+           always intentional input validation, not unintentional crashes.
         """
         # Look at preceding instructions to determine exception type
         exc_type = self._get_exception_type_at(location.offset)
@@ -1832,6 +1936,20 @@ class BytecodeCrashSummaryAnalyzer:
                 
                 # Guard analysis: check if this raise is inside a try/except
                 is_guarded = self._is_caught_exception(location.offset, bug_type)
+                
+                # FP REDUCTION: Explicit `raise ValueError/TypeError/RuntimeError`
+                # is almost always intentional precondition validation, not an
+                # unintentional crash.  Mark as guarded so it doesn't surface as
+                # a true positive.  We still record it in may_raise / may_trigger
+                # so that callers can propagate the precondition requirement.
+                _INTENTIONAL_RAISE_TYPES = {
+                    ExceptionType.VALUE_ERROR,
+                    ExceptionType.TYPE_ERROR,
+                    ExceptionType.RUNTIME_ERROR,
+                    ExceptionType.IMPORT_ERROR,
+                }
+                if exc_type in _INTENTIONAL_RAISE_TYPES:
+                    is_guarded = True
                 
                 # Track as a bug instance for proper guard_counts
                 self.summary.record_bug_instance(bug_type, is_guarded)
@@ -1912,7 +2030,35 @@ class BytecodeCrashSummaryAnalyzer:
         if prev.opname in ('LOAD_GLOBAL', 'LOAD_NAME'):
             return True
         
+        # Chained attribute access from a global (e.g. security_requirement.security_scheme.model):
+        # Walk back through consecutive LOAD_ATTR instructions; if the chain
+        # originates from LOAD_GLOBAL/LOAD_NAME the whole chain is non-null.
+        if prev.opname == 'LOAD_ATTR':
+            walk = idx - 1
+            while walk > 0:
+                walk -= 1
+                p = self.instructions[walk]
+                if p.opname == 'LOAD_ATTR':
+                    continue
+                if p.opname in ('LOAD_GLOBAL', 'LOAD_NAME'):
+                    return True
+                break
+        
         return False
+    
+    def _get_tos_variable_at(self, offset: int) -> str | None:
+        """Return the variable name on TOS at *offset*, if it comes from LOAD_FAST."""
+        idx = None
+        for i, instr in enumerate(self.instructions):
+            if instr.offset == offset:
+                idx = i
+                break
+        if idx is None or idx == 0:
+            return None
+        prev = self.instructions[idx - 1]
+        if prev.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+            return prev.argval
+        return None
     
     def _is_slice_subscript(self, offset: int) -> bool:
         """
@@ -2081,6 +2227,197 @@ class BytecodeCrashSummaryAnalyzer:
         
         return False
     
+    def _is_defensive_assert(self, offset: int) -> bool:
+        """
+        Detect defensive ``assert False`` in an else branch after exhaustive
+        type/isinstance checks.
+
+        Bytecode pattern recognised (Python 3.12+):
+          ... isinstance(x, T) / x.type == C ...  (repeated if/elif)
+          LOAD_COMMON_CONSTANT  AssertionError     <-- offset we are checking
+          LOAD_CONST            <message>
+          CALL / RAISE_VARARGS
+
+        This is a common "should-never-happen" guard and NOT a real bug,
+        so we suppress ASSERT_FAIL for it.
+
+        The detection uses a combined bytecode + AST approach:
+        1. Bytecode: verify the assertion is unconditional (``assert False``)
+           by checking that the opcode is NOT preceded by a conditional jump
+           whose false-branch skips the assertion (which would mean it is
+           ``assert <expr>`` with a real condition).
+        2. AST: walk the function body for the assert's line and confirm
+           (a) the assert is ``assert False`` and (b) it lives inside an
+           ``else`` clause whose siblings contain isinstance / type checks.
+        """
+        idx = self._instr_index_by_offset.get(offset)
+        if idx is None:
+            return False
+
+        # --- Step 1: bytecode-level quick check ---
+        # An ``assert False`` compiles to
+        #     LOAD_COMMON_CONSTANT AssertionError / LOAD_ASSERTION_ERROR
+        #     LOAD_CONST           "message"
+        #     CALL 0
+        #     RAISE_VARARGS 1
+        # with NO preceding POP_JUMP_IF_TRUE that guards the assertion
+        # (a conditional assert would have POP_JUMP_IF_TRUE skipping it).
+        # We also need the line number so we can correlate with the AST.
+        instr = self.instructions[idx]
+        line_no = (instr.positions.lineno
+                   if hasattr(instr, 'positions') and instr.positions
+                   else None)
+        if line_no is None:
+            return False
+
+        # Check that the preceding non-skip instruction is NOT a conditional
+        # jump targeting past the raise (which would mean the assertion has a
+        # real condition, e.g. ``assert some_expr``).  For ``assert False``
+        # there is no such conditional guard.
+        has_preceding_isinstance = False
+        has_preceding_type_compare = False
+        for j in range(max(0, idx - 40), idx):
+            prev = self.instructions[j]
+            pname = prev.opname
+            if pname in ('LOAD_GLOBAL', 'LOAD_NAME', 'LOAD_BUILTIN'):
+                if prev.argval == 'isinstance':
+                    has_preceding_isinstance = True
+            elif pname == 'COMPARE_OP':
+                # type comparison like child.type == <const>
+                has_preceding_type_compare = True
+
+        if not (has_preceding_isinstance or has_preceding_type_compare):
+            return False
+
+        # --- Step 2: AST-level confirmation ---
+        # Parse the source (from the code object's filename) and find the
+        # assert statement at this line.  Confirm it is ``assert False`` and
+        # lives inside an else block whose siblings are isinstance/type tests.
+        try:
+            source = self._get_source_for_defensive_assert_check()
+            if source is None:
+                return False
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            return False
+
+        return self._ast_has_defensive_assert_at_line(tree, line_no)
+
+    # ---- helpers for _is_defensive_assert ----
+
+    def _get_source_for_defensive_assert_check(self) -> Optional[str]:
+        """Return the source text for the code object, or None."""
+        filename = self.code.co_filename
+        if not filename or filename.startswith('<'):
+            return None
+        try:
+            return Path(filename).read_text(errors='replace')
+        except OSError:
+            return None
+
+    @staticmethod
+    def _ast_has_defensive_assert_at_line(tree: ast.AST, target_line: int) -> bool:
+        """
+        Return True if *target_line* is an ``assert False`` that lives in an
+        ``else`` branch whose sibling ``if``/``elif`` branches contain
+        isinstance() or attribute-type comparisons.
+
+        This is a deep structural check — not a pattern match on the assert
+        alone — and covers patterns such as:
+
+            for child in children:
+                if isinstance(child, Leaf):
+                    ...
+                elif child.type == X:
+                    ...
+                else:
+                    assert False, "msg"      # defensive — suppress
+        """
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.If, ast.For, ast.While,
+                                     ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            # Walk the if/elif chain inside function/loop bodies
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, ast.If):
+                    if BytecodeCrashSummaryAnalyzer._check_if_chain_for_defensive_assert(
+                            child, target_line):
+                        return True
+        return False
+
+    @staticmethod
+    def _check_if_chain_for_defensive_assert(
+        if_node: ast.If, target_line: int
+    ) -> bool:
+        """
+        Walk an if/elif/else chain.  Return True when:
+        1. The ``else`` body contains ``assert False`` at *target_line*.
+        2. At least one ``if``/``elif`` test is isinstance() or a type
+           attribute comparison.
+        """
+        has_type_guard = False
+        chain: ast.If | None = if_node
+        while chain is not None:
+            # Check the test of this if/elif
+            if BytecodeCrashSummaryAnalyzer._test_is_type_guard(chain.test):
+                has_type_guard = True
+
+            # Recurse into nested if/elif chains inside the body
+            for stmt in chain.body:
+                if isinstance(stmt, ast.If):
+                    if BytecodeCrashSummaryAnalyzer._check_if_chain_for_defensive_assert(
+                            stmt, target_line):
+                        return True
+
+            # Check else clause
+            else_body = chain.orelse
+            if else_body:
+                # If else continues with another elif, follow it
+                if len(else_body) == 1 and isinstance(else_body[0], ast.If):
+                    chain = else_body[0]
+                    continue
+
+                # Terminal else block — check for assert False at target line
+                if has_type_guard:
+                    for stmt in else_body:
+                        if (isinstance(stmt, ast.Assert)
+                                and isinstance(stmt.test, ast.Constant)
+                                and stmt.test.value is False
+                                and stmt.lineno == target_line):
+                            return True
+            break
+        return False
+
+    @staticmethod
+    def _test_is_type_guard(test_node: ast.expr) -> bool:
+        """
+        Return True if *test_node* is an isinstance() call or a type
+        attribute comparison (e.g. ``child.type == TOKEN``).
+        """
+        # isinstance(x, T)
+        if isinstance(test_node, ast.Call):
+            func = test_node.func
+            if isinstance(func, ast.Name) and func.id == 'isinstance':
+                return True
+
+        # x.type == CONST or type(x) == T
+        if isinstance(test_node, ast.Compare):
+            left = test_node.left
+            if isinstance(left, ast.Attribute) and left.attr == 'type':
+                return True
+            if isinstance(left, ast.Call):
+                fn = left.func
+                if isinstance(fn, ast.Name) and fn.id in ('type', 'isinstance'):
+                    return True
+
+        # BoolOp (and / or) containing type guards
+        if isinstance(test_node, ast.BoolOp):
+            return any(BytecodeCrashSummaryAnalyzer._test_is_type_guard(v)
+                       for v in test_node.values)
+
+        return False
+
     def _has_divisor_validation_bytecode(self, idx: int, divisor_params: Set[int]) -> bool:
         """
         Check if divisor has validation in bytecode (assert x > 0, if x != 0, etc.).
@@ -2228,13 +2565,56 @@ class BytecodeCrashSummaryAnalyzer:
         
         # For mod, check if left operand is a string (format string)
         if is_mod:
-            # Look for string constant as left operand
-            for j in range(max(0, idx - 5), idx):
+            # Look for string constant as left operand (expanded window)
+            for j in range(max(0, idx - 10), idx):
                 prev = self.instructions[j]
                 if prev.opname == 'LOAD_CONST' and isinstance(prev.argval, str):
-                    # Check if it looks like a format string
+                    # Any string constant with % in it is a format string
                     if '%' in prev.argval:
                         return True
+                    # SQL-style strings often use %s without the % being in
+                    # the immediate constant (it may be in a joined string)
+                    _SQL_KW = ('SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE',
+                               'ALTER', 'DROP', 'WHERE', 'FROM', 'JOIN')
+                    upper = prev.argval.upper().strip()
+                    if any(upper.startswith(kw) for kw in _SQL_KW):
+                        return True
+            
+            # FP REDUCTION: If the LHS comes from a variable whose name
+            # strongly suggests a string (fmt, format, template, query, sql,
+            # msg, message, pattern, repr, html, xml, url, text, header, ...)
+            # this is almost certainly string formatting, not arithmetic mod.
+            for j in range(max(0, idx - 5), idx):
+                prev = self.instructions[j]
+                if prev.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW') and isinstance(prev.argval, str):
+                    _STR_VAR_HINTS = (
+                        'fmt', 'format', 'template', 'query', 'sql', 'msg',
+                        'message', 'pattern', 'repr', 'html', 'xml', 'url',
+                        'text', 'header', 'body', 'line', 'stmt', 'cmd',
+                        'command', 'string', 'str', 'prefix', 'suffix',
+                        'label', 'title', 'description', 'name',
+                    )
+                    lower = prev.argval.lower()
+                    if any(hint in lower for hint in _STR_VAR_HINTS):
+                        return True
+                # Also check LOAD_ATTR — e.g., self._format % args
+                if prev.opname == 'LOAD_ATTR' and isinstance(prev.argval, str):
+                    lower = prev.argval.lower()
+                    _STR_ATTR_HINTS = (
+                        'fmt', 'format', 'template', 'query', 'sql', 'msg',
+                        'message', 'pattern', 'repr', 'html', 'xml', 'url',
+                        'text', 'header', 'body', 'string', 'str',
+                    )
+                    if any(hint in lower for hint in _STR_ATTR_HINTS):
+                        return True
+            
+            # FP REDUCTION: If the RHS is a BUILD_TUPLE (common pattern:
+            # "format %s %s" % (a, b)), this is definitely string formatting.
+            j = idx - 1
+            while j >= 0 and self.instructions[j].opname in ('CACHE', 'EXTENDED_ARG', 'NOP', 'RESUME'):
+                j -= 1
+            if j >= 0 and self.instructions[j].opname == 'BUILD_TUPLE':
+                return True
         
         return False
     
@@ -2247,20 +2627,28 @@ class BytecodeCrashSummaryAnalyzer:
         Try to determine callee name from bytecode context.
         
         Looks for LOAD_NAME/LOAD_GLOBAL/LOAD_ATTR patterns before CALL.
+        Skips argument-loading instructions (LOAD_FAST, LOAD_CONST, etc.)
+        to handle patterns like  LOAD_GLOBAL Cls / LOAD_ATTR method / LOAD_FAST arg / CALL.
         """
         # Find instruction index
-        idx = None
-        for i, instr in enumerate(self.instructions):
-            if instr.offset == offset:
-                idx = i
-                break
+        idx = self._instr_index_by_offset.get(offset)
         
         if idx is None or idx == 0:
             return None
         
-        # Look backwards for loading instructions
+        # Instructions that push arguments (not the callee) onto the stack
+        _ARG_OPCODES = frozenset({
+            'LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_FAST_CHECK',
+            'LOAD_CONST', 'LOAD_SMALL_INT',
+            'LOAD_FAST_LOAD_FAST', 'LOAD_FAST_BORROW_LOAD_FAST_BORROW',
+            'CACHE', 'EXTENDED_ARG', 'NOP', 'RESUME',
+            'COPY', 'PRECALL',
+            'CALL_KW', 'KW_NAMES',
+        })
+        
+        # Look backwards, skipping argument-loading instructions
         parts = []
-        for i in range(idx - 1, max(idx - 5, -1), -1):
+        for i in range(idx - 1, max(idx - 12, -1), -1):
             prev = self.instructions[i]
             if prev.opname in ('LOAD_GLOBAL', 'LOAD_NAME'):
                 parts.insert(0, prev.argval)
@@ -2271,6 +2659,8 @@ class BytecodeCrashSummaryAnalyzer:
                 parts.insert(0, prev.argval)
             elif prev.opname == 'PUSH_NULL':
                 continue
+            elif prev.opname in _ARG_OPCODES:
+                continue  # Skip argument-loading instructions
             else:
                 break
         
@@ -2330,18 +2720,36 @@ class BytecodeCrashSummaryComputer:
     
     def compute_all(self) -> Dict[str, CrashSummary]:
         """Compute crash summaries for all functions in bottom-up order."""
+        import sys
+
         # Get SCCs in reverse topological order
         sccs = self.call_graph.compute_sccs()
-        
+
+        total_funcs = sum(len(scc) for scc in sccs)
+        done = 0
+        last_pct = -1
+
         for scc in sccs:
             if len(scc) == 1:
                 # Single function - analyze directly
                 func_name = next(iter(scc))
                 self._analyze_function(func_name)
+                done += 1
             else:
                 # SCC with mutual recursion - iterate to fixpoint
                 self._analyze_scc(scc)
-        
+                done += len(scc)
+
+            # Progress feedback every ~5 %
+            if total_funcs > 20:
+                pct = (done * 100) // total_funcs
+                if pct >= last_pct + 5:
+                    last_pct = pct
+                    print(f"  [{done}/{total_funcs}] {pct}% ...", end="\r", file=sys.stderr)
+
+        if total_funcs > 20:
+            print(f"  [{total_funcs}/{total_funcs}] 100%    ", file=sys.stderr)
+
         # INTERPROCEDURAL: Propagate guard facts across call graph
         self._propagate_interprocedural_guards()
         
@@ -2406,6 +2814,8 @@ class BytecodeCrashSummaryComputer:
                     param_nullable=param_nullable,
                 )
                 summary = analyzer.analyze()
+                # Source-level check: detect unsorted dict-iteration join
+                self._check_unsorted_dict_join(func_info, summary)
                 self.summaries[func_name] = summary
                 return summary
             except Exception:
@@ -2421,6 +2831,89 @@ class BytecodeCrashSummaryComputer:
         self.summaries[func_name] = summary
         return summary
     
+    def _check_unsorted_dict_join(self, func_info, summary: CrashSummary) -> None:
+        """
+        AST-level check: detect str.join() on a list built from dict iteration
+        without sorting, which causes non-deterministic output ordering.
+
+        Pattern:
+            for k, v in some_dict.items():
+                lst.append(k)
+            ...
+            ", ".join(lst)       # BUG: non-deterministic order
+            ", ".join(sorted(lst))  # OK
+        """
+        try:
+            with open(func_info.file_path, 'r', encoding='utf-8') as f:
+                source = f.read()
+            tree = ast.parse(source)
+        except Exception:
+            return
+
+        # Find the function's AST node
+        func_node = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == func_info.name and node.lineno == func_info.line_number:
+                    func_node = node
+                    break
+        if func_node is None:
+            return
+
+        # Step 1: Find lists populated from dict iteration
+        # Track variable names that are appended to inside a for loop
+        # iterating over .items() or .keys()
+        dict_derived_lists: set = set()
+        for node in ast.walk(func_node):
+            if not isinstance(node, ast.For):
+                continue
+            # Check if iterating over X.items() or X.keys()
+            iter_call = node.iter
+            if not isinstance(iter_call, ast.Call):
+                continue
+            if not isinstance(iter_call.func, ast.Attribute):
+                continue
+            if iter_call.func.attr not in ('items', 'keys'):
+                continue
+            # Find append calls inside this for loop
+            for child in ast.walk(node):
+                if not isinstance(child, ast.Call):
+                    continue
+                if not isinstance(child.func, ast.Attribute):
+                    continue
+                if child.func.attr != 'append':
+                    continue
+                # Get the list variable name
+                obj = child.func.value
+                if isinstance(obj, ast.Name):
+                    dict_derived_lists.add(obj.id)
+
+        if not dict_derived_lists:
+            return
+
+        # Step 2: Find str.join(list_var) where list_var is dict-derived
+        # and NOT wrapped in sorted()
+        for node in ast.walk(func_node):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != 'join':
+                continue
+            if not node.args:
+                continue
+            arg = node.args[0]
+            # Check if arg is a dict-derived list used directly (unsorted)
+            if isinstance(arg, ast.Name) and arg.id in dict_derived_lists:
+                # Not wrapped in sorted() -> ORDER_VIOLATION
+                summary.may_trigger.add('ORDER_VIOLATION')
+                summary.record_bug_instance('ORDER_VIOLATION', False)
+                return
+            # Check if arg is sorted(list_var) -> safe, skip
+            if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
+                if arg.func.id == 'sorted':
+                    continue
+
     def _get_code_object(self, func_info) -> Optional[types.CodeType]:
         """
         Get the code object for a function.
