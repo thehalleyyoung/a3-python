@@ -568,8 +568,13 @@ class InterproceduralBugTracker:
         for fp_str in scanned_files_enc:
             enc_bugs = scan_file_for_encoding_bugs(Path(fp_str))
             for eb in enc_bugs:
+                # Data-parse encoding bugs cause ValueError → ASSERT_FAIL class
+                if eb.pattern == 'open_read_without_encoding_data_parse':
+                    enc_bug_type = 'ASSERT_FAIL'
+                else:
+                    enc_bug_type = 'NULL_PTR'
                 self.bugs_found.append(InterproceduralBug(
-                    bug_type='NULL_PTR',
+                    bug_type=enc_bug_type,
                     crash_function=eb.function_name,
                     crash_location=f"{eb.file_path}:{eb.line_number}",
                     call_chain=[eb.function_name],
@@ -642,6 +647,91 @@ class InterproceduralBugTracker:
                     bug_variable=ub.variable,
                 ))
 
+        # AST-based incomplete predicate sub-field validation (fastapi#11 pattern)
+        from .incomplete_predicate_subfield_detector import scan_file_for_incomplete_predicate_subfield_bugs
+        scanned_files_psf: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_psf:
+                scanned_files_psf.add(str(fp))
+        if not scanned_files_psf and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_psf.add(str(py_file))
+        for fp_str in scanned_files_psf:
+            psf_bugs = scan_file_for_incomplete_predicate_subfield_bugs(Path(fp_str))
+            for pb in psf_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='NULL_PTR',
+                    crash_function=pb.function_name,
+                    crash_location=f"{pb.file_path}:{pb.line_number}",
+                    call_chain=[pb.function_name],
+                    reason=pb.reason,
+                    confidence=pb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_incomplete_predicate_subfield_scan", f"pattern={pb.pattern}"]
+                    ),
+                    bug_variable=pb.variable,
+                ))
+
+        # AST + Z3 symbolic config dispatch completeness scanning
+        # Detects incomplete enum-to-feature-set mappings (e.g., black#6)
+        from .config_dispatch_detector import scan_file_for_config_dispatch_bugs
+        scanned_files_cd: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_cd:
+                scanned_files_cd.add(str(fp))
+        if not scanned_files_cd and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_cd.add(str(py_file))
+        for fp_str in scanned_files_cd:
+            cd_bugs = scan_file_for_config_dispatch_bugs(Path(fp_str))
+            for cb in cd_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='TYPE_CONFUSION',
+                    crash_function=cb.function_name,
+                    crash_location=f"{cb.file_path}:{cb.line_number}",
+                    call_chain=[cb.function_name],
+                    reason=cb.reason,
+                    confidence=cb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_config_dispatch_scan", f"pattern={cb.pattern}"]
+                    ),
+                    bug_variable=cb.variable,
+                ))
+
+        # AST-based incomplete isinstance dispatch in loops (fastapi#15 pattern)
+        from .incomplete_isinstance_dispatch_detector import scan_file_for_incomplete_isinstance_dispatch_bugs
+        scanned_files_iid: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_iid:
+                scanned_files_iid.add(str(fp))
+        if not scanned_files_iid and self.root_path and self.root_path.is_dir():
+            for py_file in self.root_path.rglob('*.py'):
+                parts = py_file.relative_to(self.root_path).parts
+                if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                    scanned_files_iid.add(str(py_file))
+        for fp_str in scanned_files_iid:
+            iid_bugs = scan_file_for_incomplete_isinstance_dispatch_bugs(Path(fp_str))
+            for ib in iid_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='TYPE_CONFUSION',
+                    crash_function=ib.function_name,
+                    crash_location=f"{ib.file_path}:{ib.line_number}",
+                    call_chain=[ib.function_name],
+                    reason=ib.reason,
+                    confidence=ib.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_incomplete_isinstance_dispatch_scan", f"pattern={ib.pattern}"]
+                    ),
+                    bug_variable=ib.variable,
+                ))
+
         logger.info(f"[BUGS] Total bugs before deduplication: {len(self.bugs_found)}")
         
         # Deduplicate bugs by (location, bug_type)
@@ -695,6 +785,14 @@ class InterproceduralBugTracker:
         guarded_count = 0
         
         for bug in bugs:
+            # Skip guard analysis for AST-scanner-sourced bugs — they are
+            # structural/module-level findings, not function-level crash bugs.
+            evidence = bug.reachability_pts.evidence if bug.reachability_pts else []
+            is_ast_scan = any(ev.startswith('source=ast_') for ev in evidence)
+            if is_ast_scan:
+                filtered_bugs.append(bug)
+                continue
+
             is_guarded = self._is_bug_interprocedurally_guarded(bug)
             
             if is_guarded:
@@ -1895,8 +1993,12 @@ def analyze_project_for_all_bugs(root_path: Path) -> Tuple[List[InterproceduralB
     from .encoding_bug_detector import scan_project_for_encoding_bugs
     encoding_bugs = scan_project_for_encoding_bugs(root_path)
     for eb in encoding_bugs:
+        if eb.pattern == 'open_read_without_encoding_data_parse':
+            enc_bug_type = 'ASSERT_FAIL'
+        else:
+            enc_bug_type = 'UNICODE_ERROR'
         bugs.append(InterproceduralBug(
-            bug_type='UNICODE_ERROR',
+            bug_type=enc_bug_type,
             crash_function=eb.function_name,
             crash_location=f"{eb.file_path}:{eb.line_number}",
             call_chain=[eb.function_name],
@@ -2000,8 +2102,12 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
     from .encoding_bug_detector import scan_file_for_encoding_bugs
     encoding_bugs = scan_file_for_encoding_bugs(file_path)
     for eb in encoding_bugs:
+        if eb.pattern == 'open_read_without_encoding_data_parse':
+            enc_bug_type = 'ASSERT_FAIL'
+        else:
+            enc_bug_type = 'UNICODE_ERROR'
         bugs.append(InterproceduralBug(
-            bug_type='UNICODE_ERROR',
+            bug_type=enc_bug_type,
             crash_function=eb.function_name,
             crash_location=f"{eb.file_path}:{eb.line_number}",
             call_chain=[eb.function_name],
@@ -2117,6 +2223,23 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
                 evidence=[f"source=ast_union_attr_scan", f"pattern={ub.pattern}"]
             ),
             bug_variable=ub.variable,
+        ))
+
+    # AST-based unhandled Path.relative_to() exception detection (black#16)
+    from .unhandled_path_exception_detector import scan_file_for_unhandled_path_exception_bugs
+    path_bugs = scan_file_for_unhandled_path_exception_bugs(file_path)
+    for pb in path_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='ASSERT_FAIL',
+            crash_function=pb.function_name,
+            crash_location=f"{pb.file_path}:{pb.line_number}",
+            call_chain=[pb.function_name],
+            reason=pb.reason,
+            confidence=pb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_unhandled_path_exception_scan", f"pattern={pb.pattern}"]
+            ),
+            bug_variable=pb.variable,
         ))
 
     return bugs

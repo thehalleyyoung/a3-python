@@ -351,6 +351,29 @@ class Analyzer:
                     )
             except Exception:
                 pass
+            # Try incomplete isinstance dispatch in loops (fastapi#15)
+            try:
+                from .semantics.incomplete_isinstance_dispatch_detector import scan_file_for_incomplete_isinstance_dispatch_bugs
+                iid_bugs = scan_file_for_incomplete_isinstance_dispatch_bugs(filepath)
+                iid_bugs = [b for b in iid_bugs if b.confidence >= 0.45]
+                if iid_bugs:
+                    best = max(iid_bugs, key=lambda b: b.confidence)
+                    return AnalysisResult(
+                        verdict="BUG",
+                        bug_type='TYPE_CONFUSION',
+                        counterexample={
+                            'bug_type': 'TYPE_CONFUSION',
+                            'location': f"{best.file_path}:{best.line_number}",
+                            'reason': best.reason,
+                            'confidence': best.confidence,
+                            'source': 'ast_incomplete_isinstance_dispatch_scan',
+                            'pattern': best.pattern,
+                        },
+                        paths_explored=0,
+                        message=f"Incomplete isinstance dispatch: {best.reason}",
+                    )
+            except Exception:
+                pass
             return AnalysisResult(
                 verdict="UNKNOWN",
                 message="Failed to load or compile file"
@@ -764,6 +787,74 @@ class Analyzer:
                 print(f"Warning: Missing isinstance guard scan failed: {e}")
         _end_phase("ast_missing_isinstance")
 
+        # Step 1.4j: AST-based incomplete predicate sub-field validation (fastapi#11)
+        # Detects predicate functions (is_*) that check properties of a parameter
+        # but miss validating a sub-component collection attribute (e.g. sub_fields).
+        _start_phase("ast_pred_subfield")
+        try:
+            from .semantics.incomplete_predicate_subfield_detector import scan_file_for_incomplete_predicate_subfield_bugs
+            early_psf_bugs = scan_file_for_incomplete_predicate_subfield_bugs(filepath)
+            early_psf_bugs = [b for b in early_psf_bugs if b.confidence >= 0.60]
+            if early_psf_bugs:
+                best = max(early_psf_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Incomplete predicate sub-field scan found {len(early_psf_bugs)} issue(s), "
+                          f"best: NULL_PTR at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='NULL_PTR',
+                    counterexample={
+                        'bug_type': 'NULL_PTR',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_incomplete_predicate_subfield_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Incomplete predicate sub-field validation: {best.reason}",
+                )
+            elif self.verbose:
+                print("Incomplete predicate sub-field scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Incomplete predicate sub-field scan failed: {e}")
+        _end_phase("ast_pred_subfield")
+
+        # Step 1.4k: AST-based incomplete isinstance dispatch in loops (fastapi#15)
+        # Detects for-loops that use isinstance to handle some types but silently
+        # drop items of other types (no else/elif branch).
+        _start_phase("ast_isinstance_dispatch")
+        try:
+            from .semantics.incomplete_isinstance_dispatch_detector import scan_file_for_incomplete_isinstance_dispatch_bugs
+            early_iid_bugs = scan_file_for_incomplete_isinstance_dispatch_bugs(filepath)
+            early_iid_bugs = [b for b in early_iid_bugs if b.confidence >= 0.45]
+            if early_iid_bugs:
+                best = max(early_iid_bugs, key=lambda b: b.confidence)
+                if self.verbose:
+                    print(f"Incomplete isinstance dispatch scan found {len(early_iid_bugs)} issue(s), "
+                          f"best: TYPE_CONFUSION at line {best.line_number} (confidence {best.confidence:.2f})")
+                return AnalysisResult(
+                    verdict="BUG",
+                    bug_type='TYPE_CONFUSION',
+                    counterexample={
+                        'bug_type': 'TYPE_CONFUSION',
+                        'location': f"{best.file_path}:{best.line_number}",
+                        'reason': best.reason,
+                        'confidence': best.confidence,
+                        'source': 'ast_incomplete_isinstance_dispatch_scan',
+                        'pattern': best.pattern,
+                    },
+                    paths_explored=0,
+                    message=f"Incomplete isinstance dispatch: {best.reason}",
+                )
+            elif self.verbose:
+                print("Incomplete isinstance dispatch scan: no issues found")
+        except Exception as e:
+            if self.verbose:
+                print(f"Warning: Incomplete isinstance dispatch scan failed: {e}")
+        _end_phase("ast_isinstance_dispatch")
+
         # Step 1.5: For security bugs, use function-level analysis (NEW in iteration 422)
         # This delegates to security_scan() internally, which does the right thing:
         # - Extract all functions
@@ -1133,6 +1224,27 @@ class Analyzer:
                                 },
                                 'path': None,
                                 'source': 'ast_config_dispatch_scan'
+                            }
+                            bugs_found.append(bug_entry)
+
+                    # AST-based incomplete predicate sub-field validation bugs
+                    # Detects predicates that miss sub-component checks (fastapi#11).
+                    pred_subfield_bugs = [
+                        b for b in all_interprocedural_bugs
+                        if b.confidence >= 0.6
+                        and any(ev.startswith('source=ast_incomplete_predicate_subfield_scan')
+                                for ev in (b.reachability_pts.evidence if b.reachability_pts else []))
+                    ]
+                    if not bugs_found and pred_subfield_bugs:
+                        for psf_bug in pred_subfield_bugs:
+                            bug_entry = {
+                                'bug': {
+                                    'bug_type': psf_bug.bug_type,
+                                    'location': psf_bug.crash_location,
+                                    'reason': psf_bug.reason,
+                                },
+                                'path': None,
+                                'source': 'ast_incomplete_predicate_subfield_scan'
                             }
                             bugs_found.append(bug_entry)
                         
