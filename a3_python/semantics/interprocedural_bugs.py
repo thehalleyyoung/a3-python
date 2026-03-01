@@ -527,6 +527,36 @@ class InterproceduralBugTracker:
                     bug_variable=nb.collection_var,
                 ))
 
+        # AST + Z3 stale counter scanning (counter update after comparison)
+        from .stale_counter_detector import scan_file_for_stale_counter_bugs
+        scanned_files_sc: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_sc:
+                scanned_files_sc.add(str(fp))
+        if not scanned_files_sc and root_path:
+            rp = Path(root_path) if not isinstance(root_path, Path) else root_path
+            if rp.is_file() and rp.suffix == '.py':
+                scanned_files_sc.add(str(rp))
+            elif rp.is_dir():
+                for py_file in rp.glob('*.py'):
+                    scanned_files_sc.add(str(py_file))
+        for _sf in scanned_files_sc:
+            stale_bugs = scan_file_for_stale_counter_bugs(Path(_sf))
+            for sb in stale_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='STALE_VALUE',
+                    crash_function=sb.function_name,
+                    crash_location=f"{sb.file_path}:{sb.line_number}",
+                    call_chain=[sb.function_name],
+                    reason=sb.reason,
+                    confidence=sb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_stale_counter_scan", f"pattern={sb.pattern}"]
+                    ),
+                    bug_variable=sb.variable,
+                ))
+
         # AST-based argument mismatch / misscoped control flow scanning
         from .argument_mismatch_detector import scan_file_for_argument_mismatch_bugs
         scanned_files_arg: set = set()
@@ -787,6 +817,70 @@ class InterproceduralBugTracker:
                         evidence=[f"source=ast_missing_session_config_scan", f"pattern={sb.pattern}"]
                     ),
                     bug_variable=sb.variable,
+                ))
+
+        # AST-based str.find() result misuse detection (keras#9 pattern)
+        from .find_result_misuse_detector import scan_file_for_find_result_misuse_bugs
+        scanned_files_frm: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_frm:
+                scanned_files_frm.add(str(fp))
+        if not scanned_files_frm and root_path:
+            rp = Path(root_path) if not isinstance(root_path, Path) else root_path
+            if rp.is_file() and rp.suffix == '.py':
+                scanned_files_frm.add(str(rp))
+            elif rp.is_dir():
+                for py_file in rp.rglob('*.py'):
+                    parts = py_file.relative_to(rp).parts
+                    if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                        scanned_files_frm.add(str(py_file))
+        for fp_str in scanned_files_frm:
+            frm_bugs = scan_file_for_find_result_misuse_bugs(Path(fp_str))
+            for fb in frm_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='BOUNDS',
+                    crash_function=fb.function_name,
+                    crash_location=f"{fb.file_path}:{fb.line_number}",
+                    call_chain=[fb.function_name],
+                    reason=fb.reason,
+                    confidence=fb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_find_result_misuse_scan", f"pattern={fb.pattern}"]
+                    ),
+                    bug_variable=fb.variable,
+                ))
+
+        # AST-based missing wrapper attribute forwarding detection (keras#37 pattern)
+        from .missing_wrapper_forwarding_detector import scan_file_for_wrapper_forwarding_bugs
+        scanned_files_wf: set = set()
+        for func_info in self.call_graph.functions.values():
+            fp = getattr(func_info, 'file_path', None)
+            if fp and str(fp) not in scanned_files_wf:
+                scanned_files_wf.add(str(fp))
+        if not scanned_files_wf and root_path:
+            rp = Path(root_path) if not isinstance(root_path, Path) else root_path
+            if rp.is_file() and rp.suffix == '.py':
+                scanned_files_wf.add(str(rp))
+            elif rp.is_dir():
+                for py_file in rp.rglob('*.py'):
+                    parts = py_file.relative_to(rp).parts
+                    if not any(p.startswith('.') or p == '__pycache__' for p in parts):
+                        scanned_files_wf.add(str(py_file))
+        for fp_str in scanned_files_wf:
+            wf_bugs = scan_file_for_wrapper_forwarding_bugs(Path(fp_str))
+            for wb in wf_bugs:
+                self.bugs_found.append(InterproceduralBug(
+                    bug_type='NULL_PTR',
+                    crash_function=wb.function_name,
+                    crash_location=f"{wb.file_path}:{wb.line_number}",
+                    call_chain=[wb.function_name],
+                    reason=wb.reason,
+                    confidence=wb.confidence,
+                    reachability_pts=ReachabilityIntervalPTS.unknown(
+                        evidence=[f"source=ast_wrapper_forwarding_scan", f"pattern={wb.pattern}"]
+                    ),
+                    bug_variable=wb.variable,
                 ))
 
         logger.info(f"[BUGS] Total bugs before deduplication: {len(self.bugs_found)}")
@@ -1227,7 +1321,11 @@ class InterproceduralBugTracker:
             )
             
             # Additional AST-based safety check if we have source
-            if source_code and should_include:
+            # Skip for AST-scanner-sourced bugs — they are structural findings
+            # where the pattern itself is the bug, not a missing crash guard.
+            evidence = bug.reachability_pts.evidence if bug.reachability_pts else []
+            is_ast_scan = any(ev.startswith('source=ast_') for ev in evidence)
+            if source_code and should_include and not is_ast_scan:
                 func_name = bug.crash_function.split('.')[-1] if '.' in bug.crash_function else bug.crash_function
                 is_guarded, guard_conf, guard_reason = safety_analyzer.is_bug_guarded(
                     source=source_code,
@@ -1402,11 +1500,18 @@ class InterproceduralBugTracker:
             
             # For NULL_PTR: Check param_bug_propagation or preconditions
             elif bug_type in ('NULL_PTR', 'ATTRIBUTE_ERROR'):
-                # Check param_bug_propagation first
-                for param_idx, bug_types in summary.param_bug_propagation.items():
-                    if bug_type in bug_types:
-                        bug_variable = f"param_{param_idx}"
-                        break
+                # Check null_ptr_target_vars first (e.g., 'self.cell' for
+                # chained access self.cell.trainable_weights).  This avoids
+                # misattribution to 'self' which the intent filter suppresses.
+                if hasattr(summary, 'null_ptr_target_vars') and summary.null_ptr_target_vars:
+                    bug_variable = next(iter(summary.null_ptr_target_vars))
+                
+                # Check param_bug_propagation
+                if bug_variable is None:
+                    for param_idx, bug_types in summary.param_bug_propagation.items():
+                        if bug_type in bug_types:
+                            bug_variable = f"param_{param_idx}"
+                            break
                 
                 # Fallback: check preconditions
                 if bug_variable is None:
@@ -1480,7 +1585,15 @@ class InterproceduralBugTracker:
                     # Verification found the guard is bypassable - keep as potential bug
                     logger.warning(f"[TRACKER] Guard bypass detected: {bug_type} on {bug_variable}")
             else:
-                # Bug is NOT guarded - definitely keep it
+                # Bug is NOT guarded — still run quick_barrier_precheck to catch
+                # obvious FPs (e.g., DIV_ZERO inside __len__, safe variable names).
+                from ..barriers.quick_precheck import quick_barrier_precheck
+                is_safe_quick, conf_quick, reason_quick = quick_barrier_precheck(
+                    bug_type, bug_variable or '', summary
+                )
+                if is_safe_quick and conf_quick >= 0.85:
+                    logger.info(f"[TRACKER] Quick precheck suppressed unguarded {bug_type}: {reason_quick}")
+                    continue
                 logger.debug(f"[TRACKER] Unguarded bug: {bug_type} on {bug_variable} - keeping")
             
             # bug_type is now a string (e.g., 'DIV_ZERO')
@@ -2213,6 +2326,23 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
             bug_variable=nb.collection_var,
         ))
 
+    # AST + Z3 stale counter detection (counter update after comparison)
+    from .stale_counter_detector import scan_file_for_stale_counter_bugs
+    stale_bugs = scan_file_for_stale_counter_bugs(file_path)
+    for sb in stale_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='STALE_VALUE',
+            crash_function=sb.function_name,
+            crash_location=f"{sb.file_path}:{sb.line_number}",
+            call_chain=[sb.function_name],
+            reason=sb.reason,
+            confidence=sb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_stale_counter_scan", f"pattern={sb.pattern}"]
+            ),
+            bug_variable=sb.variable,
+        ))
+
     # AST-based argument mismatch / misscoped control flow detection
     from .argument_mismatch_detector import scan_file_for_argument_mismatch_bugs
     argmatch_bugs = scan_file_for_argument_mismatch_bugs(file_path)
@@ -2299,6 +2429,23 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
             bug_variable=ub.variable,
         ))
 
+    # AST-based hasattr-without-type-check detection (keras#24)
+    from .hasattr_type_check_detector import scan_file_for_hasattr_type_check_bugs
+    hasattr_bugs = scan_file_for_hasattr_type_check_bugs(file_path)
+    for hb in hasattr_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='TYPE_CONFUSION',
+            crash_function=hb.function_name,
+            crash_location=f"{hb.file_path}:{hb.line_number}",
+            call_chain=[hb.function_name],
+            reason=hb.reason,
+            confidence=hb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_hasattr_type_check_scan", f"pattern={hb.pattern}"]
+            ),
+            bug_variable=hb.variable,
+        ))
+
     # AST-based unhandled Path.relative_to() exception detection (black#16)
     from .unhandled_path_exception_detector import scan_file_for_unhandled_path_exception_bugs
     path_bugs = scan_file_for_unhandled_path_exception_bugs(file_path)
@@ -2348,6 +2495,40 @@ def analyze_file_for_bugs(file_path: Path) -> List[InterproceduralBug]:
                 evidence=[f"source=ast_stale_seed_state_scan", f"pattern={sb.pattern}"]
             ),
             bug_variable=sb.variable,
+        ))
+
+    # AST-based maketrans length-mismatch detection (keras#33)
+    from .maketrans_misuse_detector import scan_file_for_maketrans_misuse_bugs
+    maketrans_bugs = scan_file_for_maketrans_misuse_bugs(file_path)
+    for mb in maketrans_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='NULL_PTR',
+            crash_function=mb.function_name,
+            crash_location=f"{mb.file_path}:{mb.line_number}",
+            call_chain=[mb.function_name],
+            reason=mb.reason,
+            confidence=mb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_maketrans_misuse_scan", f"pattern={mb.pattern}"]
+            ),
+            bug_variable=mb.variable,
+        ))
+
+    # AST-based missing wrapper attribute forwarding detection
+    from .missing_wrapper_forwarding_detector import scan_file_for_wrapper_forwarding_bugs
+    wrapper_bugs = scan_file_for_wrapper_forwarding_bugs(file_path)
+    for wb in wrapper_bugs:
+        bugs.append(InterproceduralBug(
+            bug_type='NULL_PTR',
+            crash_function=wb.function_name,
+            crash_location=f"{wb.file_path}:{wb.line_number}",
+            call_chain=[wb.function_name],
+            reason=wb.reason,
+            confidence=wb.confidence,
+            reachability_pts=ReachabilityIntervalPTS.unknown(
+                evidence=[f"source=ast_wrapper_forwarding_scan", f"pattern={wb.pattern}"]
+            ),
+            bug_variable=wb.variable,
         ))
 
     return bugs

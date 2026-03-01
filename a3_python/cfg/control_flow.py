@@ -667,24 +667,34 @@ class GuardAnalyzer:
                     'POP_JUMP_FORWARD_IF_NONE',
                     'POP_JUMP_FORWARD_IF_NOT_NONE',
                 ):
+                    guard_var = None
                     if i >= 1 and block.instructions[i - 1].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
-                        var_name = block.instructions[i - 1].argval
-                        if var_name:
-                            # POP_JUMP_IF_NONE: fallthrough implies nonnull
-                            # POP_JUMP_IF_NOT_NONE: jump-taken implies nonnull
-                            cond = (
-                                f"{var_name} is not None"
-                                if instr.opname.endswith('_IF_NONE')
-                                else f"{var_name} is not None (jump-taken)"
+                        guard_var = block.instructions[i - 1].argval
+                    # Pattern: LOAD_FAST self → LOAD_ATTR X → POP_JUMP_IF_NONE
+                    # Establishes nonnull guard for "self.X"
+                    elif (i >= 2
+                          and block.instructions[i - 1].opname == 'LOAD_ATTR'
+                          and block.instructions[i - 2].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW')
+                          and block.instructions[i - 2].argval in ('self', 'cls')):
+                        attr_name = block.instructions[i - 1].argval
+                        if isinstance(attr_name, str):
+                            guard_var = f"self.{attr_name}"
+                    if guard_var:
+                        # POP_JUMP_IF_NONE: fallthrough implies nonnull
+                        # POP_JUMP_IF_NOT_NONE: jump-taken implies nonnull
+                        cond = (
+                            f"{guard_var} is not None"
+                            if instr.opname.endswith('_IF_NONE')
+                            else f"{guard_var} is not None (jump-taken)"
+                        )
+                        guards.add(
+                            GuardFact(
+                                guard_type="nonnull",
+                                variable=guard_var,
+                                established_at=block.id,
+                                condition=cond,
                             )
-                            guards.add(
-                                GuardFact(
-                                    guard_type="nonnull",
-                                    variable=var_name,
-                                    established_at=block.id,
-                                    condition=cond,
-                                )
-                            )
+                        )
                 
                 # Pattern: x = y or default (or-default pattern)
                 # LOAD_FAST y, COPY, TO_BOOL, POP_JUMP_IF_TRUE, POP_TOP, LOAD_CONST default, STORE_FAST x
@@ -911,7 +921,12 @@ class GuardAnalyzer:
         prev_instrs: List[dis.Instruction],
         block: BasicBlock
     ) -> Optional[GuardFact]:
-        """Check for isinstance call pattern."""
+        """Check for isinstance call pattern.
+        
+        Handles both simple variables and self-attribute access:
+        - isinstance(var, Type)  → guard on 'var'
+        - isinstance(self.attr, Type)  → nonnull guard on 'self.attr'
+        """
         # Look for: LOAD_GLOBAL 'isinstance', LOAD_* var, LOAD_* type
         for i, instr in enumerate(prev_instrs):
             if (instr.opname in ('LOAD_GLOBAL', 'LOAD_BUILTIN') and 
@@ -921,7 +936,24 @@ class GuardAnalyzer:
                     var_instr = prev_instrs[i + 1]
                     if var_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
                         var_name = var_instr.argval
-                        # Next should be type load
+                        # Check for self.attr pattern: LOAD_FAST self → LOAD_ATTR attr → LOAD_GLOBAL Type
+                        if (i + 3 < len(prev_instrs)
+                                and prev_instrs[i + 2].opname == 'LOAD_ATTR'
+                                and var_name in ('self', 'cls')
+                                and isinstance(prev_instrs[i + 2].argval, str)
+                                and prev_instrs[i + 3].opname in ('LOAD_GLOBAL', 'LOAD_NAME')):
+                            attr_name = prev_instrs[i + 2].argval
+                            type_name = prev_instrs[i + 3].argval
+                            qual_var = f"{var_name}.{attr_name}"
+                            # Use guard_type="nonnull" without extra so that
+                            # has_nonnull(qual_var) matches (key = "nonnull:self.attr").
+                            return GuardFact(
+                                guard_type="nonnull",
+                                variable=qual_var,
+                                established_at=block.id,
+                                condition=f"isinstance({qual_var}, {type_name})"
+                            )
+                        # Simple variable: LOAD_FAST var, LOAD_GLOBAL Type
                         if i + 2 < len(prev_instrs):
                             type_instr = prev_instrs[i + 2]
                             if type_instr.opname in ('LOAD_GLOBAL', 'LOAD_NAME'):
@@ -951,10 +983,18 @@ class GuardAnalyzer:
                     load_instr = instrs[i - 2]
                     const_instr = instrs[i - 1]
                     
-                    if (load_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME') and
-                        const_instr.opname == 'LOAD_CONST' and 
+                    if (const_instr.opname == 'LOAD_CONST' and 
                         const_instr.argval is None):
-                        var_name = load_instr.argval
+                        var_name = None
+                        if load_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                            var_name = load_instr.argval
+                        # Pattern: LOAD_FAST self → LOAD_ATTR X → LOAD_CONST None → IS_OP
+                        elif (load_instr.opname == 'LOAD_ATTR'
+                              and i >= 3
+                              and instrs[i - 3].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW')
+                              and instrs[i - 3].argval in ('self', 'cls')
+                              and isinstance(load_instr.argval, str)):
+                            var_name = f"self.{load_instr.argval}"
                         if var_name:
                             # 'is not None' establishes nonnull on true branch
                             # 'is None' establishes nonnull on false branch
@@ -1099,7 +1139,7 @@ class GuardAnalyzer:
                                 # Found len() - next instruction should be container
                                 if j + 1 < i:
                                     container_instr = instrs[j + 1]
-                                    if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
+                                    if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_GLOBAL'):
                                         len_container = container_instr.argval
                                         len_call_idx = i
                                 break
@@ -2273,8 +2313,12 @@ class GuardAnalyzer:
                             # Found len() - next instruction should be container
                             if j + 1 < i:
                                 container_instr = instrs[j + 1]
-                                if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
-                                    len_container = container_instr.argval
+                                if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_GLOBAL'):
+                                    # Check for chained attr: LOAD_FAST x, LOAD_ATTR a → len(x.a)
+                                    if j + 2 < i and instrs[j + 2].opname == 'LOAD_ATTR':
+                                        len_container = f"{container_instr.argval}.{instrs[j + 2].argval}"
+                                    else:
+                                        len_container = container_instr.argval
                                     len_call_idx = i
                             break
                 if len_container:
@@ -2635,8 +2679,12 @@ class GuardAnalyzer:
                             # Next instruction should be the container
                             if j + 1 < i:
                                 container_instr = instrs[j + 1]
-                                if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME'):
-                                    container = container_instr.argval
+                                if container_instr.opname in ('LOAD_FAST', 'LOAD_FAST_BORROW', 'LOAD_NAME', 'LOAD_GLOBAL'):
+                                    # Check for chained attr: LOAD_FAST x, LOAD_ATTR a → len(x.a)
+                                    if j + 2 < i and instrs[j + 2].opname == 'LOAD_ATTR':
+                                        container = f"{container_instr.argval}.{instrs[j + 2].argval}"
+                                    else:
+                                        container = container_instr.argval
                             break
                 break
         

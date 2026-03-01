@@ -6960,8 +6960,10 @@ def analyze_file(
             from .semantics.interprocedural_bugs import analyze_file_for_bugs
             interproc_bugs = analyze_file_for_bugs(Path(filepath))
             
-            # Filter to only security bugs (not crash bugs, those are handled by symbolic execution)
-            security_bug_types = {
+            # Include security bugs and crash bugs from interprocedural analysis.
+            # Crash bugs (NULL_PTR, etc.) on self-attribute chains are not
+            # reliably caught by symbolic execution, so include them here.
+            reportable_bug_types = {
                 'SQL_INJECTION', 'COMMAND_INJECTION', 'PATH_INJECTION', 'CODE_INJECTION',
                 'CLEARTEXT_LOGGING', 'CLEARTEXT_STORAGE', 'WEAK_CRYPTO',
                 'INSECURE_COOKIE', 'COOKIE_INJECTION', 'FLASK_DEBUG',
@@ -6972,12 +6974,15 @@ def analyze_file(
                 'UNSAFE_DESERIALIZATION', 'PICKLE_INJECTION', 'YAML_INJECTION',
                 'HARDCODED_CREDENTIALS', 'WEAK_CRYPTO_KEY', 'BROKEN_CRYPTO_ALGORITHM',
                 'INSECURE_PROTOCOL', 'TARSLIP', 'ZIPSLIP',
+                # Crash bugs on self-attribute chains (e.g., self.cell.trainable_weights
+                # where self.cell may be None)
+                'NULL_PTR',
             }
             
-            security_bugs = [b for b in interproc_bugs if b.bug_type in security_bug_types]
+            reportable_bugs = [b for b in interproc_bugs if b.bug_type in reportable_bug_types]
             
-            # Add interprocedural security bugs to results
-            for interproc_bug in security_bugs:
+            # Add interprocedural bugs to results
+            for interproc_bug in reportable_bugs:
                 bug = BugFinding(
                     bug_type=interproc_bug.bug_type,
                     location=interproc_bug.crash_location,

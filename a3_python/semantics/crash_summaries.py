@@ -461,6 +461,12 @@ class CrashSummary:
     # Maps variable -> set of variables that hold the same value
     value_aliases: Dict[str, Set[str]] = field(default_factory=dict)
     
+    # NULL_PTR target variables: tracks the actual variable names involved in
+    # unguarded NULL_PTR crash sites (e.g., 'self.cell' for self.cell.method()).
+    # Used by the interprocedural bug tracker to set accurate bug_variable,
+    # avoiding misattribution to 'self' which would be suppressed by intent filter.
+    null_ptr_target_vars: Set[str] = field(default_factory=set)
+    
     # BYTECODE INSTRUCTIONS: Store for barrier-theoretic stdlib detection
     # This enables Papers #9-12 (ICE), #13-16 (IC3), #17-20 (CHC) to analyze
     # stdlib usage patterns and synthesize barriers
@@ -2091,6 +2097,7 @@ class BytecodeCrashSummaryAnalyzer:
         # Conservative: if we have no flow info, attribute access is still risky
         # but only if there are nullable params
         is_guarded = False
+        self_attr = None  # Track self-attribute name for NULL_PTR variable attribution
         if nullable_params:
             is_guarded = all(
                 guards.has_nonnull(self.code.co_varnames[p] if p < len(self.code.co_varnames) else f"p{p}")
@@ -2115,7 +2122,17 @@ class BytecodeCrashSummaryAnalyzer:
                 # Check if a nonnull guard was established for self.<attr>
                 qual_name = f"self.{self_attr}"
                 if guards.has_nonnull(qual_name) or self.intraproc.is_nonnull(location.offset, qual_name):
-                    is_guarded = True
+                    # self.<attr> is guarded (e.g., isinstance check).
+                    # However, if this is a property that delegates to
+                    # self.X.Y without checking a boolean state attribute
+                    # (e.g., self.trainable), it may return incorrect values
+                    # for some object states.  Detect missing state guards.
+                    if (self.param_count == 1
+                            and instr.argval == self.func_name
+                            and not self._has_self_attr_truthiness_guard()):
+                        is_guarded = False
+                    else:
+                        is_guarded = True
                 else:
                     is_guarded = False
             else:
@@ -2130,6 +2147,11 @@ class BytecodeCrashSummaryAnalyzer:
         if not is_guarded:
             self.summary.may_raise.add(ExceptionType.ATTRIBUTE_ERROR)
             self.crash_locations.append(('NULL_PTR', location))
+            # Track the actual target variable for accurate bug attribution.
+            # Without this, the bug_variable defaults to 'self' which gets
+            # suppressed by the intent filter (self is never None).
+            if self_attr is not None:
+                self.summary.null_ptr_target_vars.add(f"self.{self_attr}")
     
     def _check_call(
         self,
@@ -2643,6 +2665,33 @@ class BytecodeCrashSummaryAnalyzer:
                 and prev2.argval in ('self', 'cls')):
             return prev.argval
         return None
+    
+    def _has_self_attr_truthiness_guard(self) -> bool:
+        """Check if the method has a truthiness check on any self attribute.
+        
+        Detects the pattern: LOAD_FAST self → LOAD_ATTR X → [TO_BOOL] →
+        POP_JUMP_IF_TRUE/FALSE, which indicates the developer checks a boolean
+        self-attribute before proceeding.  Used to distinguish property methods
+        that properly guard delegation (e.g., ``if not self.trainable: return []``)
+        from those that skip the guard.
+        """
+        for i, instr in enumerate(self.instructions):
+            if instr.opname in ('POP_JUMP_IF_TRUE', 'POP_JUMP_IF_FALSE',
+                                'POP_JUMP_FORWARD_IF_TRUE', 'POP_JUMP_FORWARD_IF_FALSE'):
+                # Walk back past optional TO_BOOL
+                j = i - 1
+                if j >= 0 and self.instructions[j].opname == 'TO_BOOL':
+                    j -= 1
+                if j >= 0 and self.instructions[j].opname == 'NOT_TAKEN':
+                    j -= 1
+                # Check for LOAD_FAST self → LOAD_ATTR X
+                if (j >= 1
+                        and self.instructions[j].opname == 'LOAD_ATTR'
+                        and isinstance(self.instructions[j].argval, str)
+                        and self.instructions[j - 1].opname in ('LOAD_FAST', 'LOAD_FAST_BORROW')
+                        and self.instructions[j - 1].argval in ('self', 'cls')):
+                    return True
+        return False
     
     def _is_slice_subscript(self, offset: int) -> bool:
         """
