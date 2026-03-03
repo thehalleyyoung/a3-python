@@ -9,7 +9,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-from pyfromscratch.semantics.sota_interprocedural import analyze_file_interprocedural
+from a3_python.semantics.sota_interprocedural import analyze_file_interprocedural
 
 
 def test_precision_improvement_with_1cfa():

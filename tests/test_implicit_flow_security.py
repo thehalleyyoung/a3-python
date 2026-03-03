@@ -16,12 +16,12 @@ Test Coverage:
 import pytest
 from pathlib import Path
 
-from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
+from a3_python.z3model.taint_lattice import (
     SourceType, SinkType, TaintLabel, PCTaint, SecurityViolation
 )
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
-from pyfromscratch.contracts.security_lattice import init_security_contracts
+from a3_python.z3model.values import SymbolicValue, ValueTag
+from a3_python.contracts.security_lattice import init_security_contracts
 
 # Initialize contracts once
 init_security_contracts()
@@ -318,7 +318,7 @@ handler()
         test_file = tmp_path / "test_implicit_code_injection.py"
         test_file.write_text(code)
         
-        from pyfromscratch.analyzer import analyze
+        from a3_python.analyzer import analyze
         result = analyze(test_file)
         
         # Should detect BUG (either CODE_INJECTION or PANIC)
@@ -341,7 +341,7 @@ def handler():
         test_file = tmp_path / "test_implicit_safe.py"
         test_file.write_text(code)
         
-        from pyfromscratch.analyzer import analyze
+        from a3_python.analyzer import analyze
         result = analyze(test_file)
         
         # Should be SAFE (no taint sources)

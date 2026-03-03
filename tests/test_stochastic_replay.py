@@ -1,4 +1,4 @@
-from pyfromscratch.dse.stochastic_replay import stochastic_replay_find_bug
+from a3_python.dse.stochastic_replay import stochastic_replay_find_bug
 
 
 def test_stochastic_replay_finds_real_div_zero_bug():

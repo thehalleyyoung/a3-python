@@ -15,9 +15,9 @@ These tests verify that:
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
-from pyfromscratch.unsafe.registry import check_unsafe_regions
-from pyfromscratch.unsafe import timing_channel
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
+from a3_python.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import timing_channel
 
 
 def test_timing_channel_explicit_flag():

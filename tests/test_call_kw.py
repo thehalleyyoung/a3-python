@@ -7,7 +7,7 @@ Stack layout: [callable, NULL, positional_args..., keyword_args..., kwnames_tupl
 
 import pytest
 import dis
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicPath
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicPath
 
 
 class TestBasicCallKw:

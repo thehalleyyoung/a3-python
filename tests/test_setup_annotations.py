@@ -12,7 +12,7 @@ import pytest
 import dis
 import tempfile
 from pathlib import Path
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_setup_annotations_opcode_exists():

@@ -13,7 +13,7 @@ from pathlib import Path
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pyfromscratch.semantics.intraprocedural_taint import (
+from a3_python.semantics.intraprocedural_taint import (
     IntraproceduralTaintAnalyzer,
     extract_module_imports,
 )

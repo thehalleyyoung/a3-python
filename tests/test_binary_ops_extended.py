@@ -13,7 +13,7 @@ Python's binary operation semantics across different type combinations.
 
 import pytest
 from pathlib import Path
-from pyfromscratch.analyzer import analyze
+from a3_python.analyzer import analyze
 
 
 class TestIntFloatOperations:

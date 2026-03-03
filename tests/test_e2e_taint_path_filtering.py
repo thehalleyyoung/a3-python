@@ -6,8 +6,8 @@ This test simulates the false positive pattern found in PyGoat triage:
 - Should NOT be reported as a violation
 """
 
-from pyfromscratch.z3model.taint_lattice import TaintLabel, SourceType
-from pyfromscratch.contracts.security_lattice import check_sink_taint
+from a3_python.z3model.taint_lattice import TaintLabel, SourceType
+from a3_python.contracts.security_lattice import check_sink_taint
 
 
 def test_redirect_without_taint_flow():

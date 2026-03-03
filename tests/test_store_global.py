@@ -6,8 +6,8 @@ This opcode is rarely used in modern Python but is part of the complete bytecode
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.z3model.values import ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.z3model.values import ValueTag
 import z3
 
 

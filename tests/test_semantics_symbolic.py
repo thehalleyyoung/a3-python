@@ -7,8 +7,8 @@ simple Python programs and maintain correct path conditions.
 
 import pytest
 import z3
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, symbolic_execute
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, symbolic_execute
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_symbolic_simple_constant():

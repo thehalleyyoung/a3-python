@@ -12,8 +12,8 @@ using RAG cycle detection, lock ordering analysis, and happens-before violations
 """
 
 import pytest
-from pyfromscratch.unsafe import deadlock
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import deadlock
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 class MockState:

@@ -14,9 +14,9 @@ These tests verify that:
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
-from pyfromscratch.unsafe.registry import check_unsafe_regions
-from pyfromscratch.unsafe import info_leak
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
+from a3_python.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import info_leak
 
 
 def test_info_leak_explicit_flag():

@@ -6,12 +6,12 @@ when the pattern itself carries injection taint from re.compile().
 """
 
 import pytest
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     get_sink_contract,
     check_sink_taint,
     init_security_contracts,
 )
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel,
     SourceType,
     SinkType,

@@ -8,7 +8,7 @@ import pytest
 import dis
 import types
 
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 def compile_code(source: str) -> types.CodeType:

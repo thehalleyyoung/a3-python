@@ -2,7 +2,7 @@
 """Quick test for varargs taint propagation fix in Iteration 601."""
 
 from pathlib import Path
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 def test_varargs_propagation():
     """Test that PATH_INJECTION is detected through varargs in interprocedural analysis."""

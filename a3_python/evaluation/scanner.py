@@ -330,7 +330,7 @@ class RepoScanner:
 def main():
     """CLI for repo scanning."""
     if len(sys.argv) < 2:
-        print("Usage: python -m pyfromscratch.evaluation.scanner <tier|repo_name>")
+        print("Usage: python -m a3_python.evaluation.scanner <tier|repo_name>")
         print("  tier: 1, 2, or 3")
         print("  repo_name: specific repo from the list")
         sys.exit(1)

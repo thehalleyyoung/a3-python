@@ -11,10 +11,10 @@ without entity expansion protection.
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType
 )
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     check_sink_taint, get_sink_contracts,
     init_security_contracts, apply_sanitizer,
 )

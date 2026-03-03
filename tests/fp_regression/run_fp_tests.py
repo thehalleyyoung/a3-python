@@ -18,8 +18,8 @@ import json
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from pyfromscratch.analyzer import Analyzer, AnalysisResult
-from pyfromscratch.semantics.interprocedural_bugs import analyze_file_for_bugs, InterproceduralBug
+from a3_python.analyzer import Analyzer, AnalysisResult
+from a3_python.semantics.interprocedural_bugs import analyze_file_for_bugs, InterproceduralBug
 
 
 @dataclass

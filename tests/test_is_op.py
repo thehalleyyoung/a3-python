@@ -2,8 +2,8 @@
 Test IS_OP opcode for identity comparisons.
 """
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.z3model.values import ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.z3model.values import ValueTag
 
 
 def test_is_op_none_true():

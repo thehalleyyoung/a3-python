@@ -7,8 +7,8 @@ This is the foundational opcode for set literals and set comprehensions.
 import pytest
 import dis
 import types
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_build_set_opcode_direct():
@@ -158,7 +158,7 @@ def test_build_set_manual_multiple():
 
 def test_build_set_in_bytecode():
     """Test that BUILD_SET doesn't raise NotImplementedError in symbolic execution."""
-    from pyfromscratch.semantics.symbolic_vm import symbolic_execute
+    from a3_python.semantics.symbolic_vm import symbolic_execute
     
     # Set comprehension that will use BUILD_SET
     source = "{x for x in [1, 2]}"

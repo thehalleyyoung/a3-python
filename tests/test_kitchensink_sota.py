@@ -18,16 +18,16 @@ for detection or FP/TP discrimination with the kitchensink approach.
 import pytest
 import z3
 
-from pyfromscratch.barriers.ice import ice_learn_conjunction
-from pyfromscratch.barriers.cegis import CEGISConfig
-from pyfromscratch.barriers.predicate_abstraction import (
+from a3_python.barriers.ice import ice_learn_conjunction
+from a3_python.barriers.cegis import CEGISConfig
+from a3_python.barriers.predicate_abstraction import (
     Predicate,
     PredicateSet,
     AbstractState,
 )
-from pyfromscratch.barriers.ranking import RankingFunctionCertificate
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.barriers.ranking import RankingFunctionCertificate
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 # =============================================================================

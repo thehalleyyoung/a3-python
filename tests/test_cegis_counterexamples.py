@@ -7,17 +7,17 @@ counterexamples and uses them to guide parameter synthesis.
 
 import pytest
 import z3
-from pyfromscratch.barriers.cegis import (
+from a3_python.barriers.cegis import (
     CEGISBarrierSynthesizer,
     CEGISConfig,
     Counterexample,
     synthesize_barrier_cegis,
 )
-from pyfromscratch.barriers.invariants import (
+from a3_python.barriers.invariants import (
     InductivenessResult,
     InductivenessChecker,
 )
-from pyfromscratch.barriers.templates import quadratic_barrier
+from a3_python.barriers.templates import quadratic_barrier
 
 
 def test_counterexample_value_extraction():
@@ -245,7 +245,7 @@ def test_counterexample_summary_formatting():
         barrier_value=None,
     )
     
-    from pyfromscratch.barriers.cegis import CEGISResult
+    from a3_python.barriers.cegis import CEGISResult
     
     result = CEGISResult(
         success=False,

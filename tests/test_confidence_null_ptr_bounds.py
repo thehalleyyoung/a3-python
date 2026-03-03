@@ -7,8 +7,8 @@ bug types like DIV_ZERO or ASSERT_FAIL.
 """
 
 import pytest
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
-from pyfromscratch.cfg.call_graph import build_call_graph_from_directory
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.cfg.call_graph import build_call_graph_from_directory
 from pathlib import Path
 import tempfile
 import shutil

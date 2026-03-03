@@ -6,7 +6,7 @@ Target: Python 3.11+ generator/coroutine opcodes.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 class TestGeneratorOpcodes:

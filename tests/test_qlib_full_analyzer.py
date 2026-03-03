@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 def main():
     print("Testing Qlib files with full Analyzer")

@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
-from pyfromscratch.fp_context import FPContextDetector
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.fp_context import FPContextDetector
 
 tracker = InterproceduralBugTracker.from_project(Path('external_tools/graphrag'))
 bugs = tracker.find_all_bugs(apply_fp_reduction=False)

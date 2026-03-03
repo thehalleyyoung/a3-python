@@ -6,13 +6,13 @@ and can synthesize inductive invariants for simple loops.
 """
 
 import pytest
-from pyfromscratch.semantics.invariant_integration import (
+from a3_python.semantics.invariant_integration import (
     InvariantIntegrator,
     LoopInvariantResult,
     add_invariant_synthesis_to_state
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
-from pyfromscratch.cfg.loop_analysis import extract_loops
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
+from a3_python.cfg.loop_analysis import extract_loops
 
 
 class TestInvariantIntegrator:
@@ -144,8 +144,8 @@ while i < 10:
 """, "<test>", "exec")
         
         # Create a minimal state
-        from pyfromscratch.z3model.heap import SymbolicHeap
-        from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
+        from a3_python.z3model.heap import SymbolicHeap
+        from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
         import z3
         
         state = SymbolicMachineState(
@@ -175,8 +175,8 @@ while i < 10:
     i = i + 1
 """, "<test>", "exec")
         
-        from pyfromscratch.z3model.heap import SymbolicHeap
-        from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
+        from a3_python.z3model.heap import SymbolicHeap
+        from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
         import z3
         
         state = SymbolicMachineState(
@@ -237,7 +237,7 @@ class TestEndToEndIntegration:
     
     def test_cli_flag_integration(self):
         """Test that --synthesize-invariants flag works."""
-        from pyfromscratch.analyzer import analyze
+        from a3_python.analyzer import analyze
         from pathlib import Path
         
         # Create a test file
@@ -269,7 +269,7 @@ while i < 10:
     
     def test_analyzer_integration(self):
         """Test that Analyzer class accepts synthesize_invariants parameter."""
-        from pyfromscratch.analyzer import Analyzer
+        from a3_python.analyzer import Analyzer
         
         # Should accept the parameter
         analyzer = Analyzer(synthesize_invariants=True)

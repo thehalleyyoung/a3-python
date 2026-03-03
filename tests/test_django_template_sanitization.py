@@ -6,10 +6,10 @@ are properly recognized as sanitizers that prevent XSS via auto-escaping.
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType
 )
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     apply_source_taint, apply_sanitizer, check_sink_taint,
     get_sanitizer_contract, get_sink_contract
 )

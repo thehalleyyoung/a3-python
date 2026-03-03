@@ -9,7 +9,7 @@ Phase 3 implements recursion analysis with ranking function verification:
 """
 
 import pytest
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_simple_terminating_recursion_factorial(tmp_path):

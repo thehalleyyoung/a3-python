@@ -7,9 +7,9 @@ enable reasoning about collection properties without pattern matching.
 
 import pytest
 import z3
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.z3model.heap import SymbolicHeap
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.z3model.heap import SymbolicHeap
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_seq_len_observer_basic():

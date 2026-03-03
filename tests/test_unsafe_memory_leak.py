@@ -5,8 +5,8 @@ Tests both BUG (unbounded heap growth) and NON-BUG (bounded allocation) cases.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-from pyfromscratch.unsafe import memory_leak
+from a3_python.semantics.symbolic_vm import SymbolicMachineState
+from a3_python.unsafe import memory_leak
 
 
 class TestMemoryLeakPredicate:
@@ -83,12 +83,12 @@ class TestMemoryLeakSemantics:
     
     def test_memory_leak_registered(self):
         """MEMORY_LEAK should be in the unsafe registry."""
-        from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
+        from a3_python.unsafe.registry import UNSAFE_PREDICATES
         assert "MEMORY_LEAK" in UNSAFE_PREDICATES
     
     def test_memory_leak_predicate_callable(self):
         """MEMORY_LEAK predicate should be callable."""
-        from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
+        from a3_python.unsafe.registry import UNSAFE_PREDICATES
         predicate, _ = UNSAFE_PREDICATES["MEMORY_LEAK"]
         
         state = SymbolicMachineState()
@@ -97,7 +97,7 @@ class TestMemoryLeakSemantics:
     
     def test_memory_leak_extractor_callable(self):
         """MEMORY_LEAK extractor should be callable."""
-        from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
+        from a3_python.unsafe.registry import UNSAFE_PREDICATES
         _, extractor = UNSAFE_PREDICATES["MEMORY_LEAK"]
         
         state = SymbolicMachineState()

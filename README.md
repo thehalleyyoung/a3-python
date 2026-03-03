@@ -52,6 +52,16 @@ a3 scan . --triage github                # uses GITHUB_TOKEN, free in CI
 a3 scan . --triage anthropic              # uses ANTHROPIC_API_KEY
 ```
 
+#### Using GitHub Models locally (free, no API key needed)
+
+If you have the [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`), you can use GitHub Models for triage locally — no API key signup required:
+
+```bash
+export GITHUB_TOKEN=$(gh auth token) && a3 scan . --triage github --verbose
+```
+
+This exports your existing GitHub CLI token and uses it to access GitHub Models for agentic triage. In CI (GitHub Actions), `GITHUB_TOKEN` is already available automatically.
+
 Or run scan and triage as separate steps:
 
 ```bash
@@ -199,6 +209,70 @@ a3 baseline diff --sarif results.sarif
 a3 baseline accept --sarif results.sarif
 ```
 
+### Two Usage Patterns
+
+#### Scenario A: Whole-Repo Scan
+
+Scan every Python file in one pass. Best for first-time adoption, weekly audits, or establishing a baseline.
+
+```bash
+# Scan the entire repository
+a3 scan . --interprocedural --dse-verify --output-sarif results.sarif
+
+# Agentic triage (optional — filters remaining false positives)
+a3 triage --sarif results.sarif --provider github --agentic \
+  --output-sarif triaged.sarif
+
+# Lock current findings as the baseline (ratchet start)
+a3 baseline accept --sarif triaged.sarif
+git add .a3-baseline.json && git commit -m "ci: establish a3 baseline" && git push
+```
+
+The scheduled workflow (`a3-scheduled-scan.yml`) repeats this automatically every week.
+
+#### Scenario B: Incremental — Auto-Invoke on Every Python File Change
+
+After `a3 init . --copilot`, **no manual step is needed**. The generated `a3-pr-scan.yml` triggers whenever a `.py` file is added or modified:
+
+```yaml
+on:
+  push:
+    branches: [main]
+    paths: ["**.py"]          # triggers ONLY when .py files change
+  pull_request:
+    branches: [main]
+    paths: ["**.py"]
+```
+
+**Example — adding a new file:**
+
+```bash
+cat > src/payments.py << 'EOF'
+def charge(amount, discount):
+    return amount / discount   # DIV_ZERO: discount could be 0
+
+def refund(amount, count):
+    if count > 0:
+        return amount / count  # SAFE: guarded by count > 0
+    return 0.0
+EOF
+
+git add src/payments.py
+git commit -m "feat: add payment processing"
+git push   # <-- CI auto-triggers, scans only src/payments.py
+```
+
+What happens automatically:
+
+1. Push triggers `a3-pr-scan.yml` (path filter matches `**.py`)
+2. Workflow detects changed files via `git diff --name-only`
+3. a3 scans only `src/payments.py` — finds DIV_ZERO in `charge()`, proves `refund()` safe
+4. Baseline diff: new bug not in baseline → **CI fails** until the bug is fixed or accepted
+
+Non-Python changes (docs, configs, images) do not trigger the workflow at all.
+
+---
+
 ### Using a different LLM provider (optional)
 
 If you prefer Claude or GPT-5 via your own API key instead of GitHub Models:
@@ -291,7 +365,7 @@ a3 <target> [options]           # legacy syntax, same behavior
 | `--output-sarif PATH` | Write SARIF 2.1.0 JSON |
 | `--triage [PROVIDER]` | Run agentic triage after scan (auto-detects API key, or specify: `openai`, `anthropic`, `github`) |
 | `--triage-model MODEL` | LLM model for integrated triage (default: provider-appropriate) |
-| `--save-results PATH` | Write results as pickle (default: `results/<name>_results.pkl`) |
+| `--save-results PATH` | Write results as JSON (default: `results/<name>_results.json`) |
 | `--verbose` | Detailed step-by-step output |
 | `--config PATH` | Path to `.a3.yml` |
 
@@ -574,16 +648,6 @@ a3 triage --sarif results.sarif --output-sarif triaged.sarif --provider github -
 
 # Baseline ratchet check
 a3 baseline diff --sarif triaged.sarif --auto-issue
-```
-
----
-
-## Docker
-
-```bash
-docker build -t a3 .
-docker run --rm -v $(pwd)/my_project:/target a3 /target
-docker run --rm -v $(pwd):/code a3 /code/myfile.py --functions
 ```
 
 ---

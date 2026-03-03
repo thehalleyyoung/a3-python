@@ -11,4 +11,9 @@ A program analysis toolchain that produces:
 No heuristics. Grounded in Python→Z3 heap/transition/barrier model.
 """
 
-__version__ = "0.1.10"
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
+
+try:
+    __version__: str = _pkg_version("a3-python")
+except PackageNotFoundError:
+    __version__ = "0.0.0+dev"

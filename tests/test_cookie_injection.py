@@ -22,7 +22,7 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from pyfromscratch.semantics.sota_intraprocedural import SOTAIntraproceduralAnalyzer
+from a3_python.semantics.sota_intraprocedural import SOTAIntraproceduralAnalyzer
 
 
 class TestCookieInjection:

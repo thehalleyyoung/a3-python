@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyfromscratch.dse.concolic import ConcreteInput
-from pyfromscratch.dse.lockstep import run_lockstep
+from a3_python.dse.concolic import ConcreteInput
+from a3_python.dse.lockstep import run_lockstep
 
 
 def _compile_file(path: Path) -> object:

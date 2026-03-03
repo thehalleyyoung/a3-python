@@ -8,8 +8,8 @@ Example: numpy/ma/core.py triggers EXTENDED_ARG due to large constant table.
 import pytest
 import dis
 
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.z3model.values import ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.z3model.values import ValueTag
 
 
 class TestExtendedArg:

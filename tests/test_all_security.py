@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, '.')
 from pathlib import Path
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 a = Analyzer(verbose=False)
 

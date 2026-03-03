@@ -7,10 +7,10 @@ a mapping from program variable names to their Z3 symbolic expressions.
 
 import z3
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
-from pyfromscratch.barriers.cegis import CEGISBarrierSynthesizer, CEGISConfig, Counterexample
-from pyfromscratch.barriers.invariants import BarrierCertificate, InductivenessChecker
+from a3_python.semantics.symbolic_vm import SymbolicMachineState
+from a3_python.z3model.values import SymbolicValue, ValueTag
+from a3_python.barriers.cegis import CEGISBarrierSynthesizer, CEGISConfig, Counterexample
+from a3_python.barriers.invariants import BarrierCertificate, InductivenessChecker
 
 
 class TestZ3VariableMapping:

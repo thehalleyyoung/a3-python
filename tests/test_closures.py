@@ -6,7 +6,7 @@ which are essential for nested function definitions.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 class TestSimpleClosures:

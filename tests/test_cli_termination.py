@@ -127,7 +127,7 @@ countdown(10)
 
 def test_analyzer_termination_integration():
     """Test Analyzer class directly with check_termination=True."""
-    from pyfromscratch.analyzer import Analyzer
+    from a3_python.analyzer import Analyzer
     
     code = """
 n = 10
@@ -155,7 +155,7 @@ while n > 0:
 
 def test_analyzer_termination_disabled_by_default():
     """Test that termination checking is disabled by default."""
-    from pyfromscratch.analyzer import Analyzer
+    from a3_python.analyzer import Analyzer
     
     code = """
 n = 10

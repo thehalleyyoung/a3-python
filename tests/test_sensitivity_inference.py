@@ -20,9 +20,9 @@ import sys
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pyfromscratch.semantics.security_tracker_lattice import infer_sensitivity_from_name
-from pyfromscratch.z3model.taint_lattice import SourceType, TaintLabel
-from pyfromscratch.analyzer import Analyzer
+from a3_python.semantics.security_tracker_lattice import infer_sensitivity_from_name
+from a3_python.z3model.taint_lattice import SourceType, TaintLabel
+from a3_python.analyzer import Analyzer
 
 
 class TestInferSensitivityPatterns:

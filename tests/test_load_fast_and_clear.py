@@ -9,8 +9,8 @@ Semantics:
 
 import pytest
 import dis
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_load_fast_and_clear_opcode_exists():

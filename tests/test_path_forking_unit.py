@@ -12,7 +12,7 @@ API calls with assertions on results.
 import pytest
 from pathlib import Path
 import tempfile
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_path_forking_basic():

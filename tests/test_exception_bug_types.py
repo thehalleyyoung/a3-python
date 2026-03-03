@@ -9,7 +9,7 @@ Each exception type has an optimal verification strategy from the papers.
 
 import pytest
 from pathlib import Path
-from pyfromscratch.unsafe.exception_bugs import (
+from a3_python.unsafe.exception_bugs import (
     ExceptionBugType,
     classify_exception,
     KITCHENSINK_STRATEGIES,

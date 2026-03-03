@@ -13,7 +13,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from pyfromscratch.semantics.sota_interprocedural import (
+from a3_python.semantics.sota_interprocedural import (
     SOTAInterproceduralAnalyzer,
 )
 

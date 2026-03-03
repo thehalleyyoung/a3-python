@@ -13,14 +13,14 @@ import pytest
 from pathlib import Path
 import z3
 
-from pyfromscratch.frontend.loader import load_python_string
-from pyfromscratch.barriers import (
+from a3_python.frontend.loader import load_python_string
+from a3_python.barriers import (
     BarrierCertificate,
     InductivenessChecker,
     stack_depth_barrier,
     constant_barrier,
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
 
 
 def test_trivial_safe_proof():

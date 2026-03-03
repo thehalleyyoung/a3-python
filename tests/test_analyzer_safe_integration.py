@@ -8,7 +8,7 @@ with barrier certificate proofs for validated non-buggy programs.
 import pytest
 from pathlib import Path
 
-from pyfromscratch.analyzer import Analyzer, AnalysisResult
+from a3_python.analyzer import Analyzer, AnalysisResult
 
 
 def test_analyzer_safe_simple_arithmetic():

@@ -5,7 +5,7 @@ Each test compares the concrete VM's result against CPython's actual execution.
 """
 
 import pytest
-from pyfromscratch.semantics.concrete_vm import ConcreteVM, load_and_run
+from a3_python.semantics.concrete_vm import ConcreteVM, load_and_run
 
 
 def test_simple_constant():

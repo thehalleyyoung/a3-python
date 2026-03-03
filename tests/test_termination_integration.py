@@ -9,9 +9,9 @@ Verifies that:
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.cfg.loop_analysis import extract_loops, identify_loop_pattern
-from pyfromscratch.semantics.termination_integration import TerminationIntegrator
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.cfg.loop_analysis import extract_loops, identify_loop_pattern
+from a3_python.semantics.termination_integration import TerminationIntegrator
 
 
 def test_simple_countdown_loop():

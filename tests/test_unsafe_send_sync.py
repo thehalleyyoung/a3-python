@@ -13,8 +13,8 @@ contract violations distinct from DATA_RACE and DEADLOCK.
 """
 
 import pytest
-from pyfromscratch.unsafe import send_sync
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import send_sync
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 class MockState:

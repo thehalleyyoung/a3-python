@@ -1,4 +1,4 @@
-from pyfromscratch.barriers.sos_toolbox import prove_guarded_hazards_compact
+from a3_python.barriers.sos_toolbox import prove_guarded_hazards_compact
 
 
 def test_compact_bounds_prove_div_zero_safe():

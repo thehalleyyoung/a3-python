@@ -11,7 +11,7 @@ from pathlib import Path
 import tempfile
 import textwrap
 
-from pyfromscratch.semantics.sota_interprocedural import (
+from a3_python.semantics.sota_interprocedural import (
     SOTAInterproceduralAnalyzer,
     analyze_file_interprocedural,
 )
@@ -312,7 +312,7 @@ def test_context_object_operations():
     """
     Test CallContext helper methods work correctly.
     """
-    from pyfromscratch.semantics.sota_interprocedural import CallContext
+    from a3_python.semantics.sota_interprocedural import CallContext
     
     # Empty context
     ctx0 = CallContext.empty()

@@ -8,9 +8,9 @@ Verifies that relational summaries correctly model stdlib module behaviors:
 """
 
 import pytest
-from pyfromscratch.contracts.relations import get_relational_summary, has_relational_summary
-from pyfromscratch.contracts.stdlib_module_relations import init_stdlib_module_relations
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.contracts.relations import get_relational_summary, has_relational_summary
+from a3_python.contracts.stdlib_module_relations import init_stdlib_module_relations
+from a3_python.z3model.values import SymbolicValue, ValueTag
 import z3
 
 

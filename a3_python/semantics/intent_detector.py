@@ -234,7 +234,7 @@ class IntentDetector:
         
         # Code pattern signals
         if source_code:
-            self._analyze_code_patterns(analysis, bug_type, source_code, line_number)
+            self._analyze_code_patterns(analysis, bug_type, source_code, line_number, function_name)
         
         # Bug-type specific analysis
         self._analyze_bug_type_context(analysis, bug_type, variable_name)
@@ -243,11 +243,19 @@ class IntentDetector:
     
     def _analyze_file_context(self, analysis: IntentAnalysis, file_path: str):
         """Analyze file path for intent signals."""
+        import os
         path_str = str(file_path)
+        basename = os.path.basename(path_str)
         
-        # Test files
+        # Test files - match basename for name patterns, full path for dir patterns
         for pattern in self._compiled_patterns['test']:
-            if pattern.search(path_str):
+            pat_str = pattern.pattern
+            # Patterns that match directory structure use full path
+            if '/' in pat_str:
+                match_str = path_str
+            else:
+                match_str = basename
+            if pattern.search(match_str):
                 analysis.add_signal(
                     IntentCategory.TEST_FILE,
                     0.95,  # Very high confidence - tests are intentional
@@ -297,7 +305,9 @@ class IntentDetector:
         # self/cls never None in methods
         if bug_type == 'NULL_PTR' and variable_name:
             base_var = variable_name.split('.')[0].split('[')[0]
-            if base_var in ('self', 'cls'):
+            # Only suppress when the variable IS 'self'/'cls' itself,
+            # not 'self.attr' (attribute may legitimately be None)
+            if base_var in ('self', 'cls') and '.' not in variable_name:
                 analysis.add_signal(
                     IntentCategory.PYTHON_SELF_INVARIANT,
                     0.99,  # Extremely high - Python guarantees this
@@ -314,15 +324,9 @@ class IntentDetector:
                     f"param_0 in method '{function_name}' is likely 'self'"
                 )
         
-        # Slicing operations are safe
-        if bug_type == 'BOUNDS':
-            # This is a heuristic - we'd need more context to be sure
-            # But slicing (s[i:j]) never raises IndexError
-            analysis.add_signal(
-                IntentCategory.PYTHON_SAFE_SLICING,
-                0.3,  # Low confidence without code analysis
-                "Python slicing operations are safe (never raise IndexError)"
-            )
+        # Note: slicing (s[i:j]) never raises IndexError, but BOUNDS bugs
+        # detected by bytecode analysis are actual index operations (s[i]),
+        # not slices. Don't blanket-suppress BOUNDS findings here.
     
     def _analyze_framework_context(
         self,
@@ -358,19 +362,34 @@ class IntentDetector:
         analysis: IntentAnalysis,
         bug_type: str,
         source_code: str,
-        line_number: Optional[int]
+        line_number: Optional[int],
+        function_name: Optional[str] = None,
     ):
         """Analyze source code for guard patterns and intentional behavior."""
         
-        # Check for guard patterns
-        for pattern in self._compiled_patterns['guard']:
-            if pattern.search(source_code):
-                analysis.add_signal(
-                    IntentCategory.GUARD_PATTERN_DETECTED,
-                    0.7,
-                    f"Guard pattern detected: {pattern.pattern}"
-                )
-                break
+        # Scope guard pattern search to the containing function body,
+        # not the entire file.  Searching the whole file causes false
+        # matches on unrelated code (e.g. a ternary in a helper function
+        # does not guard the variable in the function under analysis).
+        guard_search_code = self._extract_function_source(
+            source_code, function_name, line_number
+        )
+        
+        # Check for guard patterns.
+        # Skip for BOUNDS bugs: bytecode-level GuardAnalyzer already performs
+        # precise, variable-aware guard detection.  Regex matching here is too
+        # coarse (e.g. a None-check on variable A suppresses BOUNDS on variable B).
+        # Skip for STALE_VALUE bugs: guard patterns like ``or {}`` are default
+        # argument idioms, not guards for counter-update ordering issues.
+        if bug_type not in ('BOUNDS', 'STALE_VALUE'):
+            for pattern in self._compiled_patterns['guard']:
+                if pattern.search(guard_search_code):
+                    analysis.add_signal(
+                        IntentCategory.GUARD_PATTERN_DETECTED,
+                        0.7,
+                        f"Guard pattern detected: {pattern.pattern}"
+                    )
+                    break
         
         # Check for intentional exception raising (VALUE_ERROR, etc.)
         if bug_type in ('VALUE_ERROR', 'TYPE_ERROR', 'RUNTIME_ERROR'):
@@ -418,6 +437,45 @@ class IntentDetector:
                         "Bug location is within exception handler"
                     )
     
+    def _extract_function_source(
+        self,
+        source_code: str,
+        function_name: Optional[str],
+        line_number: Optional[int],
+    ) -> str:
+        """Extract the source code of a specific function from the full file.
+
+        Falls back to the full source_code if the function cannot be located.
+        """
+        if not function_name:
+            return source_code
+
+        # Use the simple (last) component, e.g. "verify_collections"
+        simple_name = function_name.rsplit('.', 1)[-1] if '.' in function_name else function_name
+
+        try:
+            tree = ast.parse(source_code)
+        except SyntaxError:
+            return source_code
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == simple_name:
+                    lines = source_code.splitlines()
+                    start = node.lineno - 1
+                    end = node.end_lineno if hasattr(node, 'end_lineno') and node.end_lineno else len(lines)
+                    return '\n'.join(lines[start:end])
+
+        # Fallback: if function not found but we have a line number,
+        # return a window around the bug line
+        if line_number:
+            lines = source_code.splitlines()
+            start = max(0, line_number - 40)
+            end = min(len(lines), line_number + 10)
+            return '\n'.join(lines[start:end])
+
+        return source_code
+
     def _analyze_bug_type_context(
         self,
         analysis: IntentAnalysis,

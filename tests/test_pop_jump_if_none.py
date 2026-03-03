@@ -12,7 +12,7 @@ Common in patterns like:
 
 import pytest
 from pathlib import Path
-from pyfromscratch.analyzer import analyze
+from a3_python.analyzer import analyze
 
 
 def test_pop_jump_if_not_none_simple(tmp_path):

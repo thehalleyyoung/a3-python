@@ -6,8 +6,8 @@ These fields are reporting-only metadata and must not affect BUG/SAFE/UNKNOWN.
 
 import z3
 
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.z3model.taint_lattice import TaintLabel, SourceType, create_violation
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.z3model.taint_lattice import TaintLabel, SourceType, create_violation
 
 
 def test_symbolic_vm_sets_pts_reachability_and_depth_on_violation():

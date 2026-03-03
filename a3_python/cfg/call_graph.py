@@ -740,23 +740,317 @@ def _try_parse_multi_hunk(source: str, filename: str):
         if wrapped:
             func_defs.append(wrapped)
     
-    if not func_defs:
-        return None
+    if func_defs:
+        combined = '\n\n'.join(func_defs) + '\n'
+        try:
+            return ast.parse(combined, filename=filename)
+        except SyntaxError:
+            pass
     
-    combined = '\n\n'.join(func_defs) + '\n'
-    try:
-        return ast.parse(combined, filename=filename)
-    except SyntaxError:
+    # Fallback: merge all hunks into a single block, strip orphaned
+    # partial expressions and unterminated docstrings, then wrap.
+    merged = re.sub(r'^# @@ hunk @@\s*$', '', cleaned, flags=re.MULTILINE)
+    merged = re.sub(r'\n{3,}', '\n\n', merged)
+    result = _try_parse_merged_hunks(merged, filename)
+    if result is not None:
+        return result
+    
+    return None
+
+
+def _try_parse_merged_hunks(source: str, filename: str):
+    """Parse merged diff hunks by progressively stripping unparseable lines.
+    
+    Combines all hunks into a single block, removes unterminated docstrings
+    and orphaned partial expressions (e.g., string continuation lines from
+    across hunk boundaries), then wraps the result in a function.
+    """
+    import textwrap
+    import re
+
+    lines = source.splitlines(keepends=True)
+    if not lines:
         return None
+
+    # Strip unterminated triple-quoted strings at the start
+    stripped_source = _strip_orphaned_triple_quotes(source)
+    # Clean up interior issues from hunk boundaries
+    stripped_source = _cleanup_hunk_boundary_artifacts(stripped_source)
+    lines = stripped_source.splitlines(keepends=True)
+
+    # Progressively strip leading lines that look like orphaned expression
+    # fragments: string literals, unmatched parens, docstring content, etc.
+    max_strip = min(len(lines), 30)
+    for start in range(max_strip):
+        candidate = ''.join(lines[start:])
+        if not candidate.strip():
+            continue
+        dedented = textwrap.dedent(candidate)
+        if not dedented.strip():
+            continue
+        # Also strip orphaned quotes from this candidate
+        dedented = _strip_orphaned_triple_quotes(dedented)
+        # Strip orphaned partial expression lines at the beginning
+        dedented = _strip_leading_partial_lines(dedented)
+        if not dedented.strip():
+            continue
+        # Handle elif/else/except/finally without matching if/try
+        dedented = _fixup_orphaned_clauses(dedented)
+        # Close unclosed parentheses from incomplete expressions
+        dedented = _close_unclosed_expressions(dedented)
+        completed = _complete_trailing_blocks(dedented)
+        body = textwrap.indent(completed, "    ")
+        wrapped = f"def _a3_merged_snippet_():\n{body}\n"
+        try:
+            tree = ast.parse(wrapped, filename=filename)
+            return tree
+        except SyntaxError:
+            continue
+
+    return None
+
+
+def _cleanup_hunk_boundary_artifacts(source: str) -> str:
+    """Clean up artifacts that appear at hunk boundaries inside merged code.
+    
+    1. Remove blank lines that interrupt multi-line expressions (line ending
+       with +, -, *, /, etc. followed by blank line then continuation).
+    2. Remove orphaned string continuation lines that appear after a complete
+       statement (e.g., lines that are just string literals with closing parens
+       but the expression start is missing from the diff context).
+    3. Strip trailing incomplete function definitions.
+    """
+    import re
+
+    lines = source.splitlines(keepends=True)
+    result = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].rstrip('\n\r')
+        stripped_s = stripped.strip()
+
+        # Rule 1: remove blank lines inside multi-line expressions.
+        # If previous line ends with a continuation operator and next non-blank
+        # line is a string/expression continuation, skip the blank line.
+        if not stripped_s and result:
+            prev = result[-1].rstrip('\n\r').rstrip()
+            if prev and prev[-1] in ('+', ',', '(', '[', '{', '\\'):
+                # Skip blank line(s)
+                i += 1
+                continue
+
+        # Rule 2: detect orphaned string continuation lines in the middle.
+        # Pattern: an indented line that starts with a string literal and ends
+        # with ) but the statement it belongs to is not present.
+        # Only apply if previous non-blank line ends with a complete statement.
+        if stripped_s and re.match(r"^['\"]", stripped_s):
+            # Check if this looks like a continuation of a previous expression
+            # Find the previous non-blank line
+            prev_idx = len(result) - 1
+            while prev_idx >= 0 and not result[prev_idx].strip():
+                prev_idx -= 1
+            if prev_idx >= 0:
+                prev_stripped = result[prev_idx].rstrip('\n\r').rstrip()
+                # If previous line ends with a complete statement (no open expr)
+                # and this line is an orphaned continuation, skip it
+                if prev_stripped and prev_stripped[-1] not in ('+', ',', '(', '[', '{', '\\'):
+                    # This string line is orphaned — skip it and any following
+                    # continuation lines
+                    j = i
+                    while j < len(lines):
+                        ls = lines[j].strip()
+                        if not ls:
+                            j += 1
+                            continue
+                        if re.match(r"^['\"]", ls) or re.match(r"^\s*%\s*\(", ls):
+                            j += 1
+                            continue
+                        if ls.startswith('%') or ls.endswith(')'):
+                            j += 1
+                            continue
+                        break
+                    i = j
+                    continue
+
+        result.append(lines[i])
+        i += 1
+
+    # Rule 3: strip trailing incomplete function/class definitions
+    while result:
+        last = result[-1].rstrip('\n\r').strip()
+        if not last:
+            result.pop()
+            continue
+        # Incomplete def/class: line ends with comma or open paren
+        if last.endswith(',') or (last.startswith('def ') and not last.endswith(':')):
+            result.pop()
+            continue
+        break
+
+    return ''.join(result)
+
+
+def _close_unclosed_expressions(source: str) -> str:
+    """Close unclosed parentheses/brackets in incomplete expressions.
+    
+    Diff fragments often contain multi-line expressions where the closing
+    delimiter is on a line not included in the diff.  For example:
+    
+        raise ValueError('message' +
+                         str(x) + '. '
+        next_statement = ...     # ← parser error: unclosed paren
+    
+    This helper finds lines where the running paren/bracket count is unbalanced
+    and inserts closing delimiters before the next complete statement.
+    """
+    import re
+
+    lines = source.splitlines(keepends=True)
+    result = []
+    paren_depth = 0
+    bracket_depth = 0
+    brace_depth = 0
+    in_string = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Track paren/bracket/brace depth (simplified, ignoring strings properly
+        # would require a full tokenizer, but for diff fragments this is sufficient)
+        for ch in stripped:
+            if in_string:
+                if ch == in_string:
+                    in_string = None
+                continue
+            if ch in ("'", '"'):
+                in_string = ch
+                continue
+            if ch == '(':
+                paren_depth += 1
+            elif ch == ')':
+                paren_depth = max(0, paren_depth - 1)
+            elif ch == '[':
+                bracket_depth += 1
+            elif ch == ']':
+                bracket_depth = max(0, bracket_depth - 1)
+            elif ch == '{':
+                brace_depth += 1
+            elif ch == '}':
+                brace_depth = max(0, brace_depth - 1)
+        in_string = None  # reset at line boundary for robustness
+
+        # If we're in an unclosed expression and the next line starts a new
+        # statement (lower or equal indentation, starts with keyword), close
+        # the expression first.
+        if (paren_depth > 0 or bracket_depth > 0 or brace_depth > 0):
+            # Look at next non-blank line
+            next_line = None
+            for j in range(i + 1, min(i + 3, len(lines))):
+                if lines[j].strip():
+                    next_line = lines[j]
+                    break
+            if next_line:
+                next_stripped = next_line.strip()
+                next_indent = len(next_line) - len(next_line.lstrip())
+                curr_indent = len(line) - len(line.lstrip())
+                # Next line is a new statement at same/lower indent
+                if next_indent <= curr_indent and _looks_like_python_code(next_stripped):
+                    # Close unclosed parens/brackets
+                    closers = ')' * paren_depth + ']' * bracket_depth + '}' * brace_depth
+                    # Append closers to current line
+                    result.append(line.rstrip('\n\r') + closers + '\n')
+                    paren_depth = 0
+                    bracket_depth = 0
+                    brace_depth = 0
+                    continue
+
+        result.append(line)
+
+    return ''.join(result)
+
+
+def _strip_leading_partial_lines(source: str) -> str:
+    """Strip leading lines that are clearly partial expression continuations.
+
+    Diff extraction can produce lines like:
+        '...text...')         ← unmatched close paren
+        str(y.shape) + '. '  ← string concat continuation
+    These are fragments of expressions that began in code not included in
+    the diff.  Remove them so the remaining code can parse.
+    """
+    import re
+
+    lines = source.splitlines(keepends=True)
+    start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            start = i + 1
+            continue
+        # Lines that look like actual Python code — stop stripping
+        if _looks_like_python_code(stripped):
+            break
+        # Orphaned continuation: line is just string literals and/or closing parens
+        if re.match(r"^[\s'\"()+%,.\[\]]*\)[\s'\"()+%,.\[\]]*$", stripped):
+            start = i + 1
+            continue
+        # Line is purely a string literal (continuation from previous line)
+        if re.match(r"^['\"]", stripped):
+            start = i + 1
+            continue
+        # Plain text (not a Python keyword/statement) — skip it
+        if not _looks_like_python_code(stripped):
+            start = i + 1
+            continue
+        break
+
+    if start > 0 and start < len(lines):
+        return ''.join(lines[start:])
+    return source
+
+
+def _fixup_orphaned_clauses(source: str) -> str:
+    """Convert leading elif/else/except/finally to valid standalone code.
+    
+    When diff extraction produces code starting with elif/else (without
+    the preceding if), convert them so the code can parse.
+    """
+    import re
+
+    lines = source.splitlines(keepends=True)
+    if not lines:
+        return source
+
+    # Find first non-blank line
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        # elif → if
+        if stripped.startswith('elif ') or stripped.startswith('elif('):
+            indent = len(line) - len(line.lstrip())
+            lines[i] = ' ' * indent + 'if' + stripped[4:] + ('\n' if not line.endswith('\n') else '')
+        # else: → if True: (placeholder)
+        elif stripped == 'else:':
+            indent = len(line) - len(line.lstrip())
+            lines[i] = ' ' * indent + 'if True:\n'
+        # except/finally without try
+        elif stripped.startswith('except') or stripped.startswith('finally'):
+            indent = len(line) - len(line.lstrip())
+            lines = [' ' * indent + 'try:\n', ' ' * indent + '    pass\n'] + lines[i:]
+        break
+
+    return ''.join(lines)
+
 
 
 def _strip_orphaned_triple_quotes(source: str) -> str:
     """Strip orphaned triple-quote lines from diff-extracted code fragments.
 
     Diff extraction often captures the closing '\"\"\"' of a docstring without
-    its opening counterpart. A lone triple-quote line at the beginning of a
-    fragment makes the code unparseable when wrapped in a synthetic function.
-    This helper removes such leading orphaned triple-quote lines.
+    its opening counterpart, or an opening '\"\"\"' without the closing
+    counterpart.  Both make the code unparseable when wrapped in a synthetic
+    function.  This helper removes such orphaned triple-quote content.
     """
     lines = source.splitlines(keepends=True)
     # Strip leading blank/whitespace-only lines to find the first real line
@@ -769,14 +1063,64 @@ def _strip_orphaned_triple_quotes(source: str) -> str:
     first_content = lines[first_real].strip()
     if first_content in ('"""', "'''"):
         return ''.join(lines[:first_real] + lines[first_real + 1:])
+
+    # Handle unterminated opening triple-quoted strings: the first real line
+    # starts a triple-quoted string (e.g. '"""docstring...') but the
+    # matching close never appears in the fragment.  Remove the opening line
+    # and all subsequent docstring-content lines (plain text, not code).
+    for quote in ('"""', "'''"):
+        if quote in first_content:
+            count = first_content.count(quote)
+            if count == 1:
+                # Opening quote without close — scan for close in later lines
+                close_idx = None
+                for j in range(first_real + 1, len(lines)):
+                    if quote in lines[j]:
+                        close_idx = j
+                        break
+                if close_idx is not None:
+                    # Remove the entire docstring region
+                    return ''.join(lines[:first_real] + lines[close_idx + 1:])
+                else:
+                    # No closing quote: remove opening line and all following
+                    # plain-text lines (docstring body) until we hit something
+                    # that looks like Python code.
+                    code_start = len(lines)
+                    for j in range(first_real + 1, len(lines)):
+                        stripped = lines[j].strip()
+                        if not stripped:
+                            continue
+                        if _looks_like_python_code(stripped):
+                            code_start = j
+                            break
+                    return ''.join(lines[code_start:])
+
     return source
+
+
+def _looks_like_python_code(stripped_line: str) -> bool:
+    """Heuristic: does a stripped line look like a Python statement?"""
+    import re
+    # Python keywords/statements that start lines
+    if re.match(r'^(if|elif|else|for|while|def|class|return|raise|import|from|'
+                r'with|try|except|finally|assert|del|pass|break|continue|'
+                r'yield|global|nonlocal|async|await|@)\b', stripped_line):
+        return True
+    # Assignment or augmented assignment
+    if re.match(r'^[a-zA-Z_]\w*(\.\w+)*(\[.*\])?\s*(=|\+=|-=|\*=|/=|//=|%=|\*\*=|&=|\|=|\^=|<<=|>>=)', stripped_line):
+        return True
+    # Function/method call: name(...)
+    if re.match(r'^[a-zA-Z_]\w*(\.\w+)*\s*\(', stripped_line):
+        return True
+    return False
 
 
 def _wrap_hunk_as_function(hunk_source: str, index: int) -> Optional[str]:
     """Wrap a single code hunk in a function definition.
     
     Handles break/continue by adding a loop wrapper, and dedents the code
-    to normalize indentation.
+    to normalize indentation.  Progressively strips leading lines that are
+    orphaned expression continuations from across hunk boundaries.
     """
     import textwrap
     
@@ -785,39 +1129,52 @@ def _wrap_hunk_as_function(hunk_source: str, index: int) -> Optional[str]:
         return None
     
     # Strip orphaned triple-quote lines from diff fragments.
-    # Diff extraction often captures the tail end of a docstring (a lone '"""')
-    # without the opening, which causes SyntaxError when wrapped in a function.
     dedented = _strip_orphaned_triple_quotes(dedented)
     if not dedented.strip():
         return None
     
-    completed = _complete_trailing_blocks(dedented)
+    lines = dedented.splitlines(keepends=True)
+    max_strip = min(len(lines), 15)
     
-    # Check if the hunk contains break/continue that need a loop wrapper
-    needs_loop = _hunk_needs_loop_wrapper(completed)
-    
-    if needs_loop:
-        body = textwrap.indent(completed, "        ")  # 8 spaces (func + while)
-        wrapped = f"def _a3_hunk_{index}():\n    while True:\n{body}\n        break\n"
-    else:
-        body = textwrap.indent(completed, "    ")
-        wrapped = f"def _a3_hunk_{index}():\n{body}\n"
-    
-    # Verify this compiles
-    try:
-        ast.parse(wrapped)
-        return wrapped
-    except SyntaxError:
-        # Try without loop wrapper as fallback
+    for start in range(max_strip):
+        candidate = ''.join(lines[start:])
+        if not candidate.strip():
+            continue
+        cleaned = textwrap.dedent(candidate)
+        if not cleaned.strip():
+            continue
+        cleaned = _strip_orphaned_triple_quotes(cleaned)
+        cleaned = _strip_leading_partial_lines(cleaned)
+        if not cleaned.strip():
+            continue
+        cleaned = _fixup_orphaned_clauses(cleaned)
+        cleaned = _close_unclosed_expressions(cleaned)
+        completed = _complete_trailing_blocks(cleaned)
+        
+        needs_loop = _hunk_needs_loop_wrapper(completed)
+        
         if needs_loop:
+            body = textwrap.indent(completed, "        ")
+            wrapped = f"def _a3_hunk_{index}():\n    while True:\n{body}\n        break\n"
+        else:
             body = textwrap.indent(completed, "    ")
             wrapped = f"def _a3_hunk_{index}():\n{body}\n"
-            try:
-                ast.parse(wrapped)
-                return wrapped
-            except SyntaxError:
-                pass
-        return None
+        
+        try:
+            ast.parse(wrapped)
+            return wrapped
+        except SyntaxError:
+            # Try without loop wrapper
+            if needs_loop:
+                body = textwrap.indent(completed, "    ")
+                wrapped = f"def _a3_hunk_{index}():\n{body}\n"
+                try:
+                    ast.parse(wrapped)
+                    return wrapped
+                except SyntaxError:
+                    pass
+    
+    return None
 
 
 def _hunk_needs_loop_wrapper(source: str) -> bool:

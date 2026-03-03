@@ -6,10 +6,10 @@ tainted data for HTML output due to auto-escaping.
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType
 )
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     get_sanitizer_contract, apply_sanitizer,
     init_security_contracts
 )
@@ -108,7 +108,7 @@ class TestDjangoRenderIntegration:
         
         This should NOT be flagged as XSS because render_to_string sanitizes.
         """
-        from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
+        from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
         
         tracker = LatticeSecurityTracker()
         

@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pyfromscratch.fp_context import FPContextDetector, FPContext
+from a3_python.fp_context import FPContextDetector, FPContext
 
 # Test file-level CLI detection
 detector = FPContextDetector()

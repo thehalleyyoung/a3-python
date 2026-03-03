@@ -1,11 +1,11 @@
 """
-Allow running pyfromscratch as a module:
+Allow running a3_python as a module:
 
-    python3.11 -m pyfromscratch <target> [options]
+    python3 -m a3_python <target> [options]
 
-Delegates to pyfromscratch.cli:main().
+Delegates to a3_python.cli:main().
 """
 import sys
-from .cli import main
+from .cli import _main_wrapper
 
-sys.exit(main())
+sys.exit(_main_wrapper())

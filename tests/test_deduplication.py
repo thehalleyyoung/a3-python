@@ -3,7 +3,7 @@ Tests for bug report deduplication.
 """
 
 import pytest
-from pyfromscratch.evaluation.deduplication import (
+from a3_python.evaluation.deduplication import (
     deduplicate_findings,
     consolidate_variants,
     deduplicate_scan_results,

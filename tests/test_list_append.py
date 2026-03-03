@@ -11,9 +11,9 @@ These tests verify the LIST_APPEND opcode mechanics are sound.
 import pytest
 import types
 import dis
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicPath, SymbolicFrame, SymbolicMachineState
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
-from pyfromscratch.z3model.heap import SymbolicHeap
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicPath, SymbolicFrame, SymbolicMachineState
+from a3_python.z3model.values import SymbolicValue, ValueTag
+from a3_python.z3model.heap import SymbolicHeap
 
 
 def test_list_append_opcode_direct():

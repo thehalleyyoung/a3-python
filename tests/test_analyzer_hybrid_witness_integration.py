@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_analyzer_attaches_hybrid_witness_on_realized_bug(tmp_path: Path):

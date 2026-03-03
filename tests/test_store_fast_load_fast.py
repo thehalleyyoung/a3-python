@@ -14,8 +14,8 @@ Semantics:
 import dis
 import pytest
 import sys
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_store_fast_load_fast_opcode_exists():
@@ -133,8 +133,8 @@ def test_comprehension_with_store_fast_load_fast():
     if sys.version_info < (3, 14):
         pytest.skip("STORE_FAST_LOAD_FAST only in Python 3.14+")
     
-    from pyfromscratch.frontend.loader import load_python_string
-    from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+    from a3_python.frontend.loader import load_python_string
+    from a3_python.semantics.symbolic_vm import SymbolicVM
     
     code_str = """
 def test():
@@ -170,8 +170,8 @@ def test_nested_comprehension_with_store_fast_load_fast():
     if sys.version_info < (3, 14):
         pytest.skip("STORE_FAST_LOAD_FAST only in Python 3.14+")
     
-    from pyfromscratch.frontend.loader import load_python_string
-    from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+    from a3_python.frontend.loader import load_python_string
+    from a3_python.semantics.symbolic_vm import SymbolicVM
     
     code_str = """
 def test():
@@ -201,8 +201,8 @@ def test_dict_comprehension_with_store_fast_load_fast():
     if sys.version_info < (3, 14):
         pytest.skip("STORE_FAST_LOAD_FAST only in Python 3.14+")
     
-    from pyfromscratch.frontend.loader import load_python_string
-    from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+    from a3_python.frontend.loader import load_python_string
+    from a3_python.semantics.symbolic_vm import SymbolicVM
     
     code_str = """
 def test():
@@ -232,8 +232,8 @@ def test_set_comprehension_with_store_fast_load_fast():
     if sys.version_info < (3, 14):
         pytest.skip("STORE_FAST_LOAD_FAST only in Python 3.14+")
     
-    from pyfromscratch.frontend.loader import load_python_string
-    from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+    from a3_python.frontend.loader import load_python_string
+    from a3_python.semantics.symbolic_vm import SymbolicVM
     
     code_str = """
 def test():

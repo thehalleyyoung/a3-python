@@ -1,0 +1,54 @@
+% Beamer slide deck: how I included `a3_python` in an agential workflow
+\documentclass{beamer}
+\usetheme{Madrid}
+\title{Including a3 in an Agential Workflow}
+\author{Automated Demo}
+\date{\today}
+
+\begin{document}
+\begin{frame}\titlepage\end{frame}
+
+\begin{frame}{Overview}
+\begin{itemize}
+  \item Goal: use local `a3_python` package inside an agent-style script
+  \item Approach: add workspace root to `sys.path`, import `Analyzer`, run `analyze_file()`
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Files Created}
+\begin{itemize}
+  \item agential_demo/demo.py -- demo driver (prepends workspace to `sys.path`)
+  \item agential_demo/target.py -- small target file to analyze
+  \item agential_demo/slides.tex -- this deck
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Key Code (demo.py)}
+\begin{verbatim}
+workspace_root = Path(__file__).resolve().parents[1]
+if str(workspace_root) not in sys.path:
+    sys.path.insert(0, str(workspace_root))
+
+from a3_python.analyzer import Analyzer
+analyzer = Analyzer(verbose=True)
+result = analyzer.analyze_file(target)
+print(result.summary())
+\end{verbatim}
+\end{frame}
+
+\begin{frame}{How It Works}
+\begin{enumerate}
+  \item Prepend workspace root to `sys.path` so local package imports succeed.
+  \item Use `Analyzer` API to compile and symbolically analyze `target.py`.
+  \item The demo prints a human-readable `AnalysisResult.summary()`.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Commands to Run}
+\begin{verbatim}
+python3 agential_demo/demo.py
+pdflatex agential_demo/slides.tex
+\end{verbatim}
+\end{frame}
+
+\end{document}

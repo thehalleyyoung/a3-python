@@ -1198,7 +1198,7 @@ class DSOSIntegrationConfig:
 
 class DSOSSDSOSIntegration:
     """
-    Main integration class for DSOS/SDSOS in PythonFromScratch.
+    Main integration class for DSOS/SDSOS in a3-python.
     
     Provides:
     1. Problem analysis and method selection

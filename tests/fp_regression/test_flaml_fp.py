@@ -10,7 +10,7 @@ from collections import Counter
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
 
 flaml_path = Path(__file__).parent.parent.parent / 'external_tools' / 'FLAML'
 

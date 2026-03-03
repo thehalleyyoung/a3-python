@@ -4,9 +4,9 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
-from pyfromscratch.frontend.loader import load_python_file
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.frontend.loader import load_python_file
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 def analyze(code, max_steps=150):
     vm = SymbolicVM()

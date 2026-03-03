@@ -13,7 +13,7 @@ Soundness requirement: Sem_f ⊆ R_f (over-approximation preserved)
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType,
     CODEQL_BUG_TYPES, SecurityBugType
 )

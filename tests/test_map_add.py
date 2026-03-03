@@ -10,9 +10,9 @@ These tests verify the MAP_ADD opcode mechanics are sound.
 
 import pytest
 import types
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicPath, SymbolicFrame, SymbolicMachineState
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
-from pyfromscratch.z3model.heap import SymbolicHeap
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicPath, SymbolicFrame, SymbolicMachineState
+from a3_python.z3model.values import SymbolicValue, ValueTag
+from a3_python.z3model.heap import SymbolicHeap
 
 
 def test_map_add_opcode_direct():

@@ -315,7 +315,7 @@ def _monitor_selective_concolic(
         for candidate in range(0, 64):
             try:
                 if sys.monitoring.get_tool(candidate) is None:
-                    sys.monitoring.use_tool_id(candidate, "pyfromscratch.selective_concolic")
+                    sys.monitoring.use_tool_id(candidate, "a3_python.selective_concolic")
                     return candidate
             except Exception:
                 continue

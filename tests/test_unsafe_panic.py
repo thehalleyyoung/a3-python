@@ -14,8 +14,8 @@ of PANIC. PANIC is reserved for truly custom/unknown exception types.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 def test_name_error_bug():
@@ -152,7 +152,7 @@ def test_panic_overlaps_with_assert_fail():
     assert len(assert_fails) > 0, "Should detect ASSERT_FAIL"
     
     # Verify that is_unsafe_panic would also detect this
-    from pyfromscratch.unsafe.panic import is_unsafe_panic
+    from a3_python.unsafe.panic import is_unsafe_panic
     for path in paths:
         if path.state.exception == 'AssertionError':
             assert is_unsafe_panic(path.state), "PANIC should also detect AssertionError"
@@ -176,7 +176,7 @@ def test_panic_overlaps_with_div_zero():
     assert len(div_zeros) > 0, "Should detect DIV_ZERO"
     
     # Verify that is_unsafe_panic would also detect this
-    from pyfromscratch.unsafe.panic import is_unsafe_panic
+    from a3_python.unsafe.panic import is_unsafe_panic
     for path in paths:
         if path.state.exception == 'ZeroDivisionError':
             assert is_unsafe_panic(path.state), "PANIC should also detect ZeroDivisionError"
@@ -189,8 +189,8 @@ def test_panic_non_specific_helper():
     This helper is useful for isolating PANIC bugs that aren't
     covered by other specific bug classes.
     """
-    from pyfromscratch.unsafe.panic import is_unsafe_panic_non_specific
-    from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+    from a3_python.unsafe.panic import is_unsafe_panic_non_specific
+    from a3_python.semantics.symbolic_vm import SymbolicMachineState
     from dataclasses import dataclass
     
     # Create mock states with minimal structure

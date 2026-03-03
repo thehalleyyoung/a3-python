@@ -1,0 +1,23 @@
+\frametitle{Commands Cheat Sheet}
+\begin{lstlisting}[language=bash]
+# 1. Install
+pip install a3-python[ci]
+
+# 2. Bootstrap CI in any repo (60 seconds)
+cd your-repo/
+a3 init . --copilot
+git add .github/ .a3.yml .a3-baseline.json
+git commit -m "ci: add a3 static analysis"
+git push
+
+# 3. Local scan
+a3 scan . --output-sarif results.sarif
+
+# 4. Local triage (optional)
+export GITHUB_TOKEN=$(gh auth token)
+a3 triage --sarif results.sarif --provider github --agentic
+
+# 5. Baseline management
+a3 baseline diff --sarif results.sarif    # check
+a3 baseline accept --sarif results.sarif  # accept
+\end{lstlisting}

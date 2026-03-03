@@ -46,7 +46,7 @@ def process_login():
         test_file.write_text(test_code)
         
         # Build interprocedural analysis
-        from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+        from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
         
         tracker = InterproceduralBugTracker.from_project(Path(tmpdir))
         
@@ -91,7 +91,7 @@ def log_status(message, status_code):
         test_file = Path(tmpdir) / "status.py"
         test_file.write_text(test_code)
         
-        from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+        from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
         
         tracker = InterproceduralBugTracker.from_project(Path(tmpdir))
         
@@ -129,7 +129,7 @@ def send_credentials(password, api_key, username):
         test_file = Path(tmpdir) / "creds.py"
         test_file.write_text(test_code)
         
-        from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+        from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
         
         tracker = InterproceduralBugTracker.from_project(Path(tmpdir))
         

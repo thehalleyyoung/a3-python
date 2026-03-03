@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from pyfromscratch.dse.concolic import ConcreteInput
-from pyfromscratch.dse.selective_concolic import SelectiveConcolicExecutor
-from pyfromscratch.dse.hybrid import ConcolicReplayOracle
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.dse.concolic import ConcreteInput
+from a3_python.dse.selective_concolic import SelectiveConcolicExecutor
+from a3_python.dse.hybrid import ConcolicReplayOracle
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 def _compile_file(path: Path) -> object:

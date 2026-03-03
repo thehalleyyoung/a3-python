@@ -6,12 +6,12 @@ and generate barrier certificates proving safety of tarslip/zipslip operations.
 """
 
 import pytest
-from pyfromscratch.barriers.path_validation import (
+from a3_python.barriers.path_validation import (
     PathValidationTracker,
     detect_startswith_validation,
     detect_abspath_check
 )
-from pyfromscratch.z3model.taint_lattice import SinkType
+from a3_python.z3model.taint_lattice import SinkType
 import z3
 
 
@@ -138,7 +138,7 @@ class TestPathValidationBarrier:
     
     def test_create_path_safety_barrier(self):
         """Test creation of path safety barrier certificate."""
-        from pyfromscratch.z3model.taint_lattice import TaintLabel, SourceType
+        from a3_python.z3model.taint_lattice import TaintLabel, SourceType
         
         tracker = PathValidationTracker()
         value = object()
@@ -168,7 +168,7 @@ class TestPathValidationBarrier:
     
     def test_no_barrier_without_validation(self):
         """Test that no barrier is created for unvalidated values."""
-        from pyfromscratch.z3model.taint_lattice import TaintLabel, SourceType
+        from a3_python.z3model.taint_lattice import TaintLabel, SourceType
         
         tracker = PathValidationTracker()
         value = object()

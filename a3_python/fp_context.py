@@ -57,6 +57,13 @@ FP_CONTEXT_MULTIPLIERS: Dict[FPContext, float] = {
     FPContext.INTERNAL_API: 0.50,      # 50% reduction
 }
 
+# Bug types that are correctness bugs in the code itself, not security/taint issues.
+# These should NOT be penalized by DEFENSE_IN_DEPTH context, because the bug IS
+# in the validation/check function (e.g., missing sorted() before join).
+_CORRECTNESS_BUG_TYPES = {
+    'ORDER_VIOLATION',
+}
+
 # Bug types that are particularly affected by CLI context
 CLI_SENSITIVE_BUG_TYPES = {
     'PATH_INJECTION', 'TARSLIP', 'ZIPSLIP',
@@ -197,7 +204,9 @@ class FPContextDetector:
         self._detect_source_context(tainted_sources, bug_type, result)
         
         # 3. Check call chain for mitigations
-        if call_chain:
+        # Skip for correctness bugs (ORDER_VIOLATION) where the bug IS in
+        # the validation/check function itself, not about missing defenses.
+        if call_chain and bug_type not in _CORRECTNESS_BUG_TYPES:
             self._detect_mitigation_context(call_chain, result)
         
         # 4. Check sink function for safe patterns
@@ -293,10 +302,13 @@ class FPContextDetector:
             return True
         
         # Check if file is in utils/ or logger/ directory (internal utilities)
-        # These are called by CLI code and have same threat model
-        if 'utils' in path_parts or 'logger' in path_parts:
-            self._file_cli_cache[file_path] = True
-            return True
+        # NOTE: Do NOT treat utils/ as CLI context for crash bug reduction.
+        # Utils directories contain core library code that processes data from
+        # many sources — crash bugs here are real and affect all callers.
+        # Only check for actual CLI-related directories (see cli_patterns below).
+        # if 'utils' in path_parts or 'logger' in path_parts:
+        #     self._file_cli_cache[file_path] = True
+        #     return True
         
         # Also check for common CLI module names
         if path.stem in ('cli', 'main', '__main__', 'console', 'commands'):
@@ -436,8 +448,15 @@ class FPContextDetector:
         call_chain: List[str],
         result: FPContextResult,
     ) -> None:
-        """Detect mitigation functions in call chain."""
-        for func_name in call_chain:
+        """Detect mitigation functions in call chain.
+        
+        Only checks CALLERS in the call chain, not the crash function itself
+        (last element). The crash function having a name like 'verify_X' doesn't
+        mean the bug is mitigated — it means the bug IS in that function.
+        """
+        # Skip the crash function (last element) — only check callers
+        callers = call_chain[:-1] if len(call_chain) > 1 else []
+        for func_name in callers:
             func_lower = func_name.lower()
             
             # Check for mitigation patterns

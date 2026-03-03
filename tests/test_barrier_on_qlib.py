@@ -24,7 +24,7 @@ from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from pyfromscratch.analyzer import Analyzer, AnalysisResult
+from a3_python.analyzer import Analyzer, AnalysisResult
 
 
 # Barrier-appropriate bug types (not security/taint based)

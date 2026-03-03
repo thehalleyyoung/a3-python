@@ -6,8 +6,8 @@ Targets Python 3.11+ bytecode semantics.
 """
 
 import pytest
-from pyfromscratch.semantics.concrete_vm import ConcreteVM, load_and_run
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.concrete_vm import ConcreteVM, load_and_run
+from a3_python.semantics.symbolic_vm import SymbolicVM
 import z3
 
 

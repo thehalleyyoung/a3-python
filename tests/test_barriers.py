@@ -10,7 +10,7 @@ Tests cover:
 
 import pytest
 import z3
-from pyfromscratch.barriers import (
+from a3_python.barriers import (
     BarrierCertificate,
     InductivenessChecker,
     linear_combination_barrier,
@@ -20,8 +20,8 @@ from pyfromscratch.barriers import (
     constant_barrier,
     extract_local_variable,
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState, SymbolicFrame
-from pyfromscratch.z3model.values import SymbolicValue
+from a3_python.semantics.symbolic_vm import SymbolicMachineState, SymbolicFrame
+from a3_python.z3model.values import SymbolicValue
 
 
 class TestBarrierEvaluation:
@@ -440,7 +440,7 @@ class TestInductivenessResult:
     
     def test_result_summary_inductive(self):
         """Test summary for inductive result."""
-        from pyfromscratch.barriers.invariants import InductivenessResult
+        from a3_python.barriers.invariants import InductivenessResult
         
         result = InductivenessResult(
             is_inductive=True,
@@ -456,7 +456,7 @@ class TestInductivenessResult:
     
     def test_result_summary_not_inductive(self):
         """Test summary for non-inductive result."""
-        from pyfromscratch.barriers.invariants import InductivenessResult
+        from a3_python.barriers.invariants import InductivenessResult
         
         result = InductivenessResult(
             is_inductive=False,
@@ -478,7 +478,7 @@ class TestBarrierSynthesis:
     
     def test_synthesis_simple_constant(self):
         """Synthesis should find constant barrier for trivial case."""
-        from pyfromscratch.barriers import BarrierSynthesizer, SynthesisConfig
+        from a3_python.barriers import BarrierSynthesizer, SynthesisConfig
         
         # System where init and unsafe are already separated
         # Init: x = 0, Unsafe: x < -10
@@ -518,7 +518,7 @@ class TestBarrierSynthesis:
     
     def test_synthesis_stack_depth(self):
         """Synthesis should find barrier for stack-based system."""
-        from pyfromscratch.barriers import BarrierSynthesizer, SynthesisConfig
+        from a3_python.barriers import BarrierSynthesizer, SynthesisConfig
         import types
         
         code = (lambda: None).__code__
@@ -562,7 +562,7 @@ class TestBarrierSynthesis:
     
     def test_synthesis_with_variable_extractors(self):
         """Synthesis should use provided variable extractors."""
-        from pyfromscratch.barriers import BarrierSynthesizer, SynthesisConfig
+        from a3_python.barriers import BarrierSynthesizer, SynthesisConfig
         
         # Simple system: x starts at 0, increments, unsafe when x >= 10
         x_var = z3.Int('x')
@@ -607,7 +607,7 @@ class TestBarrierSynthesis:
     
     def test_synthesis_timeout(self):
         """Synthesis should respect max_templates limit."""
-        from pyfromscratch.barriers import BarrierSynthesizer, SynthesisConfig
+        from a3_python.barriers import BarrierSynthesizer, SynthesisConfig
         
         def initial_state_builder():
             return SymbolicMachineState()
@@ -643,8 +643,8 @@ class TestBarrierSynthesis:
     
     def test_synthesis_result_summary(self):
         """SynthesisResult summary should be informative."""
-        from pyfromscratch.barriers import SynthesisResult, constant_barrier
-        from pyfromscratch.barriers.invariants import InductivenessResult
+        from a3_python.barriers import SynthesisResult, constant_barrier
+        from a3_python.barriers.invariants import InductivenessResult
         
         # Success case
         barrier = constant_barrier(5.0)
@@ -681,7 +681,7 @@ class TestBarrierSynthesis:
     
     def test_template_generator_ordering(self):
         """Template generator should produce templates in sensible order."""
-        from pyfromscratch.barriers import BarrierSynthesizer, SynthesisConfig
+        from a3_python.barriers import BarrierSynthesizer, SynthesisConfig
         
         config = SynthesisConfig(
             max_templates=20,
@@ -702,7 +702,7 @@ class TestBarrierSynthesis:
     
     def test_synthesize_barrier_for_bug_type(self):
         """High-level synthesis function should work."""
-        from pyfromscratch.barriers import synthesize_barrier_for_bug_type
+        from a3_python.barriers import synthesize_barrier_for_bug_type
         
         def initial_state_builder():
             return SymbolicMachineState()
@@ -730,7 +730,7 @@ class TestNewBarrierTemplates:
     
     def test_loop_range_barrier(self):
         """Loop range barrier should bound iteration count."""
-        from pyfromscratch.barriers import loop_range_barrier
+        from a3_python.barriers import loop_range_barrier
         
         def iterator_extractor(s):
             return z3.IntVal(5)
@@ -746,7 +746,7 @@ class TestNewBarrierTemplates:
     
     def test_collection_size_barrier(self):
         """Collection size barrier should bound collection growth."""
-        from pyfromscratch.barriers import collection_size_barrier
+        from a3_python.barriers import collection_size_barrier
         
         def size_extractor(s):
             return z3.IntVal(3)
@@ -762,7 +762,7 @@ class TestNewBarrierTemplates:
     
     def test_progress_measure_barrier(self):
         """Progress measure barrier should track decreasing quantity."""
-        from pyfromscratch.barriers import progress_measure_barrier
+        from a3_python.barriers import progress_measure_barrier
         
         def progress_extractor(s):
             return z3.IntVal(42)
@@ -778,7 +778,7 @@ class TestNewBarrierTemplates:
     
     def test_disjunction_barrier(self):
         """Disjunction barrier should take maximum of two barriers."""
-        from pyfromscratch.barriers import disjunction_barrier
+        from a3_python.barriers import disjunction_barrier
         
         barrier1 = constant_barrier(3.0, name="b1")
         barrier2 = constant_barrier(7.0, name="b2")
@@ -794,7 +794,7 @@ class TestNewBarrierTemplates:
     
     def test_conditional_guard_barrier(self):
         """Conditional guard barrier should model if-guarded operations."""
-        from pyfromscratch.barriers import conditional_guard_barrier
+        from a3_python.barriers import conditional_guard_barrier
         
         # Simulate: if x >= 0 then sqrt(x)
         def condition_extractor(s):
@@ -821,7 +821,7 @@ class TestNewBarrierTemplates:
     
     def test_conditional_guard_barrier_false(self):
         """Conditional guard barrier should return large value when condition false."""
-        from pyfromscratch.barriers import conditional_guard_barrier
+        from a3_python.barriers import conditional_guard_barrier
         
         def condition_extractor(s):
             # Condition is false
@@ -846,7 +846,7 @@ class TestNewBarrierTemplates:
     
     def test_invariant_region_barrier(self):
         """Invariant region barrier should encode boolean predicates."""
-        from pyfromscratch.barriers import invariant_region_barrier
+        from a3_python.barriers import invariant_region_barrier
         
         def region_predicate(s):
             return z3.BoolVal(True)
@@ -862,7 +862,7 @@ class TestNewBarrierTemplates:
     
     def test_invariant_region_barrier_false(self):
         """Invariant region barrier should return -1 when predicate false."""
-        from pyfromscratch.barriers import invariant_region_barrier
+        from a3_python.barriers import invariant_region_barrier
         
         def region_predicate(s):
             return z3.BoolVal(False)

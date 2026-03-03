@@ -7,7 +7,7 @@ These tests verify that DICT_MERGE is implemented and works correctly.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 import sys
 
 

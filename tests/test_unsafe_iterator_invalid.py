@@ -15,8 +15,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pyfromscratch.unsafe.iterator_invalid import is_unsafe_iterator_invalid, extract_counterexample
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState, SymbolicVM
+from a3_python.unsafe.iterator_invalid import is_unsafe_iterator_invalid, extract_counterexample
+from a3_python.semantics.symbolic_vm import SymbolicMachineState, SymbolicVM
 
 
 class TestIteratorInvalidUnsafePredicate:

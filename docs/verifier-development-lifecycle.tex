@@ -1,0 +1,100 @@
+\section{Development Lifecycle}\label{sec:lifecycle}
+
+The development of \textsc{A3} followed a structured iterative methodology whose phases---\textbf{theorise $\to$ code $\to$ test $\to$ refine code $\to$ refine theory}---can be understood as a fixed-point computation over a product domain of formal specifications and executable implementations.
+We describe the methodology here because it explains not only how the system was built but \emph{why} it has the layered architecture it does: each layer corresponds to a theoretical commitment that survived repeated refinement against executable semantics.
+
+\subsection{Three Foundational Eras}
+
+The project passed through three eras, each contributing a distinct formal layer to the final architecture.
+
+\paragraph{Era~I: Quantitative Safety.}
+The initial formulation modelled program safety as a metric problem.
+Let $\mathcal{T}$ denote the set of program traces and $\mathcal{S} \subseteq \mathcal{T}$ the set of safe traces.
+Rather than asking the Boolean question $\tau \in \mathcal{S}$, the system computed a distance $d(\tau, \partial\mathcal{S})$ from each trace to the safety boundary, treating this distance as a first-class semantic quantity amenable to optimisation.
+Three principles survived to the final system:
+(1)~safety admits continuous gradation---uncertainty has geometric structure;
+(2)~quantitative semantics induces a natural priority ordering on analysis targets;
+(3)~computability of $d(\tau, \partial\mathcal{S})$ enables guided repair.
+What did not survive was the sufficiency assumption: in practice, the dominant engineering problem is not computing one deep metric but eliminating large volumes of false positives while preserving recall.
+
+\paragraph{Era~II: Barrier-Certificate Separation.}
+The system shifted from metric computation to set separation.
+Let $\mathcal{I}$ denote the set of initial program states and $\mathcal{U}$ the set of unsafe states.
+The core question became: does there exist a function $B : \Sigma \to \mathbb{R}$ over the state space $\Sigma$ satisfying
+\[
+  B(\mathbf{x}) \leq 0 \;\;\forall \mathbf{x} \in \mathcal{I}, \qquad
+  B(\mathbf{x}) > 0 \;\;\forall \mathbf{x} \in \mathcal{U}, \qquad
+  B(\mathbf{x}') \leq B(\mathbf{x}) \;\;\text{for every transition } \mathbf{x} \to \mathbf{x}'?
+\]
+If such a $B$ exists, the initial and unsafe regions are provably disjoint under the system's transition relation, and the corresponding bug report is a false positive.
+This formulation, adapted from Prajna et al.~\cite{prajna2004safety,prajna2007framework}, provides the theoretical foundation for \textsc{A3}'s false-positive elimination engine.
+The practical contribution of this era was recognising that barrier synthesis, when composed with SMT feasibility checks and CEGAR-style refinement, yields a high-throughput filter rather than an isolated proof technique.
+
+\paragraph{Era~III: Executable Python Semantics.}
+Instantiating the barrier framework over Python required defining the state space $\Sigma$, the transition relation $\to$, and the unsafe predicate $\mathcal{U}$ with respect to CPython's actual execution model.
+This meant modelling bytecode-level control flow (including the exception table introduced in Python~3.11), normal and exceptional edges, frame and stack state, dynamic dispatch, and unknown library behaviour.
+The transition relation is extracted directly from compiled bytecode via CFG construction (\S\ref{sec:engine}); the unsafe predicate is defined per bug type (e.g., for \texttt{DIV\_ZERO}: $\mathcal{U} = \{\sigma \in \Sigma \mid \sigma \text{ reaches a } \texttt{BINARY\_OP(/)} \text{ with divisor} = 0\}$).
+Unknown callees are modelled via conservative contracts that overapproximate their possible return values and side effects.
+
+\subsection{The Five-Phase Iteration}
+
+The three eras did not proceed sequentially to completion; rather, they interleaved through a five-phase loop that constitutes the project's core methodology.
+Let $T_i$ denote the formal theory and $A_i$ the analyser implementation at iteration $i$.
+Each iteration produces $(T_{i+1}, A_{i+1})$ via:
+
+\paragraph{Phase 1: Theorise.}
+An LLM generates candidate formal hypotheses $\{h_1, \ldots, h_k\}$: new abstraction domains, candidate proof templates, verification-technique compositions, or cross-domain analogies (e.g., applying Lyapunov stability arguments to program-state reachability).
+These hypotheses expand the search space of possible theories.
+The generation is deliberately broad; soundness checking is deferred to subsequent phases.
+
+\paragraph{Phase 2: Code.}
+Each hypothesis $h_j$ is encoded as a modification to the analyser $A_i$, producing a candidate $A_i'$.
+The encoding is constrained to the analyser's existing abstraction boundaries: crash summaries, barrier conditions, guard predicates, library contracts, and verification-engine routing rules.
+This phase is deliberately mechanical---it translates formal claims into executable checks without introducing architectural novelty.
+
+\paragraph{Phase 3: Test.}
+The candidate $A_i'$ is evaluated against three increasingly expensive oracle sets:
+(i)~a synthetic benchmark of 43~programs with known ground-truth labels;
+(ii)~the BugsInPy corpus of 493~real bugs with buggy/fixed commit pairs;
+(iii)~large-repository scans (e.g., DeepSpeed, 150\,k~LoC) to detect emergent effects---false-positive floods, performance regressions, confidence-score drift---invisible in unit tests.
+A hypothesis that passes coding but fails testing is rejected: it is formally vacuous, operationally harmful, or both.
+
+\paragraph{Phase 4: Refine Code.}
+When $A_i'$ fails testing, the implementation is adjusted while holding the theory fixed.
+Typical failure modes include: path explosion from unbounded symbolic exploration, over-conservative modelling of unknown callees that produces false positives, context loss across interprocedural boundaries, and duplicate findings from redundant proof attempts.
+Refinements are kept local to the patch to bound the blast radius of each iteration.
+
+\paragraph{Phase 5: Refine Theory.}
+The most consequential phase.
+When the code stabilises, the question is not ``does $A_{i+1}$ work?'' but ``what theory $T_{i+1}$ does $A_{i+1}$ actually implement?''
+The formal specification is updated to match the surviving implementation: definitions are tightened, assumptions are made explicit, proof obligations are decomposed by semantic layer, and the conditions under which each barrier pattern $B_j$ is sound are precisely stated.
+The revised theory $T_{i+1}$ then seeds the next iteration's hypothesis generation.
+
+This loop converges in the sense that the gap $\|T_i - A_i\|$---informally, the discrepancy between what the theory promises and what the code delivers---decreases monotonically, because each iteration either corrects the code to match the theory (Phase~4) or corrects the theory to match the code (Phase~5).
+
+\subsection{Illustration: Assertion-Escape Analysis}
+
+Consider the property ``a failing assertion propagates as an uncaught exception.''
+The initial theory $T_0$ modelled this as simple reachability: if a state $\sigma$ reaches an \texttt{RAISE\_VARARGS} instruction corresponding to \texttt{AssertionError}, the program is unsafe.
+Testing revealed that this over-reports, because the theory neglected:
+(i)~enclosing \texttt{except} handlers that catch \texttt{AssertionError};
+(ii)~callers that wrap the call in \texttt{try}/\texttt{except};
+(iii)~the \texttt{-O} flag, which disables assertions entirely;
+(iv)~\texttt{finally} blocks that alter exception propagation.
+
+Phase~4 refined the code to track exception-handler scopes via the bytecode exception table.
+Phase~5 refined the theory: the unsafe predicate was narrowed from ``assertion raises'' to ``assertion raises \emph{and} no handler on any enclosing exception-table entry or caller-chain frame catches \texttt{AssertionError} or a superclass thereof.''
+The same pattern---theory proposes, code implements, testing falsifies, refinement corrects both---repeated for unknown library calls, where the converged solution was contract-based overapproximation validated by concolic witness generation.
+
+\subsection{Soundness Stratification}
+
+The lifecycle produces a natural stratification of the analyser's claims by soundness level:
+
+\begin{enumerate}
+  \item \textbf{Theoretical soundness.}  AI-generated hypotheses are subjected to explicit proof obligations before encoding.  A hypothesis that cannot be stated as a predicate over $\Sigma$ with a decidable or semi-decidable checking procedure is rejected at Phase~1.
+  \item \textbf{Implementation soundness.}  Analyser claims are verified against ground-truth oracles (synthetic benchmarks, BugsInPy commit pairs) and large-scale regression scans.  The BugsInPy self-improvement protocol (\S\ref{sec:bugsinpy}) and commit-level mining (\S\ref{sec:continuous}) provide continuous empirical validation.
+  \item \textbf{Operational soundness.}  Residual findings that resist static proof and disproof are triaged by an agentic LLM (\S\ref{sec:triage}) whose classifications are bounded by the static pipeline's prior filtering: the LLM sees only the 1--3\% of candidates that survive deterministic elimination.  Baseline ratcheting (\S\ref{sec:ci}) enforces monotonic improvement of the deployed finding set.
+\end{enumerate}
+
+The asymmetry across these levels is deliberate: upstream AI \emph{expands} the hypothesis space; midstream formal machinery \emph{contracts} it via sound overapproximation; downstream agentic AI resolves only the residual where both proof and refutation are incomplete.
+This separation prevents the generative phase from propagating noise into the verification phase, which is the mechanism by which the AI-slop feedback loop is inverted.

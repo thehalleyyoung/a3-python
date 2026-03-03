@@ -12,15 +12,15 @@ security_tracker_lattice.py handle_call_post (iteration 529-530).
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType
 )
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     init_security_contracts,
     apply_source_taint,
     check_sink_taint,
 )
-from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
+from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
 
 
 def test_connection_pool_taint_sqlite3():

@@ -10,7 +10,7 @@ This is a known issue separate from the ID consistency fix.
 
 import pytest
 from pathlib import Path
-from pyfromscratch.analyzer import analyze_file
+from a3_python.analyzer import analyze_file
 
 
 class TestOpenExceptionHandler:

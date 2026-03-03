@@ -12,17 +12,17 @@ import z3
 from dataclasses import dataclass
 from typing import Callable
 
-from pyfromscratch.barriers.ranking_synthesis import (
+from a3_python.barriers.ranking_synthesis import (
     RankingSynthesizer,
     RankingSynthesisConfig,
     synthesize_ranking_for_loop,
 )
-from pyfromscratch.barriers.ranking import (
+from a3_python.barriers.ranking import (
     TerminationChecker,
     linear_ranking_function,
     simple_counter_ranking,
 )
-from pyfromscratch.unsafe.non_termination import (
+from a3_python.unsafe.non_termination import (
     check_termination_via_ranking,
     is_unsafe_non_termination,
 )

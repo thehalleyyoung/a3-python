@@ -12,9 +12,9 @@ by tracking resource lifecycle state (allocated -> freed -> freed again).
 """
 
 import pytest
-from pyfromscratch.unsafe import double_free
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import double_free
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 class MockState:

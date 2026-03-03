@@ -216,7 +216,7 @@ if __name__ == '__main__':
     CLI for deduplicating scan results.
     
     Usage:
-        python -m pyfromscratch.evaluation.deduplication \
+        python -m a3_python.evaluation.deduplication \
             results/pygoat_scan_iter439.json \
             --output results/pygoat_scan_iter440_deduplicated.json \
             --min-confidence 0.7

@@ -6,8 +6,8 @@ ImportError/NameError/AttributeError during symbolic analysis.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.contracts.stdlib_stubs import is_known_stdlib_module, get_module_exports
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.contracts.stdlib_stubs import is_known_stdlib_module, get_module_exports
 
 
 def test_known_stdlib_modules():

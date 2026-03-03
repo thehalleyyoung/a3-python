@@ -5,7 +5,7 @@ These types were identified as missing during DSE validation (iteration 55).
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 def test_ellipsis_constant():

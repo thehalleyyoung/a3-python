@@ -7,16 +7,16 @@ Tests both BUG cases (non-terminating loops/recursion) and NON-BUG cases
 
 import pytest
 import z3
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
-from pyfromscratch.unsafe.registry import check_unsafe_regions
-from pyfromscratch.unsafe import non_termination
-from pyfromscratch.barriers.ranking import (
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState
+from a3_python.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import non_termination
+from a3_python.barriers.ranking import (
     RankingFunctionCertificate,
     TerminationChecker,
     linear_ranking_function,
     simple_counter_ranking,
 )
-from pyfromscratch.barriers.templates import extract_local_variable
+from a3_python.barriers.templates import extract_local_variable
 
 
 # =============================================================================

@@ -13,14 +13,14 @@ These tests verify:
 import pytest
 import tempfile
 from pathlib import Path
-from pyfromscratch.semantics.sota_interprocedural import (
+from a3_python.semantics.sota_interprocedural import (
     SOTAInterproceduralAnalyzer,
     FunctionTaintSummary,
     CallContext,
     analyze_file_interprocedural,
     analyze_project_interprocedural,
 )
-from pyfromscratch.z3model.taint_lattice import SinkType
+from a3_python.z3model.taint_lattice import SinkType
 
 
 # ============================================================================

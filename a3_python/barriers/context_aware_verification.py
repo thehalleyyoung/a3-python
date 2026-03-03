@@ -160,15 +160,24 @@ class ContextAwareVerifier:
         # =====================================================================
         # LAYER 2: Synthesize barriers from preconditions
         # =====================================================================
+        # CRITICAL FIX: Only mark safe if there is EVIDENCE that the barrier
+        # condition holds (e.g., validated params, guard facts for this bug type).
+        # Simply creating a barrier template is not proof — we need evidence
+        # that the precondition (x != 0, len(x) > 0, x is not None) is enforced.
         if bug_variable:
-            synthesized = self._synthesize_barrier_for_bug(
-                bug_type, bug_variable, crash_summary
+            # Check if there's evidence the precondition is satisfied
+            has_evidence = self._has_precondition_evidence(
+                bug_type, bug_variable, crash_summary, call_chain_summaries
             )
-            if synthesized:
-                result.synthesized_barriers.append(synthesized)
-                result.is_safe = True
-                result.verification_time_ms = (time.time() - start_time) * 1000
-                return result
+            if has_evidence:
+                synthesized = self._synthesize_barrier_for_bug(
+                    bug_type, bug_variable, crash_summary
+                )
+                if synthesized:
+                    result.synthesized_barriers.append(synthesized)
+                    result.is_safe = True
+                    result.verification_time_ms = (time.time() - start_time) * 1000
+                    return result
         
         # =====================================================================
         # LAYER 3: Learn invariants from codebase
@@ -187,7 +196,8 @@ class ContextAwareVerifier:
         # LAYER 4: Interprocedural barrier propagation
         # =====================================================================
         interprocedural = self._propagate_barriers_interprocedurally(
-            bug_type, bug_variable, call_chain_summaries
+            bug_type, bug_variable, call_chain_summaries,
+            crash_summary=crash_summary
         )
         if interprocedural:
             result.synthesized_barriers.extend(interprocedural)
@@ -433,6 +443,66 @@ class ContextAwareVerifier:
         return False
     
     # =========================================================================
+    # LAYER 2 SUPPORT: Precondition Evidence Check
+    # =========================================================================
+    
+    def _has_precondition_evidence(
+        self,
+        bug_type: str,
+        bug_variable: Optional[str],
+        crash_summary: CrashSummary,
+        call_chain_summaries: List[CrashSummary],
+    ) -> bool:
+        """
+        Check if there is concrete evidence that the barrier precondition holds.
+        
+        A synthesized barrier is only trustworthy if there is evidence the code
+        actually enforces the precondition. Without evidence, synthesizing a 
+        barrier template is meaningless — the code may not protect against the bug.
+        
+        Evidence sources:
+        - Guard facts that match the bug type (e.g., non-zero check for DIV_ZERO)
+        - Validated params (caller checks value before passing)
+        - Return guarantees from callees
+        
+        Returns:
+            True if there is concrete evidence the precondition is enforced
+        """
+        from .guard_to_barrier import get_protected_bugs
+        from ..semantics.interprocedural_guards import BUG_TYPE_TO_GUARD_TYPES
+        
+        # 1. Check if crash summary has guard facts for this bug type
+        relevant_guard_types = BUG_TYPE_TO_GUARD_TYPES.get(bug_type, set())
+        
+        for block_id, guard_facts in crash_summary.intra_guard_facts.items():
+            for guard_type, variable, extra in guard_facts:
+                if guard_type in relevant_guard_types:
+                    # Found a guard for the right bug type
+                    # Check if it protects the right variable
+                    if bug_variable is None or variable is None:
+                        return True
+                    if bug_variable in str(variable) or str(variable) in bug_variable:
+                        return True
+        
+        # 2. Check if the bug type is in guarded_bugs
+        if bug_type in crash_summary.guarded_bugs:
+            return True
+        
+        # 3. Check validated params from call chain
+        for summary in call_chain_summaries:
+            for param_idx, validations in summary.validated_params.items():
+                if validations and bug_variable and f'param_{param_idx}' == bug_variable:
+                    return True
+        
+        # 4. Check return guarantees from callees
+        for summary in call_chain_summaries:
+            if bug_type in summary.guarded_bugs:
+                return True
+        
+        # No evidence found — the barrier can't be trusted
+        return False
+    
+    # =========================================================================
     # LAYER 4: Interprocedural Propagation
     # =========================================================================
     
@@ -440,18 +510,27 @@ class ContextAwareVerifier:
         self,
         bug_type: str,
         bug_variable: Optional[str],
-        call_chain_summaries: List[CrashSummary]
+        call_chain_summaries: List[CrashSummary],
+        crash_summary: Optional[CrashSummary] = None
     ) -> List[BarrierCertificate]:
         """
         Propagate barriers from callers to callees.
         
         If caller validates parameter x, and callee uses x in a crash,
         the validation barrier protects the callee.
+        
+        NOTE: A function's own return guarantees do NOT protect against its
+        own internal bugs. E.g., if f() has return_guarantees={'nonnull'},
+        that means f's *return value* is non-None, not that f is internally
+        safe from NULL_PTR. Skip the crash function's own summary.
         """
         propagated = []
         
-        # Check return guarantees from callees
+        # Check return guarantees from callees (excluding crash function itself)
         for summary in call_chain_summaries:
+            # A function's own return guarantee does not protect its internal ops
+            if crash_summary is not None and summary is crash_summary:
+                continue
             for guarantee_type in summary.return_guarantees:
                 # Create barrier from guarantee
                 if guarantee_type == 'nonempty' and bug_type == 'BOUNDS':

@@ -6,7 +6,7 @@ This tests the fix for ITERATION 474: BUILD_MAP should pop 2*count items
 """
 
 import pytest
-from pyfromscratch.semantics.intraprocedural_taint import analyze_file_intraprocedural
+from a3_python.semantics.intraprocedural_taint import analyze_file_intraprocedural
 from pathlib import Path
 import tempfile
 import textwrap

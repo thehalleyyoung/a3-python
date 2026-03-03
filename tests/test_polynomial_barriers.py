@@ -12,7 +12,7 @@ Validates:
 import pytest
 import z3
 
-from pyfromscratch.barriers.templates import (
+from a3_python.barriers.templates import (
     quadratic_barrier,
     polynomial_barrier,
     bivariate_quadratic_barrier,
@@ -22,13 +22,13 @@ from pyfromscratch.barriers.templates import (
     variable_upper_bound_barrier,
     variable_lower_bound_barrier,
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-from pyfromscratch.z3model.values import SymbolicValue
+from a3_python.semantics.symbolic_vm import SymbolicMachineState
+from a3_python.z3model.values import SymbolicValue
 
 
 def make_test_state(var_values: dict[str, int]) -> SymbolicMachineState:
     """Create a test state with given variable values."""
-    from pyfromscratch.semantics.symbolic_vm import SymbolicFrame
+    from a3_python.semantics.symbolic_vm import SymbolicFrame
     import types
     
     # Create a dummy code object

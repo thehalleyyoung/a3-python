@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pyfromscratch.analyzer import analyze
+from a3_python.analyzer import analyze
 
 
 def test_dict_items_unpack_not_type_confusion():

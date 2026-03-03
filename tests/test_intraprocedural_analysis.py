@@ -18,7 +18,7 @@ class TestCFGConstruction:
     
     def test_simple_function_cfg(self):
         """Test CFG for a simple function."""
-        from pyfromscratch.cfg import build_cfg
+        from a3_python.cfg import build_cfg
         
         def simple():
             x = 1
@@ -33,7 +33,7 @@ class TestCFGConstruction:
     
     def test_conditional_cfg(self):
         """Test CFG for function with if/else."""
-        from pyfromscratch.cfg import build_cfg, EdgeType
+        from a3_python.cfg import build_cfg, EdgeType
         
         def conditional(x):
             if x > 0:
@@ -58,7 +58,7 @@ class TestCFGConstruction:
     
     def test_loop_detection(self):
         """Test loop header and back edge detection."""
-        from pyfromscratch.cfg import build_cfg
+        from a3_python.cfg import build_cfg
         
         def with_loop(n):
             total = 0
@@ -76,7 +76,7 @@ class TestCFGConstruction:
     
     def test_exception_regions(self):
         """Test exception region parsing."""
-        from pyfromscratch.cfg import build_cfg
+        from a3_python.cfg import build_cfg
         
         def with_try():
             try:
@@ -100,7 +100,7 @@ class TestDominanceAnalysis:
     
     def test_entry_dominates_all(self):
         """Entry block should dominate all other blocks."""
-        from pyfromscratch.cfg import build_cfg
+        from a3_python.cfg import build_cfg
         
         def simple(x):
             if x > 0:
@@ -118,7 +118,7 @@ class TestDominanceAnalysis:
     
     def test_self_dominates(self):
         """Every block should dominate itself."""
-        from pyfromscratch.cfg import build_cfg
+        from a3_python.cfg import build_cfg
         
         def func():
             return 42
@@ -130,7 +130,7 @@ class TestDominanceAnalysis:
     
     def test_immediate_dominator(self):
         """Test immediate dominator computation."""
-        from pyfromscratch.cfg import build_cfg
+        from a3_python.cfg import build_cfg
         
         def branching(x):
             if x > 0:
@@ -156,7 +156,7 @@ class TestGuardAnalysis:
     
     def test_none_check_guard(self):
         """Test that 'if x is not None' establishes g_nonnull(x)."""
-        from pyfromscratch.cfg import build_cfg, GuardAnalyzer
+        from a3_python.cfg import build_cfg, GuardAnalyzer
         
         def none_check(x):
             if x is not None:
@@ -173,7 +173,7 @@ class TestGuardAnalysis:
     
     def test_isinstance_guard(self):
         """Test that isinstance check establishes g_type guard."""
-        from pyfromscratch.cfg import build_cfg, GuardAnalyzer
+        from a3_python.cfg import build_cfg, GuardAnalyzer
         
         def type_check(x):
             if isinstance(x, int):
@@ -189,7 +189,7 @@ class TestGuardAnalysis:
     
     def test_truthiness_guard(self):
         """Test that 'if x:' establishes nonnull guard for sequences."""
-        from pyfromscratch.cfg import build_cfg, GuardAnalyzer
+        from a3_python.cfg import build_cfg, GuardAnalyzer
         
         def truthiness_check(items):
             if items:
@@ -212,8 +212,8 @@ class TestGuardDataflow:
     
     def test_guard_propagation(self):
         """Test that guards propagate through dominators."""
-        from pyfromscratch.cfg import build_cfg
-        from pyfromscratch.cfg.dataflow import GuardDataflowAnalysis
+        from a3_python.cfg import build_cfg
+        from a3_python.cfg.dataflow import GuardDataflowAnalysis
         
         def guarded_use(x):
             if x is not None:
@@ -231,8 +231,8 @@ class TestGuardDataflow:
     
     def test_guard_intersection_at_merge(self):
         """Test that guards are intersected at merge points."""
-        from pyfromscratch.cfg import build_cfg
-        from pyfromscratch.cfg.dataflow import GuardDataflowAnalysis
+        from a3_python.cfg import build_cfg
+        from a3_python.cfg.dataflow import GuardDataflowAnalysis
         
         def branching_guards(x, condition):
             if condition:
@@ -256,8 +256,8 @@ class TestTypeStateAnalysis:
     
     def test_type_refinement(self):
         """Test that type state is refined on branches."""
-        from pyfromscratch.cfg import build_cfg
-        from pyfromscratch.cfg.dataflow import TypeStateAnalysis
+        from a3_python.cfg import build_cfg
+        from a3_python.cfg.dataflow import TypeStateAnalysis
         
         def type_refined(x):
             if x is None:
@@ -277,8 +277,8 @@ class TestBoundsAnalysis:
     
     def test_len_tracking(self):
         """Test that len() calls are tracked."""
-        from pyfromscratch.cfg import build_cfg
-        from pyfromscratch.cfg.dataflow import BoundsAnalysis
+        from a3_python.cfg import build_cfg
+        from a3_python.cfg.dataflow import BoundsAnalysis
         
         def len_use(items):
             n = len(items)
@@ -302,7 +302,7 @@ class TestExceptionCatchAnalysis:
     
     def test_basic_try_except(self):
         """Test that handler is found for exception in try block."""
-        from pyfromscratch.cfg import build_cfg, ExceptionCatchAnalyzer
+        from a3_python.cfg import build_cfg, ExceptionCatchAnalyzer
         
         def with_handler():
             try:
@@ -320,7 +320,7 @@ class TestExceptionCatchAnalysis:
     
     def test_no_handler(self):
         """Test that lack of handler is detected."""
-        from pyfromscratch.cfg import build_cfg, ExceptionCatchAnalyzer
+        from a3_python.cfg import build_cfg, ExceptionCatchAnalyzer
         
         def no_handler():
             return 1 / 0  # No try/except
@@ -345,7 +345,7 @@ class TestIntraprocAnalysis:
     
     def test_run_analysis(self):
         """Test that complete analysis runs without error."""
-        from pyfromscratch.cfg import run_intraprocedural_analysis
+        from a3_python.cfg import run_intraprocedural_analysis
         
         def example(x, y):
             if x is not None:
@@ -363,7 +363,7 @@ class TestIntraprocAnalysis:
     
     def test_is_nonnull_query(self):
         """Test querying nonnull status at offset."""
-        from pyfromscratch.cfg import run_intraprocedural_analysis
+        from a3_python.cfg import run_intraprocedural_analysis
         
         def checked(x):
             if x is not None:
@@ -378,7 +378,7 @@ class TestIntraprocAnalysis:
     
     def test_is_safe_division_query(self):
         """Test querying division safety at offset."""
-        from pyfromscratch.cfg import run_intraprocedural_analysis
+        from a3_python.cfg import run_intraprocedural_analysis
         
         def guarded_div(x, y):
             if y != 0:
@@ -399,7 +399,7 @@ class TestSymbolicVMIntegration:
     
     def test_guard_state_in_machine_state(self):
         """Test that machine state has guard tracking fields."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
         
         state = SymbolicMachineState()
         
@@ -411,7 +411,7 @@ class TestSymbolicVMIntegration:
     
     def test_set_and_get_guard(self):
         """Test setting and querying guards."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
         
         state = SymbolicMachineState()
         
@@ -429,7 +429,7 @@ class TestSymbolicVMIntegration:
     
     def test_guard_copy(self):
         """Test that guards are copied during path branching."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
         
         state = SymbolicMachineState()
         state.set_guard('nonnull', 'x')
@@ -454,8 +454,8 @@ class TestUnsafeDetectorGuards:
     
     def test_div_zero_with_guard(self):
         """Test that DIV_ZERO respects div guard."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-        from pyfromscratch.unsafe.div_zero import is_unsafe_div_zero
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.unsafe.div_zero import is_unsafe_div_zero
         
         state = SymbolicMachineState()
         state.div_by_zero_reached = True
@@ -470,8 +470,8 @@ class TestUnsafeDetectorGuards:
     
     def test_null_ptr_with_guard(self):
         """Test that NULL_PTR respects nonnull guard."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-        from pyfromscratch.unsafe.null_ptr import is_unsafe_null_ptr
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.unsafe.null_ptr import is_unsafe_null_ptr
         
         state = SymbolicMachineState()
         state.none_misuse_reached = True
@@ -486,8 +486,8 @@ class TestUnsafeDetectorGuards:
     
     def test_bounds_with_guard(self):
         """Test that BOUNDS respects bounds guard."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-        from pyfromscratch.unsafe.bounds import is_unsafe_bounds
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.unsafe.bounds import is_unsafe_bounds
         
         state = SymbolicMachineState()
         state.index_out_of_bounds = True
@@ -502,8 +502,8 @@ class TestUnsafeDetectorGuards:
     
     def test_type_confusion_with_guard(self):
         """Test that TYPE_CONFUSION respects type guard."""
-        from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-        from pyfromscratch.unsafe.type_confusion import is_unsafe_type_confusion
+        from a3_python.semantics.symbolic_vm import SymbolicMachineState
+        from a3_python.unsafe.type_confusion import is_unsafe_type_confusion
         
         state = SymbolicMachineState()
         state.type_confusion_reached = True
@@ -526,7 +526,7 @@ class TestEndToEndAnalysis:
     
     def test_guarded_division_not_flagged(self):
         """Test that guarded division is not flagged as bug."""
-        from pyfromscratch.analyzer import Analyzer
+        from a3_python.analyzer import Analyzer
         from pathlib import Path
         import tempfile
         
@@ -553,7 +553,7 @@ safe_divide(10, 2)
     
     def test_guarded_none_access_not_flagged(self):
         """Test that guarded None access is not flagged."""
-        from pyfromscratch.analyzer import Analyzer
+        from a3_python.analyzer import Analyzer
         from pathlib import Path
         import tempfile
         

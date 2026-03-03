@@ -8,8 +8,8 @@ import pytest
 import sys
 import dis
 
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.semantics.state import MachineState
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.state import MachineState
 
 
 class TestCallIntrinsic1:
@@ -123,7 +123,7 @@ def test():
         """Test that unknown intrinsic IDs are handled soundly (over-approximation)."""
         # We can't easily generate bytecode with arbitrary intrinsic IDs,
         # but we verify that the implementation has a fallback case
-        from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+        from a3_python.z3model.values import SymbolicValue, ValueTag
         import z3
         
         # Create a minimal state to test the opcode handler directly

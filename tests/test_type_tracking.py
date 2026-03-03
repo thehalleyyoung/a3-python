@@ -9,11 +9,11 @@ These tests validate that type tracking:
 """
 
 import pytest
-from pyfromscratch.z3model.type_tracking import (
+from a3_python.z3model.type_tracking import (
     ConcreteType, TypeLabel, TypeAwareTaintLabel,
     get_conversion_result_type, is_type_conversion
 )
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType
 )
 
@@ -169,7 +169,7 @@ class TestTypeAwareTaintLabel:
         """Test that sanitized values are safe regardless of type."""
         taint = TaintLabel.from_untrusted_source(SourceType.HTTP_PARAM)
         # Apply SQL_ESCAPE sanitizer
-        from pyfromscratch.z3model.taint_lattice import SanitizerType
+        from a3_python.z3model.taint_lattice import SanitizerType
         taint = taint.sanitize(SanitizerType.SQL_ESCAPE)
         
         typ = TypeLabel.from_type(ConcreteType.STR)  # Still a string

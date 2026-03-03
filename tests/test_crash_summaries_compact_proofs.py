@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pyfromscratch.semantics.crash_summaries import BytecodeCrashSummaryAnalyzer, ExceptionType
+from a3_python.semantics.crash_summaries import BytecodeCrashSummaryAnalyzer, ExceptionType
 
 
 def test_compact_proof_suppresses_div_zero_precondition() -> None:

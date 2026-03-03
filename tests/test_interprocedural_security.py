@@ -19,7 +19,7 @@ import importlib
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def analyze_code(code: str, filename: str = 'test.py', entry_point: str = None, 
@@ -47,10 +47,10 @@ def analyze_code(code: str, filename: str = 'test.py', entry_point: str = None,
         if mode == 'interprocedural':
             # Interprocedural analysis for security bugs using taint tracking
             # Build call graph from single file
-            from pyfromscratch.cfg.call_graph import build_call_graph_from_file
-            from pyfromscratch.semantics.interprocedural_taint import InterproceduralContext
-            from pyfromscratch.semantics.summaries import SummaryComputer
-            from pyfromscratch.contracts.security_lattice import (
+            from a3_python.cfg.call_graph import build_call_graph_from_file
+            from a3_python.semantics.interprocedural_taint import InterproceduralContext
+            from a3_python.semantics.summaries import SummaryComputer
+            from a3_python.contracts.security_lattice import (
                 get_source_contracts_for_summaries,
                 get_sink_contracts_for_summaries,
                 get_sanitizer_contracts_for_summaries
@@ -488,8 +488,8 @@ class TestSummaryComputation:
     
     def test_identity_function_summary(self):
         """Summary for function that returns parameter."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
-        from pyfromscratch.semantics.summaries import SummaryComputer
+        from a3_python.cfg.call_graph import build_call_graph_from_file
+        from a3_python.semantics.summaries import SummaryComputer
         
         code = '''
 def identity(x):
@@ -511,9 +511,9 @@ def identity(x):
     
     def test_source_function_summary(self):
         """Summary for function that introduces taint."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
-        from pyfromscratch.semantics.summaries import SummaryComputer
-        from pyfromscratch.contracts.security_lattice import SourceContract, SourceType
+        from a3_python.cfg.call_graph import build_call_graph_from_file
+        from a3_python.semantics.summaries import SummaryComputer
+        from a3_python.contracts.security_lattice import SourceContract, SourceType
         
         code = '''
 def get_user_input():
@@ -543,9 +543,9 @@ def get_user_input():
     
     def test_sink_function_summary(self):
         """Summary for function that calls security sink."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
-        from pyfromscratch.semantics.summaries import SummaryComputer
-        from pyfromscratch.contracts.security_lattice import SinkContract, SinkType
+        from a3_python.cfg.call_graph import build_call_graph_from_file
+        from a3_python.semantics.summaries import SummaryComputer
+        from a3_python.contracts.security_lattice import SinkContract, SinkType
         
         code = '''
 def execute_sql(query):

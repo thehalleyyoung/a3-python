@@ -9,7 +9,7 @@ Phase 2 implements actual function body analysis for simple cases:
 """
 
 import pytest
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_simple_function_inlining(tmp_path):

@@ -6,7 +6,7 @@ which are critical for analyzing loops.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import symbolic_execute
+from a3_python.semantics.symbolic_vm import symbolic_execute
 
 
 def test_load_fast_check_bound_variable():

@@ -9,7 +9,7 @@ import pytest
 import dis
 import types
 
-from pyfromscratch.barriers.program_analysis import (
+from a3_python.barriers.program_analysis import (
     analyze_program_structure,
     suggest_template_for_program,
     print_program_analysis,

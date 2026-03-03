@@ -8,7 +8,7 @@ bytecode semantics for barrier certificate verification.
 import pytest
 import z3
 
-from pyfromscratch.barriers.step_relation import (
+from a3_python.barriers.step_relation import (
     StepRelationEncoder,
     StateEncoding,
     encode_initial_state,

@@ -6,7 +6,7 @@ are properly modeled and do not produce spurious bugs.
 """
 
 import pytest
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 import tempfile
 import os
 

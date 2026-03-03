@@ -6,7 +6,7 @@ dicts should work correctly with CONTAINS_OP ('in' operator).
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 class TestContainsWithDictReturnType:
     """Test CONTAINS_OP when container is a dict from stdlib function"""

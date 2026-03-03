@@ -5,7 +5,7 @@ Ensures that ambiguous method names like "search" don't cause false positives
 by matching multiple unrelated sink contracts.
 """
 import pytest
-from pyfromscratch.contracts.security_lattice import get_sink_contracts
+from a3_python.contracts.security_lattice import get_sink_contracts
 
 
 class TestContractMatchingSpecificity:

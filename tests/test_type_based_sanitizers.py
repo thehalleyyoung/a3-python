@@ -21,10 +21,10 @@ Barrier-theoretic justification:
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType
 )
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     _sanitizer_contracts, apply_sanitizer
 )
 

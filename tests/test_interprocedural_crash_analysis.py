@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 import pytest
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 class TestInterproceduralCrashAnalysis:
@@ -199,6 +199,61 @@ def entry():
                     assert len(chain) >= 1
                     # Chain should contain level1 (where the actual NULL_PTR occurs)
                     assert any('level1' in func for func in chain)
+        finally:
+            filepath.unlink()
+
+    def test_no_null_ptr_on_builtin_call_result_attribute(self):
+        """Regression: keras#11 — attribute access on set(dir(...)) must not
+        produce a false-positive NULL_PTR.  The crash-summary analyser should
+        recognise that the CALL result of ``set(...)`` is always non-None, and
+        that TOS has no parameter flow when the attribute access target is a
+        locally computed value.
+        """
+        code = """\
+from collections.abc import Sequence
+
+def is_sequence(seq):
+    return (getattr(seq, 'use_sequence_api', False)
+            or set(dir(Sequence())).issubset(set(dir(seq) + ['use_sequence_api'])))
+"""
+        filepath = Path(tempfile.mktemp(suffix=".py"))
+        filepath.write_text(code)
+        try:
+            from a3_python.cfg.call_graph import build_call_graph_from_file
+            from a3_python.semantics.crash_summaries import BytecodeCrashSummaryComputer
+
+            cg = build_call_graph_from_file(filepath, filepath.stem)
+            summaries = BytecodeCrashSummaryComputer(cg).compute_all()
+            for name, s in summaries.items():
+                if 'is_sequence' in name:
+                    assert 'NULL_PTR' not in s.may_trigger, (
+                        f"is_sequence should NOT trigger unguarded NULL_PTR, "
+                        f"but may_trigger={s.may_trigger}"
+                    )
+        finally:
+            filepath.unlink()
+
+    def test_null_ptr_still_detected_on_param_attribute(self):
+        """Ensure NULL_PTR is still detected when attribute access IS on a
+        parameter-derived value (no regression from the keras#11 fix)."""
+        code = """\
+def null_deref(x):
+    return x.value
+"""
+        filepath = Path(tempfile.mktemp(suffix=".py"))
+        filepath.write_text(code)
+        try:
+            from a3_python.cfg.call_graph import build_call_graph_from_file
+            from a3_python.semantics.crash_summaries import BytecodeCrashSummaryComputer
+
+            cg = build_call_graph_from_file(filepath, filepath.stem)
+            summaries = BytecodeCrashSummaryComputer(cg).compute_all()
+            for name, s in summaries.items():
+                if 'null_deref' in name:
+                    assert 'NULL_PTR' in s.may_trigger, (
+                        f"null_deref SHOULD trigger NULL_PTR, "
+                        f"but may_trigger={s.may_trigger}"
+                    )
         finally:
             filepath.unlink()
 

@@ -7,7 +7,7 @@ termination checking (BoundedBelow, Decreasing conditions).
 
 import pytest
 import z3
-from pyfromscratch.barriers.ranking import (
+from a3_python.barriers.ranking import (
     RankingFunctionCertificate,
     TerminationChecker,
     TerminationProofResult,

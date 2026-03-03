@@ -14,11 +14,11 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pyfromscratch.analyzer import Analyzer
-from pyfromscratch.cfg.call_graph import build_call_graph_from_directory
-from pyfromscratch.semantics.interprocedural_taint import InterproceduralContext
-from pyfromscratch.semantics.summaries import SummaryComputer
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.analyzer import Analyzer
+from a3_python.cfg.call_graph import build_call_graph_from_directory
+from a3_python.semantics.interprocedural_taint import InterproceduralContext
+from a3_python.semantics.summaries import SummaryComputer
+from a3_python.contracts.security_lattice import (
     get_source_contracts_for_summaries,
     get_sink_contracts_for_summaries,
     get_sanitizer_contracts_for_summaries

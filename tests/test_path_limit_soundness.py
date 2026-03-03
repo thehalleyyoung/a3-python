@@ -7,7 +7,7 @@ When max_paths is hit with unexplored paths remaining, the verdict MUST be UNKNO
 Returning SAFE without exhaustive exploration is UNSOUND.
 """
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 from pathlib import Path
 import tempfile
 import os

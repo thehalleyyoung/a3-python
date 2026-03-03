@@ -16,20 +16,20 @@ Mode B: Concolic validation (does not affect verdicts)
 """
 
 import pytest
-from pyfromscratch.z3model.taint import (
+from a3_python.z3model.taint import (
     TaintState, TaintSource, SinkType, SanitizerType, TaintLabel,
     SecurityViolation, create_violation
 )
-from pyfromscratch.contracts.security import (
+from a3_python.contracts.security import (
     init_security_contracts, get_source_contract, get_sink_contract,
     get_sanitizer_contract, is_taint_source, is_security_sink, is_sanitizer,
     apply_source_taint, check_sink_taint, apply_sanitizer
 )
-from pyfromscratch.semantics.security_tracker import (
+from a3_python.semantics.security_tracker import (
     SecurityTracker, handle_call_pre, handle_call_post,
     handle_binop, create_fresh_tainted_value
 )
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.z3model.values import SymbolicValue, ValueTag
 import z3
 
 
@@ -657,8 +657,8 @@ class TestSinkCheck:
     def test_cleartext_storage_safe_after_sha256_hashing(self):
         """No violation when SHA-256 hashed password is stored (sanitizer clears sensitivity)."""
         # Migrated to LatticeSecurityTracker API (iteration 582)
-        from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
-        from pyfromscratch.z3model.taint_lattice import TaintLabel, SourceType
+        from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
+        from a3_python.z3model.taint_lattice import TaintLabel, SourceType
         
         tracker = LatticeSecurityTracker()
         
@@ -948,7 +948,7 @@ class TestSecurityBugRegistry:
         ITERATION 700: Added 17 fine-grained exception bug types.
         Total: 20 + 47 + 17 = 84 (but PANIC is shared, so 84)
         """
-        from pyfromscratch.unsafe.registry import list_implemented_bug_types
+        from a3_python.unsafe.registry import list_implemented_bug_types
         bugs = list_implemented_bug_types()
         # 20 core + 47 security + 17 exception (VALUE_ERROR, RUNTIME_ERROR, etc.)
         # Note: Some may overlap, so we check >= 67 (original count)
@@ -956,7 +956,7 @@ class TestSecurityBugRegistry:
     
     def test_47_security_bug_types(self):
         """All 47 security bug types from CodeQL are registered."""
-        from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
+        from a3_python.unsafe.registry import UNSAFE_PREDICATES
         
         # Core error bug types (not security)
         core_bugs = {
@@ -982,7 +982,7 @@ class TestSecurityBugRegistry:
     
     def test_key_security_bugs_present(self):
         """Key security bug types are present in registry."""
-        from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
+        from a3_python.unsafe.registry import UNSAFE_PREDICATES
         
         key_bugs = [
             'SQL_INJECTION', 'COMMAND_INJECTION', 'CODE_INJECTION', 'PATH_INJECTION',
@@ -998,7 +998,7 @@ class TestSecurityBugRegistry:
     
     def test_predicates_are_callable(self):
         """All predicates and extractors are callable."""
-        from pyfromscratch.unsafe.registry import UNSAFE_PREDICATES
+        from a3_python.unsafe.registry import UNSAFE_PREDICATES
         
         for bug_type, (predicate, extractor) in UNSAFE_PREDICATES.items():
             assert callable(predicate), f"{bug_type} predicate not callable"

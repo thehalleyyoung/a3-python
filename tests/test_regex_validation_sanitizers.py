@@ -18,11 +18,11 @@ The tests verify:
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType,
     SANITIZER_TO_SINKS
 )
-from pyfromscratch.contracts.security_lattice import (
+from a3_python.contracts.security_lattice import (
     get_sanitizer_contract, apply_sanitizer
 )
 

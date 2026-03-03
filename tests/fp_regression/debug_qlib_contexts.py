@@ -6,8 +6,8 @@ from collections import Counter
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
-from pyfromscratch.fp_context import FPContextDetector, FPContext
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.fp_context import FPContextDetector, FPContext
 
 repo = Path('external_tools/qlib')
 if not repo.exists():

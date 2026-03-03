@@ -2,7 +2,7 @@
 """Test command injection detection on cmd_lab pattern."""
 import sys
 sys.path.insert(0, '.')
-from pyfromscratch.semantics.intraprocedural_taint import IntraproceduralTaintAnalyzer
+from a3_python.semantics.intraprocedural_taint import IntraproceduralTaintAnalyzer
 import dis
 
 # Compile with real structure from cmd_lab

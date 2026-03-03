@@ -15,11 +15,11 @@ and eval(content) won't detect the security issue.
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType, SanitizerType
 )
-from pyfromscratch.semantics.security_tracker_lattice import LatticeSecurityTracker
-from pyfromscratch.contracts.security_lattice import init_security_contracts
+from a3_python.semantics.security_tracker_lattice import LatticeSecurityTracker
+from a3_python.contracts.security_lattice import init_security_contracts
 
 
 def test_file_object_inherits_path_taint():

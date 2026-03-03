@@ -6,7 +6,7 @@ Semantically identical to LOAD_FAST for symbolic execution purposes.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 def test_load_fast_borrow_basic():

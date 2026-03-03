@@ -5,7 +5,7 @@ Paper (SOTA #1 in kitchensinkplus.md):
   S. Prajna, A. Jadbabaie, G. J. Pappas.
   "Safety verification of hybrid systems using barrier certificates." HSCC 2004.
 
-In PythonFromScratch, we use the same *barrier proof obligations* (Init/Unsafe/Step)
+In a3-python, we use the same *barrier proof obligations* (Init/Unsafe/Step)
 but apply them to discrete transition systems extracted from Python bytecode.
 
 This module provides a first practical, sound "hybrid-style" integration:

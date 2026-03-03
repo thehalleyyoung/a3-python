@@ -14,7 +14,7 @@ import time
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
 
 
 REPOS_TO_TEST = [

@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_no_concolic_skips_dse_and_lockstep(tmp_path: Path):

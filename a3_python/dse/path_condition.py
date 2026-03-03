@@ -503,13 +503,17 @@ class DSEExecutor:
         self,
         code: types.CodeType,
         max_paths: int = 100,
-        max_depth: int = 50,
+        max_depth: int = 30,
         solver_timeout_ms: int = 1000,
+        max_calls: int = 5000,
+        time_budget_s: float = 10.0,
     ):
         self.code = code
         self.max_paths = max_paths
         self.max_depth = max_depth
         self.solver_timeout_ms = solver_timeout_ms
+        self.max_calls = max_calls
+        self.time_budget_s = time_budget_s
         
         # Build CFG
         self.cfg = build_cfg(code)
@@ -525,6 +529,10 @@ class DSEExecutor:
         # Results
         self.explored_paths: List[PathCondition] = []
         self.bug_reachability: Dict[Tuple[str, str, int], bool] = {}  # (bug_type, var, offset) -> reachable?
+        
+        # Budget tracking
+        self._call_count = 0
+        self._start_time = 0.0
     
     def analyze(self) -> Dict[Tuple[str, str, int], bool]:
         """
@@ -534,11 +542,18 @@ class DSEExecutor:
             Map from (bug_type, variable, offset) to reachability status.
             True = bug may be reachable, False = provably unreachable (FP).
         """
+        import time as _time
+        self._start_time = _time.monotonic()
+        self._call_count = 0
+        
         # Initialize symbolic state
         initial_state = self._create_initial_state()
         
         # Explore paths using bounded DFS
-        self._explore_paths(initial_state, depth=0)
+        try:
+            self._explore_paths(initial_state, depth=0)
+        except RecursionError:
+            pass  # Hit Python recursion limit — keep results so far
         
         return self.bug_reachability
     
@@ -559,9 +574,15 @@ class DSEExecutor:
     
     def _explore_paths(self, state: SymbolicState, depth: int) -> None:
         """Explore paths from the current state."""
+        import time as _time
+        self._call_count += 1
         if depth > self.max_depth:
             return
         if len(self.explored_paths) >= self.max_paths:
+            return
+        if self._call_count > self.max_calls:
+            return
+        if _time.monotonic() - self._start_time > self.time_budget_s:
             return
         
         # Get current block

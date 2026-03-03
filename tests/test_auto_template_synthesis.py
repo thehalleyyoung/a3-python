@@ -10,14 +10,14 @@ import pytest
 import z3
 from typing import Callable
 
-from pyfromscratch.barriers.cegis import (
+from a3_python.barriers.cegis import (
     synthesize_barrier_with_auto_template,
     CEGISConfig,
 )
-from pyfromscratch.barriers.program_analysis import (
+from a3_python.barriers.program_analysis import (
     analyze_program_structure,
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+from a3_python.semantics.symbolic_vm import SymbolicMachineState
 
 
 def compile_code(source: str):
@@ -247,7 +247,7 @@ class TestLinearTemplateCEGIS:
     
     def test_linear_template_parameters_created(self):
         """Linear template creates correct parameters (coeff_x, constant)."""
-        from pyfromscratch.barriers.cegis import CEGISBarrierSynthesizer
+        from a3_python.barriers.cegis import CEGISBarrierSynthesizer
         
         synth = CEGISBarrierSynthesizer()
         params = synth._create_parameter_variables("linear")
@@ -258,7 +258,7 @@ class TestLinearTemplateCEGIS:
     
     def test_linear_template_evaluation(self):
         """Linear template evaluates correctly at a point."""
-        from pyfromscratch.barriers.cegis import CEGISBarrierSynthesizer
+        from a3_python.barriers.cegis import CEGISBarrierSynthesizer
         
         synth = CEGISBarrierSynthesizer()
         
@@ -278,7 +278,7 @@ class TestLinearTemplateCEGIS:
     
     def test_linear_barrier_built_from_params(self):
         """Linear barrier can be built from parameter values."""
-        from pyfromscratch.barriers.cegis import CEGISBarrierSynthesizer
+        from a3_python.barriers.cegis import CEGISBarrierSynthesizer
         
         synth = CEGISBarrierSynthesizer()
         

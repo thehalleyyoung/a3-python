@@ -10,12 +10,12 @@ This test verifies the integration completed in iteration 552:
 
 import pytest
 import z3
-from pyfromscratch.barriers.ranking_synthesis import (
+from a3_python.barriers.ranking_synthesis import (
     RankingSynthesizer,
     RankingSynthesisConfig,
 )
-from pyfromscratch.barriers.ranking import LexicographicRankingTemplate
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+from a3_python.barriers.ranking import LexicographicRankingTemplate
+from a3_python.semantics.symbolic_vm import SymbolicMachineState
 
 
 def test_synthesizer_generates_lexicographic_templates():

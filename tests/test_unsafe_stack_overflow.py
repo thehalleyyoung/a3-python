@@ -15,8 +15,8 @@ independent of the specific execution paths that could reach such states.
 
 import pytest
 import sys
-from pyfromscratch.semantics.state import MachineState, Frame
-from pyfromscratch.unsafe.stack_overflow import is_unsafe_stack_overflow, extract_counterexample
+from a3_python.semantics.state import MachineState, Frame
+from a3_python.unsafe.stack_overflow import is_unsafe_stack_overflow, extract_counterexample
 
 
 def create_state_with_depth(depth: int) -> MachineState:

@@ -6,7 +6,7 @@ It's semantically equivalent to JUMP_BACKWARD but jumps forward instead of backw
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 def test_jump_forward_basic():

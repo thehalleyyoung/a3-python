@@ -24,7 +24,7 @@ security bugs without needing to know internal implementation.
 import pytest
 import tempfile
 from pathlib import Path
-from pyfromscratch.analyzer import security_scan, AnalysisResult
+from a3_python.analyzer import security_scan, AnalysisResult
 
 
 class TestSecurityScanAPI:

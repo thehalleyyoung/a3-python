@@ -10,8 +10,8 @@ import sys
 sys.path.insert(0, '/Users/halleyyoung/Documents/PythonFromScratch')
 
 from pathlib import Path
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
-from pyfromscratch.semantics.interprocedural_barriers import FunctionBarrierSynthesizer, SafetyProperty, FunctionBarrier
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.semantics.interprocedural_barriers import FunctionBarrierSynthesizer, SafetyProperty, FunctionBarrier
 
 def main():
     print("=" * 70)

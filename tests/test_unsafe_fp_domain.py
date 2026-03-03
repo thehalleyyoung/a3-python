@@ -10,8 +10,8 @@ implemented. These tests document the intended behavior for FP_DOMAIN.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 # ============================================================================
@@ -168,7 +168,7 @@ else:
 
 def test_fpdomain_registered():
     """Smoke test: FP_DOMAIN is registered in unsafe predicates."""
-    from pyfromscratch.unsafe.registry import list_implemented_bug_types
+    from a3_python.unsafe.registry import list_implemented_bug_types
     
     bug_types = list_implemented_bug_types()
     assert "FP_DOMAIN" in bug_types, "FP_DOMAIN should be registered"
@@ -176,8 +176,8 @@ def test_fpdomain_registered():
 
 def test_fpdomain_predicate_callable():
     """Smoke test: FP_DOMAIN predicate is callable."""
-    from pyfromscratch.unsafe.fp_domain import is_unsafe_fp_domain
-    from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+    from a3_python.unsafe.fp_domain import is_unsafe_fp_domain
+    from a3_python.semantics.symbolic_vm import SymbolicMachineState
     
     # Create minimal state
     state = SymbolicMachineState()
@@ -189,8 +189,8 @@ def test_fpdomain_predicate_callable():
 
 def test_fpdomain_extractor_callable():
     """Smoke test: FP_DOMAIN counterexample extractor is callable."""
-    from pyfromscratch.unsafe.fp_domain import extract_counterexample
-    from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
+    from a3_python.unsafe.fp_domain import extract_counterexample
+    from a3_python.semantics.symbolic_vm import SymbolicMachineState
     
     state = SymbolicMachineState()
     state.fp_domain_error_reached = True

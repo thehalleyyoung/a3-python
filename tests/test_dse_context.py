@@ -13,7 +13,7 @@ import pytest
 import types
 from pathlib import Path
 
-from pyfromscratch.dse.concolic import (
+from a3_python.dse.concolic import (
     ConcreteInput,
     ConcreteExecutor,
     ConcreteTrace

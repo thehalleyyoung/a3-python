@@ -1,0 +1,48 @@
+name: Agential Demo CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Run demo
+        run: |
+          python3 agential_demo/demo.py 2>&1 | tee demo.log
+      - name: Upload demo log
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-log
+          path: demo.log
+
+  build_slides:
+    needs: demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (for tectonic)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Install tectonic
+        run: cargo install tectonic --locked
+      - name: Build slides PDF
+        run: |
+          cd agential_demo
+          tectonic slides.tex
+      - name: Upload slides PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: slides-pdf
+          path: agential_demo/slides.pdf

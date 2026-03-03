@@ -18,14 +18,14 @@ import types
 import dis
 from pathlib import Path
 
-from pyfromscratch.semantics.sota_intraprocedural import (
+from a3_python.semantics.sota_intraprocedural import (
     SOTAIntraproceduralAnalyzer,
     SOTASecurityViolation,
     AbstractState,
     TaintLabel,
     analyze_function_sota,
 )
-from pyfromscratch.z3model.taint_lattice import SourceType, SinkType
+from a3_python.z3model.taint_lattice import SourceType, SinkType
 
 
 def compile_function(source: str, func_name: str = "test_func") -> types.CodeType:

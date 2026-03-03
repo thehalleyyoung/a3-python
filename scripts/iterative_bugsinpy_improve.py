@@ -60,6 +60,8 @@ A3_SCAN_TIMEOUT = 120
 COPILOT_TIMEOUT = 3600
 
 
+
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 
 def log(msg: str) -> None:
@@ -438,17 +440,12 @@ def classify_result(
 
     # FALSE POSITIVE: fixed code still flagged
     if fixed_result["verdict"] == "BUG" and fixed_result["bugs_found"]:
-        # Check if the bugs reported on fixed code are also in the buggy code
-        # (i.e., are they real bugs or FPs from fixed code?)
-        fixed_only_bugs = []
         buggy_bug_set = set(buggy_result.get("bugs_found", []))
-        for bug in fixed_result["bugs_found"]:
-            if bug not in buggy_bug_set:
-                fixed_only_bugs.append(bug)
+        fixed_bug_set = set(fixed_result.get("bugs_found", []))
+        
+        # Check if the bugs reported on fixed code are also in the buggy code
+        fixed_only_bugs = [b for b in fixed_result["bugs_found"] if b not in buggy_bug_set]
 
-        # If all bugs in fixed were also in buggy, that's a true positive
-        # (the fix may not have addressed those specific bugs).
-        # But if there are fixed-only bugs, those are clearly FPs.
         if fixed_only_bugs:
             return {
                 "type": "false_positive",
@@ -466,7 +463,26 @@ def classify_result(
                 "false_positive_bugs": fixed_only_bugs,
             }
 
-        # Also: if fixed version reports bugs but buggy version does too,
+        # If the fixed version reports the EXACT SAME bugs as the buggy version,
+        # it means a3 failed to recognize that the bug was fixed (it still thinks
+        # the bug is present). This is a false positive on the fixed code.
+        if fixed_bug_set == buggy_bug_set and len(fixed_bug_set) > 0:
+            return {
+                "type": "false_positive",
+                "project": project,
+                "bug_id": bug_id,
+                "description": (
+                    f"a3 reported the EXACT SAME bugs on both the BUGGY and FIXED "
+                    f"versions of {project} bug #{bug_id}. It failed to recognize "
+                    f"that the bug was fixed, meaning these are false positives on the fixed code."
+                ),
+                "buggy_output": buggy_result["stdout"][:2000],
+                "fixed_output": fixed_result["stdout"][:2000],
+                "buggy_bugs": buggy_result["bugs_found"],
+                "fixed_bugs": fixed_result["bugs_found"],
+            }
+
+        # If fixed version reports bugs but buggy version does too,
         # the bugs might be pre-existing issues (not related to the BugsInPy bug).
         # We still flag if the fixed version reports more than the buggy version.
         if len(fixed_result["bugs_found"]) > len(buggy_result["bugs_found"]):
@@ -514,9 +530,8 @@ def call_copilot(prompt: str) -> str:
         #     timeout=COPILOT_TIMEOUT,
         #     cwd=str(A3_ROOT),
         # )
-        os.system(" ".join(cmd) + f" > {A3_ROOT / 'copilot_output.txt'} 2>&1")
-        output = (A3_ROOT / "copilot_output.txt").read_text()
-        return output
+        os.system(" ".join(cmd))
+        return "COPILOT_OUTPUT_PLACEHOLDER"
         # output = result.stdout + result.stderr
         # log(f"  Copilot returned (exit={result.returncode}, output length: {len(output)} chars)")
         # return output
@@ -561,7 +576,7 @@ def attempt_fix(misclass: dict) -> bool:
             - Missing control flow analysis that would prove the path is infeasible
             - Missing recognition of safe coding patterns
             
-            Make targeted, minimal changes. Do NOT break existing functionality.
+            Make targeted but potentially **very large** changes. Do NOT break existing functionality.
         """)
     else:  # false_negative
         prompt = textwrap.dedent(f"""\
@@ -586,7 +601,7 @@ def attempt_fix(misclass: dict) -> bool:
             - Insufficient symbolic execution depth
             - Missing unsafe predicate check
             
-            Make targeted, minimal changes. Do NOT break existing functionality.
+            Make targeted but potentially **very large** changes. Do NOT break existing functionality.
         """)
 
     output = call_copilot(prompt)
@@ -675,7 +690,7 @@ def inner_loop(state: dict) -> bool:
                     "stdout": "\n---\n".join(r["stdout"] for r in buggy_results)[:4000],
                     "bugs_found": [b for r in buggy_results for b in r["bugs_found"]],
                     "verdict": "BUG" if any(r["verdict"] == "BUG" for r in buggy_results) else
-                              "UNKNOWN" if any(r["verdict"] == "UNKNOWN" for r in buggy_results) else
+                              "UNKNOWN" if any(r["verdict"] in ("UNKNOWN", "ERROR") for r in buggy_results) else
                               "SAFE",
                 }
 
@@ -696,7 +711,7 @@ def inner_loop(state: dict) -> bool:
                     "stdout": "\n---\n".join(r["stdout"] for r in fixed_results)[:4000],
                     "bugs_found": [b for r in fixed_results for b in r["bugs_found"]],
                     "verdict": "BUG" if any(r["verdict"] == "BUG" for r in fixed_results) else
-                              "UNKNOWN" if any(r["verdict"] == "UNKNOWN" for r in fixed_results) else
+                              "UNKNOWN" if any(r["verdict"] in ("UNKNOWN", "ERROR") for r in fixed_results) else
                               "SAFE",
                 }
 

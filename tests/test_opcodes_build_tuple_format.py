@@ -1,8 +1,8 @@
 """Test BUILD_TUPLE and FORMAT_SIMPLE opcodes."""
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicPath
-from pyfromscratch.z3model.values import ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicPath
+from a3_python.z3model.values import ValueTag
 
 
 def test_build_tuple_basic():

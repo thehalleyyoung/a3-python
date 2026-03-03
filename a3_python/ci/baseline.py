@@ -151,6 +151,10 @@ def cmd_baseline_diff(
     """
     from .sarif import load_sarif
 
+    if not Path(sarif_path).exists():
+        print(f"Error: SARIF file not found: {sarif_path}", file=sys.stderr)
+        return 3
+
     sarif = load_sarif(sarif_path)
     baseline = load_baseline(repo_root, baseline_path)
     new_findings, fixed = diff_sarif_against_baseline(sarif, baseline)
@@ -195,6 +199,10 @@ def cmd_baseline_accept(
 ) -> int:
     """``a3 baseline accept`` entry point."""
     from .sarif import load_sarif
+
+    if not Path(sarif_path).exists():
+        print(f"Error: SARIF file not found: {sarif_path}", file=sys.stderr)
+        return 3
 
     sarif = load_sarif(sarif_path)
     baseline = load_baseline(repo_root, baseline_path)

@@ -1,6 +1,6 @@
 import types
 
-from pyfromscratch.barriers.sos_safety import sos_guarded_div_zero_in_affine_loops
+from a3_python.barriers.sos_safety import sos_guarded_div_zero_in_affine_loops
 
 
 def _compile_fn(src: str, name: str) -> types.CodeType:

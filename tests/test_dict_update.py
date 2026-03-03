@@ -6,7 +6,7 @@ These tests verify that the opcode is implemented and doesn't crash.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 import tempfile
 import os
 

@@ -10,15 +10,15 @@ Validates that we can:
 import pytest
 import z3
 
-from pyfromscratch.dse.constraint_solver import (
+from a3_python.dse.constraint_solver import (
     ConstraintExtractor, ConstraintSolver, PathConstraints,
     extract_and_solve_path, validate_path_with_input
 )
-from pyfromscratch.semantics.symbolic_vm import (
+from a3_python.semantics.symbolic_vm import (
     SymbolicVM, SymbolicMachineState, SymbolicPath, SymbolicFrame
 )
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
-from pyfromscratch.dse.concolic import ConcreteInput, ConcreteExecutor
+from a3_python.z3model.values import SymbolicValue, ValueTag
+from a3_python.dse.concolic import ConcreteInput, ConcreteExecutor
 import types
 
 

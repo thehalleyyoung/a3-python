@@ -9,7 +9,7 @@ These tests verify that:
 """
 
 import pytest
-from pyfromscratch.barriers.kitchensink_taxonomy import (
+from a3_python.barriers.kitchensink_taxonomy import (
     BugCategory,
     SemanticBugType,
     KitchensinkBugStrategy,

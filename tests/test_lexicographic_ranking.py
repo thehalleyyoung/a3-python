@@ -14,14 +14,14 @@ import pytest
 import z3
 import threading
 
-from pyfromscratch.barriers.ranking import (
+from a3_python.barriers.ranking import (
     RankingFunctionCertificate,
     TerminationProofResult,
     simple_counter_ranking,
     linear_ranking_function,
     create_lexicographic_ranking,
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState, SymbolicValue
+from a3_python.semantics.symbolic_vm import SymbolicMachineState, SymbolicValue
 
 
 # Global counter for unique variable names (thread-safe)

@@ -9,7 +9,7 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from pyfromscratch.analyzer import analyze
+from a3_python.analyzer import analyze
 
 
 class TestExceptionPathForking:

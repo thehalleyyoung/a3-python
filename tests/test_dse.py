@@ -9,8 +9,8 @@ Tests demonstrate:
 
 import pytest
 import z3
-from pyfromscratch.dse import ConcreteExecutor, TraceValidator, DSEResult
-from pyfromscratch.dse.concolic import ConcreteInput, ConcreteTrace
+from a3_python.dse import ConcreteExecutor, TraceValidator, DSEResult
+from a3_python.dse.concolic import ConcreteInput, ConcreteTrace
 
 
 class TestConcreteExecutor:

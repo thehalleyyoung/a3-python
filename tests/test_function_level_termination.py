@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 import pytest
 
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_function_with_terminating_loop():

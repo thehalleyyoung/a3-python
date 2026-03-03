@@ -6,8 +6,8 @@ in module init were not being inlined, leading to TYPE_CONFUSION false positives
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 def test_user_function_string_return_concat():

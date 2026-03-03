@@ -8,7 +8,7 @@ Verifies barrier-theoretic approach with Z3 constraints.
 import pytest
 import tempfile
 from pathlib import Path
-from pyfromscratch.semantics.intraprocedural_taint import analyze_file_intraprocedural
+from a3_python.semantics.intraprocedural_taint import analyze_file_intraprocedural
 
 
 def analyze_code(code: str):

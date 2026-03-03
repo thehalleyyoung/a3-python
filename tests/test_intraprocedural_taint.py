@@ -10,7 +10,7 @@ Validates that within-function dataflow correctly detects:
 
 import pytest
 from pathlib import Path
-from pyfromscratch.semantics.intraprocedural_taint import (
+from a3_python.semantics.intraprocedural_taint import (
     IntraproceduralTaintAnalyzer,
     IntraproceduralBug,
     analyze_file_intraprocedural,

@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 import pytest
 
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
 
 
 def test_interprocedural_tracker_finds_intraprocedural_bugs():

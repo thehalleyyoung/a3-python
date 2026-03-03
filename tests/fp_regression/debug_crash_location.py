@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from pyfromscratch.semantics.interprocedural_bugs import InterproceduralBugTracker
+from a3_python.semantics.interprocedural_bugs import InterproceduralBugTracker
 
 file_path = Path('tests/fp_regression/cli_tool_patterns/argparse_path.py')
 

@@ -1,0 +1,31 @@
+# .a3.yml — a3-python configuration
+# See: https://github.com/thehalleyyoung/a3-python
+
+analysis:
+  interprocedural: true
+  kitchensink: true
+  dse-verify: true
+  min-confidence: 0.7
+  deduplicate: true
+  no-intent-filter: false
+  max-dse-steps: 100
+
+ci:
+  fail-on-new-bugs: true
+  baseline-file: .a3-baseline.json
+  llm-triage: true
+  llm-model: gpt-4o
+  llm-provider: github
+  sarif-upload: true
+
+scan:
+  exclude:
+    - "tests/**"
+    - "test/**"
+    - "**/test_*.py"
+    - "docs/**"
+    - "examples/**"
+    - "setup.py"
+    - "conftest.py"
+  include:
+    - "**/*.py"

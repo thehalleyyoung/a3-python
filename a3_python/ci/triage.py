@@ -408,13 +408,10 @@ def _classify_with_openai(
         )
 
     client = openai.OpenAI(api_key=config.api_key or os.environ.get("OPENAI_API_KEY", ""))
-    model = config.model if config.model != "claude-sonnet-4-20250514" else "gpt-5"
-    # Reasoning models (gpt-5, o1, o3, etc.) use internal reasoning tokens that
-    # count toward max_completion_tokens.  GPT-5 typically uses 300-500 reasoning
-    # tokens before producing visible output, so 512 leaves zero room for the
-    # actual JSON answer.  4096 gives ample headroom.
+    # max_completion_tokens=4096 gives headroom for reasoning models (o1, o3)
+    # that use internal reasoning tokens before producing visible output.
     response = client.chat.completions.create(
-        model=model,
+        model=config.model,
         max_completion_tokens=4096,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
@@ -486,14 +483,12 @@ def _classify_with_github(user_message: str, config: TriageConfig) -> TriageVerd
             "secrets.GITHUB_TOKEN."
         )
 
-    model = config.model if config.model != "claude-sonnet-4-20250514" else "gpt-5"
-
     client = openai.OpenAI(
         api_key=token,
         base_url="https://models.inference.ai.azure.com",
     )
     response = client.chat.completions.create(
-        model=model,
+        model=config.model,
         max_completion_tokens=4096,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
@@ -734,14 +729,7 @@ def cmd_triage(
         min_confidence=min_confidence,
     )
 
-    # Resolve the display model name (the classify functions override
-    # the Claude default when using OpenAI/GitHub providers)
-    display_model = model
-    if model == "claude-sonnet-4-20250514":
-        if provider == "openai" or provider == "github":
-            display_model = "gpt-5"
-
-    print(f"🔍 Triaging findings with {provider}/{display_model}...")
+    print(f"🔍 Triaging findings with {provider}/{model}...")
     filtered, all_verdicts = triage_sarif(sarif, repo_root, config, verbose=verbose)
 
     total_kept = sum(len(run.get("results", [])) for run in filtered.get("runs", []))

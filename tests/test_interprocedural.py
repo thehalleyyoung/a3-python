@@ -15,7 +15,7 @@ class TestCallGraphConstruction:
     
     def test_simple_call_graph(self):
         """Test building call graph from simple code."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
+        from a3_python.cfg.call_graph import build_call_graph_from_file
         
         code = '''
 def helper(x):
@@ -41,7 +41,7 @@ def main():
     
     def test_method_calls(self):
         """Test call graph with method calls."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
+        from a3_python.cfg.call_graph import build_call_graph_from_file
         
         code = '''
 class MyClass:
@@ -64,7 +64,7 @@ class MyClass:
     
     def test_imported_calls(self):
         """Test tracking of imported function calls."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
+        from a3_python.cfg.call_graph import build_call_graph_from_file
         
         code = '''
 from os.path import join
@@ -85,7 +85,7 @@ def combine(a, b):
     
     def test_scc_detection(self):
         """Test strongly connected component detection."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_file
+        from a3_python.cfg.call_graph import build_call_graph_from_file
         
         code = '''
 def even(n):
@@ -128,7 +128,7 @@ class TestEntryPointDetection:
     
     def test_main_block_detection(self):
         """Test detection of if __name__ == "__main__" blocks."""
-        from pyfromscratch.frontend.entry_points import detect_entry_points_in_file
+        from a3_python.frontend.entry_points import detect_entry_points_in_file
         
         code = '''
 def main():
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     
     def test_flask_route_detection(self):
         """Test detection of Flask route decorators."""
-        from pyfromscratch.frontend.entry_points import detect_entry_points_in_file
+        from a3_python.frontend.entry_points import detect_entry_points_in_file
         
         code = '''
 from flask import Flask
@@ -175,7 +175,7 @@ def hello():
     
     def test_pytest_detection(self):
         """Test detection of pytest test functions."""
-        from pyfromscratch.frontend.entry_points import detect_entry_points_in_file
+        from a3_python.frontend.entry_points import detect_entry_points_in_file
         
         code = '''
 import pytest
@@ -203,7 +203,7 @@ class TestTaintSummaries:
     
     def test_identity_summary(self):
         """Test summary for identity function."""
-        from pyfromscratch.semantics.summaries import TaintSummary, TaintDependency
+        from a3_python.semantics.summaries import TaintSummary, TaintDependency
         
         summary = TaintSummary(
             function_name='identity',
@@ -221,7 +221,7 @@ class TestTaintSummaries:
     
     def test_sanitizer_summary(self):
         """Test summary for sanitizer function."""
-        from pyfromscratch.semantics.summaries import TaintSummary, TaintDependency
+        from a3_python.semantics.summaries import TaintSummary, TaintDependency
         
         summary = TaintSummary(
             function_name='escape',
@@ -240,7 +240,7 @@ class TestTaintSummaries:
     
     def test_source_summary(self):
         """Test summary for source function."""
-        from pyfromscratch.semantics.summaries import TaintSummary, TaintDependency
+        from a3_python.semantics.summaries import TaintSummary, TaintDependency
         
         summary = TaintSummary(
             function_name='get_input',
@@ -257,7 +257,7 @@ class TestTaintSummaries:
     
     def test_join_summary(self):
         """Test summary that joins multiple parameters."""
-        from pyfromscratch.semantics.summaries import TaintSummary, TaintDependency
+        from a3_python.semantics.summaries import TaintSummary, TaintDependency
         
         summary = TaintSummary(
             function_name='concat',
@@ -280,10 +280,10 @@ class TestInterproceduralTracker:
     
     def test_summary_application(self):
         """Test that summaries are applied at call sites."""
-        from pyfromscratch.semantics.interprocedural_taint import InterproceduralTaintTracker
-        from pyfromscratch.semantics.summaries import TaintSummary, TaintDependency
-        from pyfromscratch.cfg.call_graph import CallGraph, FunctionInfo
-        from pyfromscratch.semantics.interprocedural_taint import InterproceduralContext
+        from a3_python.semantics.interprocedural_taint import InterproceduralTaintTracker
+        from a3_python.semantics.summaries import TaintSummary, TaintDependency
+        from a3_python.cfg.call_graph import CallGraph, FunctionInfo
+        from a3_python.semantics.interprocedural_taint import InterproceduralContext
         
         # Create minimal context
         graph = CallGraph()
@@ -313,7 +313,7 @@ class TestInterproceduralTracker:
         tracker = InterproceduralTaintTracker(context=context)
         
         # Create a tainted value
-        from pyfromscratch.z3model.taint_lattice import TaintLabel, SourceType
+        from a3_python.z3model.taint_lattice import TaintLabel, SourceType
         tainted_val = object()
         tracker.set_label(tainted_val, TaintLabel.from_untrusted_source(SourceType.HTTP_PARAM))
         
@@ -336,9 +336,9 @@ class TestCrossFileTaint:
     
     def test_cross_file_flow(self):
         """Test taint flowing across file boundaries."""
-        from pyfromscratch.cfg.call_graph import build_call_graph_from_directory
-        from pyfromscratch.semantics.summaries import SummaryComputer
-        from pyfromscratch.frontend.entry_points import detect_entry_points_in_project
+        from a3_python.cfg.call_graph import build_call_graph_from_directory
+        from a3_python.semantics.summaries import SummaryComputer
+        from a3_python.frontend.entry_points import detect_entry_points_in_project
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create source file
@@ -378,7 +378,7 @@ class TestBugDeduplication:
     
     def test_deduplicate_by_location_and_type(self):
         """Test that bugs are deduplicated by (file:line, bug_type)."""
-        from pyfromscratch.semantics.interprocedural_bugs import (
+        from a3_python.semantics.interprocedural_bugs import (
             InterproceduralBugTracker,
             InterproceduralBug,
         )
@@ -428,7 +428,7 @@ class TestBugDeduplication:
     
     def test_different_locations_not_deduplicated(self):
         """Test that bugs at different locations are kept separate."""
-        from pyfromscratch.semantics.interprocedural_bugs import (
+        from a3_python.semantics.interprocedural_bugs import (
             InterproceduralBugTracker,
             InterproceduralBug,
         )
@@ -464,7 +464,7 @@ class TestBugDeduplication:
     
     def test_different_bug_types_not_deduplicated(self):
         """Test that different bug types at same location are kept separate."""
-        from pyfromscratch.semantics.interprocedural_bugs import (
+        from a3_python.semantics.interprocedural_bugs import (
             InterproceduralBugTracker,
             InterproceduralBug,
         )

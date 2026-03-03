@@ -6,10 +6,10 @@ propagate taint to query results.
 """
 
 import pytest
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     TaintLabel, SourceType, SinkType
 )
-from pyfromscratch.semantics.security_tracker_lattice import (
+from a3_python.semantics.security_tracker_lattice import (
     LatticeSecurityTracker
 )
 

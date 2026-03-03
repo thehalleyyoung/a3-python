@@ -387,18 +387,33 @@ class _NoneGuardVisitor(ast.NodeVisitor):
                     variable=var_name,
                 ))
 
-    def _collect_dict_subscript_assigns(self, stmts: list, out: list):
-        """Recursively collect all ``var = d[key]`` assignments."""
+    def _collect_dict_subscript_assigns(self, stmts: list, out: list,
+                                        _membership_guarded: bool = False):
+        """Recursively collect all ``var = d[key]`` assignments.
+
+        *_membership_guarded* is True when the current scope is inside an
+        ``if key in dict:`` guard whose dict matches the subscript target.
+        Assignments under such guards are skipped because the programmer
+        has explicitly validated key existence — using the value (even if
+        it is ``None``) is intentional.
+        """
         for stmt in stmts:
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
                 target = stmt.targets[0]
                 if isinstance(target, ast.Name):
                     dict_name = self._is_dict_subscript(stmt.value)
-                    if dict_name is not None:
+                    if dict_name is not None and not _membership_guarded:
                         out.append((target.id, stmt.lineno, dict_name, stmt))
-            # Recurse into compound statements
-            for block in self._child_blocks(stmt):
-                self._collect_dict_subscript_assigns(block, out)
+            # Recurse into compound statements, propagating membership guard
+            if isinstance(stmt, ast.If):
+                guarded = _membership_guarded or self._is_membership_guard(stmt)
+                for block in self._child_blocks(stmt):
+                    self._collect_dict_subscript_assigns(block, out,
+                                                        _membership_guarded=guarded)
+            else:
+                for block in self._child_blocks(stmt):
+                    self._collect_dict_subscript_assigns(block, out,
+                                                        _membership_guarded=_membership_guarded)
 
     @staticmethod
     def _child_blocks(stmt) -> List[list]:
@@ -499,7 +514,13 @@ class _NoneGuardVisitor(ast.NodeVisitor):
 
     @staticmethod
     def _find_call_arg_use(node, var_name: str) -> Optional[int]:
-        """Find first use of *var_name* as argument to a function call."""
+        """Find first use of *var_name* as argument to a function call.
+
+        Keyword-argument pass-through (``func(name=name)``) is excluded:
+        the callee explicitly declares a parameter for this value and is
+        expected to handle ``None`` gracefully (common deserialization /
+        ``from_config`` idiom).
+        """
         for child in ast.walk(node):
             if isinstance(child, ast.Call):
                 for arg in child.args:
@@ -507,6 +528,9 @@ class _NoneGuardVisitor(ast.NodeVisitor):
                         return child.lineno
                 for kw in child.keywords:
                     if isinstance(kw.value, ast.Name) and kw.value.id == var_name:
+                        # Skip keyword pass-through: func(var=var)
+                        if kw.arg == var_name:
+                            continue
                         return child.lineno
         return None
 
@@ -526,6 +550,23 @@ class _NoneGuardVisitor(ast.NodeVisitor):
             if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
                 if inner.func.id == 'hasattr':
                     return True
+        return False
+
+    @staticmethod
+    def _is_membership_guard(stmt) -> bool:
+        """Return True if *stmt* is ``if key in dict:`` or ``if key in dict.keys():``.
+
+        This indicates the programmer validated key existence before
+        subscripting, so the dict-subscript value is intentional — even
+        if it is ``None``.
+        """
+        if not isinstance(stmt, ast.If):
+            return False
+        test = stmt.test
+        # ``'key' in config`` → Compare(left=Constant, ops=[In], comparators=[Name])
+        if isinstance(test, ast.Compare) and len(test.ops) == 1:
+            if isinstance(test.ops[0], ast.In):
+                return True
         return False
 
     # ------------------------------------------------------------------

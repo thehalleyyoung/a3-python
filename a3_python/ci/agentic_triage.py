@@ -464,6 +464,8 @@ _AGENT_SYSTEM_PROMPT = textwrap.dedent("""\
 
     Be thorough but efficient.  Typically 2-4 tool calls suffice.
     Always call **classify** when done — do not just respond with text.
+    You MUST call classify within 8 tool-use turns. If unsure, classify
+    with your best guess and a lower confidence score.
 """)
 
 
@@ -503,11 +505,19 @@ def _run_agent_openai(
     ]
 
     for _turn in range(MAX_AGENT_TURNS):
+        # On the second-to-last turn, inject a nudge to classify now
+        if _turn == MAX_AGENT_TURNS - 2:
+            messages.append({
+                "role": "user",
+                "content": "You are running low on turns. Please call the classify tool NOW with your best verdict.",
+            })
+
         if verbose:
-            print(f"    [agent turn {_turn + 1}] calling {model}...", flush=True)
+            print(f"    [agent turn {_turn + 1}] calling LLM...", flush=True)
 
         # Retry with exponential backoff for rate limits
-        for attempt in range(5):
+        max_retries = 8 if config.provider == "github" else 5
+        for attempt in range(max_retries):
             try:
                 response = client.chat.completions.create(
                     model=model,
@@ -518,10 +528,23 @@ def _run_agent_openai(
                 )
                 break
             except Exception as e:
-                if "429" in str(e) or "RateLimitReached" in str(e) or "rate" in str(e).lower():
-                    wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
+                err_str = str(e)
+                if "429" in err_str or "RateLimitReached" in err_str or "rate" in err_str.lower():
+                    # Try to extract Retry-After from the error
+                    retry_after = None
+                    if hasattr(e, 'response') and hasattr(e.response, 'headers'):
+                        retry_after = e.response.headers.get('retry-after') or e.response.headers.get('Retry-After')
+                    if retry_after:
+                        try:
+                            wait = int(float(retry_after)) + 1
+                        except (ValueError, TypeError):
+                            wait = 60
+                    elif config.provider == "github":
+                        wait = min(5 * (2 ** attempt), 120)  # 5, 10, 20, 40, 80, 120, 120, 120
+                    else:
+                        wait = 2 ** attempt  # 1, 2, 4, 8, 16 seconds
                     if verbose:
-                        print(f"    [rate limited, retrying in {wait}s...]", flush=True)
+                        print(f"    [rate limited, retrying in {wait}s...] ({err_str[:80]})", flush=True)
                     time.sleep(wait)
                 else:
                     raise
@@ -602,8 +625,15 @@ def _run_agent_anthropic(
     ]
 
     for _turn in range(MAX_AGENT_TURNS):
+        # On the second-to-last turn, inject a nudge to classify now
+        if _turn == MAX_AGENT_TURNS - 2:
+            messages.append({
+                "role": "user",
+                "content": "You are running low on turns. Please call the classify tool NOW with your best verdict.",
+            })
+
         # Retry with exponential backoff for rate limits
-        for attempt in range(5):
+        for attempt in range(6):
             try:
                 response = client.messages.create(
                     model=config.model,
@@ -615,7 +645,7 @@ def _run_agent_anthropic(
                 break
             except Exception as e:
                 if "429" in str(e) or "rate" in str(e).lower() or "overloaded" in str(e).lower():
-                    wait = 2 ** attempt
+                    wait = min(2 ** (attempt + 1), 60)  # 2, 4, 8, 16, 32, 60
                     if verbose:
                         print(f"    [rate limited, retrying in {wait}s...]", flush=True)
                     time.sleep(wait)
@@ -822,6 +852,9 @@ def agentic_triage_sarif(
             prompt = _build_agent_prompt(
                 bug_type, func_name, message, artifact_uri, start_line, source,
             )
+            # Add inter-request delay for GitHub Models to avoid rate limits
+            if config.provider == "github" and idx > 0:
+                time.sleep(2)
             v = _run_agent(prompt, config, repo_root, verbose=verbose)
             v.bug_type = bug_type
             v.function_name = func_name
@@ -835,6 +868,9 @@ def agentic_triage_sarif(
             for future in as_completed(futures):
                 try:
                     idx, verdict = future.result()
+                except ImportError as e:
+                    # Missing package — bail out immediately with a useful message
+                    raise ImportError(str(e)) from e
                 except Exception as e:
                     idx = futures[future][0]
                     verdict = TriageVerdict(
@@ -842,6 +878,8 @@ def agentic_triage_sarif(
                         confidence=0.5,
                         rationale=f"Agent error: {e}",
                     )
+                    # Always surface agent errors so users know triage degraded
+                    print(f"  ⚠  Agent error for finding {idx + 1}: {e}", file=__import__('sys').stderr)
                 verdicts[idx] = verdict
                 _, _, bug_type, func_name, _, _, _ = work_items[idx]
                 if verbose:
@@ -924,11 +962,7 @@ def cmd_agentic_triage(
         min_confidence=min_confidence,
     )
 
-    display_model = model
-    if model == "claude-sonnet-4-20250514" and provider in ("openai", "github"):
-        display_model = "gpt-4o-mini"
-
-    print(f"🤖 Agentic triage with {provider}/{display_model}...")
+    print(f"🤖 Agentic triage with {provider}...")
     filtered, all_verdicts = agentic_triage_sarif(sarif, repo_root, config, verbose=verbose)
 
     total_kept = sum(len(run.get("results", [])) for run in filtered.get("runs", []))

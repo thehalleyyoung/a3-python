@@ -5,7 +5,7 @@ Star imports use CALL_INTRINSIC_1 with INTRINSIC_IMPORT_STAR (ID 2)
 to populate the current namespace with all module exports.
 """
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+from a3_python.semantics.symbolic_vm import SymbolicVM
 
 
 def test_star_import_basic():

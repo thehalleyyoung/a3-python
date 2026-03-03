@@ -1,0 +1,2 @@
+# No external requirements for the demo beyond what the workspace already provides.
+# Add any system-level dependencies here if you plan to run heavier analyses.

@@ -11,11 +11,11 @@ These tests validate:
 import pytest
 import z3
 
-from pyfromscratch.contracts.relations import (
+from a3_python.contracts.relations import (
     RelationalSummary, RelationalCase, PostCondition, HavocCase,
     register_relational_summary, get_relational_summary, has_relational_summary
 )
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_relational_summary_registration():
@@ -46,8 +46,8 @@ def test_relational_summary_with_symbolic_execution():
     # A full end-to-end test would require running the analyzer
     
     # Verify that relational summaries are being checked
-    from pyfromscratch.contracts.relations import has_relational_summary
-    from pyfromscratch.semantics.symbolic_vm import SymbolicVM
+    from a3_python.contracts.relations import has_relational_summary
+    from a3_python.semantics.symbolic_vm import SymbolicVM
     
     # The VM should have access to relational summaries
     assert has_relational_summary("len")

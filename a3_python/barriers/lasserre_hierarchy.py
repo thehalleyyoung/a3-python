@@ -1110,7 +1110,7 @@ class LasserreCEGISIntegration:
 
 class LasserreIntegration:
     """
-    Main integration class for Lasserre hierarchy in PythonFromScratch.
+    Main integration class for Lasserre hierarchy in a3-python.
     
     Provides the interface for the kitchen-sink orchestrator to use
     Lasserre-based barrier synthesis with systematic degree lifting.

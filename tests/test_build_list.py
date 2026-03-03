@@ -5,8 +5,8 @@ Validates that BUILD_LIST opcode is implemented according to Python semantics.
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicPath
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicPath
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_build_list_empty():

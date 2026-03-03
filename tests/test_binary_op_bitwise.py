@@ -6,7 +6,7 @@ Tests semantic coverage for bitwise operations on integers.
 
 import pytest
 from pathlib import Path
-from pyfromscratch.analyzer import analyze
+from a3_python.analyzer import analyze
 
 
 class TestBitwiseOperations:

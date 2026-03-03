@@ -5,7 +5,7 @@ Verifies that contracts are properly structured and sound (over-approximating).
 """
 
 import pytest
-from pyfromscratch.contracts import (
+from a3_python.contracts import (
     Contract, HeapEffect, ExceptionEffect, ValueConstraint,
     register_contract, get_contract, list_contracts
 )

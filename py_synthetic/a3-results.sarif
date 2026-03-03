@@ -1,0 +1,1233 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "a3",
+          "semanticVersion": "0.1.23",
+          "informationUri": "https://github.com/thehalleyyoung/A\u00b3",
+          "rules": [
+            {
+              "id": "PFS003",
+              "name": "IndexOutOfBounds",
+              "shortDescription": {
+                "text": "Potential index out of bounds"
+              },
+              "fullDescription": {
+                "text": "A list/tuple subscript may use an index that is outside the valid range, causing an IndexError."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "precision": "high",
+                "tags": [
+                  "correctness"
+                ]
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/129.html"
+            },
+            {
+              "id": "PFS001",
+              "name": "DivisionByZero",
+              "shortDescription": {
+                "text": "Potential division by zero"
+              },
+              "fullDescription": {
+                "text": "An arithmetic division or modulo operation may receive a zero divisor, causing a ZeroDivisionError at runtime."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "precision": "high",
+                "tags": [
+                  "correctness"
+                ]
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/369.html"
+            },
+            {
+              "id": "PFS002",
+              "name": "NoneReference",
+              "shortDescription": {
+                "text": "Potential NoneType dereference"
+              },
+              "fullDescription": {
+                "text": "An attribute access, subscript, or call may be performed on a value that could be None, causing an AttributeError or TypeError."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "precision": "high",
+                "tags": [
+                  "correctness"
+                ]
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/476.html"
+            },
+            {
+              "id": "PFS209",
+              "name": "TimeoutError",
+              "shortDescription": {
+                "text": "Potential TimeoutError"
+              },
+              "fullDescription": {
+                "text": "An operation may time out, and the timeout is not properly handled."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "precision": "low",
+                "tags": [
+                  "correctness"
+                ]
+              },
+              "helpUri": "https://cwe.mitre.org/data/definitions/755.html"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "PFS209",
+          "ruleIndex": 3,
+          "level": "warning",
+          "message": {
+            "text": "Potential TimeoutError in `timeout_handler()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "quick_eval.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 15,
+                  "snippet": {
+                    "text": "class TimeoutError(Exception):\n    pass\n\ndef timeout_handler(signum, frame):\n    raise TimeoutError(\"Timeout\")\n\nresults = {"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "quick_eval.timeout_handler",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "TIMEOUT_ERROR",
+            "qualifiedName": "quick_eval.timeout_handler"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `divide()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "prog01_calculator/operations.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 4,
+                  "snippet": {
+                    "text": "\"\"\"Mathematical operations module.\"\"\"\n\n\ndef divide(a: float, b: float) -> float:\n    \"\"\"Divide a by b. No safety check - caller must ensure b != 0.\"\"\"\n    return a / b  # DIV_ZERO if b == 0\n"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "prog01_calculator.operations.divide",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "prog01_calculator.operations.divide"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `modulo()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "prog01_calculator/operations.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 24,
+                  "snippet": {
+                    "text": "    return a / b\n\n\ndef modulo(a: int, b: int) -> int:\n    \"\"\"Compute a mod b.\"\"\"\n    # BUG: DIV_ZERO - modulo by zero\n    return a % b"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "prog01_calculator.operations.modulo",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "prog01_calculator.operations.modulo"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `run_command()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/command_injection_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Command Injection: Direct os.system with user input\"\"\"\n\ndef run_command(user_input):\n    \"\"\"BUG: COMMAND_INJECTION - Direct os.system with tainted input\"\"\"\n    import os\n    cmd = \"ls \" + user_input"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.command_injection_001.run_command",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.command_injection_001.run_command"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `query_user_safe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/sql_injection_safe_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"SQL Injection: SAFE - Proper parameterization\"\"\"\n\ndef query_user_safe(username):\n    \"\"\"SAFE: Uses parameterized query\"\"\"\n    import sqlite3\n    conn = sqlite3.connect('users.db')"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.sql_injection_safe_001.query_user_safe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.sql_injection_safe_001.query_user_safe"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `set_session_cookie_safe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/insecure_cookie_safe_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Insecure Cookie: SAFE - Cookie with Secure and HttpOnly flags\"\"\"\n\ndef set_session_cookie_safe(response, session_id):\n    \"\"\"SAFE: Cookie with proper security flags\"\"\"\n    response.set_cookie('session', session_id, secure=True, httponly=True)  # SAFE\n    return response"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.insecure_cookie_safe_001.set_session_cookie_safe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.insecure_cookie_safe_001.set_session_cookie_safe"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `search_users()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/sql_injection_002.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 7,
+                  "snippet": {
+                    "text": "    \"\"\"Helper that propagates taint\"\"\"\n    return f\"{field} = '{value}'\"\n\ndef search_users(username):\n    \"\"\"BUG: SQL_INJECTION - Taint flows through build_where_clause\"\"\"\n    import sqlite3\n    conn = sqlite3.connect('users.db')"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.sql_injection_002.search_users",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.sql_injection_002.search_users"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `nested_div()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/div_zero_008.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Standalone test for DIV_ZERO - nested.\"\"\"\n\ndef nested_div(a, b, c):\n    return a / (b - c)\n\nresult = nested_div(10, 5, 5)  # b - c = 0"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.div_zero_008.nested_div",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "standalone.div_zero_008.nested_div"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `run()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/command_injection_interprocedural_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 21,
+                  "snippet": {
+                    "text": "\nclass SystemExecutor:\n    \"\"\"Executes system commands\"\"\"\n    def run(self, command):\n        import os\n        os.system(command)  # BUG: Executes tainted command\n"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.command_injection_interprocedural_001.SystemExecutor.run",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.command_injection_interprocedural_001.SystemExecutor.run"
+          }
+        },
+        {
+          "ruleId": "PFS003",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Potential index out of bounds in `process_file()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/command_injection_interprocedural_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 25,
+                  "snippet": {
+                    "text": "        import os\n        os.system(command)  # BUG: Executes tainted command\n\ndef process_file(filename):\n    \"\"\"BUG: Complex interprocedural command injection through classes\"\"\"\n    import sys\n    user_file = sys.argv[1] if len(sys.argv) > 1 else \"test.txt\""
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.command_injection_interprocedural_001.process_file",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "BOUNDS",
+            "qualifiedName": "standalone.command_injection_interprocedural_001.process_file"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `hash_password_safe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/weak_crypto_safe_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Weak Crypto: SAFE - Using bcrypt for password hashing\"\"\"\n\ndef hash_password_safe(password):\n    \"\"\"SAFE: Uses bcrypt which is designed for passwords\"\"\"\n    import bcrypt\n    return bcrypt.hashpw(password.encode(), bcrypt.gensalt())  # SAFE"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.weak_crypto_safe_001.hash_password_safe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.weak_crypto_safe_001.hash_password_safe"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `floor_div_unsafe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/div_zero_003.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Standalone test for DIV_ZERO - floor division.\"\"\"\n\ndef floor_div_unsafe(a, b):\n    return a // b\n\nresult = floor_div_unsafe(10, 0)"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.div_zero_003.floor_div_unsafe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "standalone.div_zero_003.floor_div_unsafe"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `sum_inverses()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/div_zero_006.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Standalone test for DIV_ZERO in loop.\"\"\"\n\ndef sum_inverses(n):\n    total = 0\n    for i in range(n, -1, -1):\n        total += 1 / i  # Fails when i = 0"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.div_zero_006.sum_inverses",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "standalone.div_zero_006.sum_inverses"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `modulo_unsafe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/div_zero_002.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Standalone test for DIV_ZERO - modulo.\"\"\"\n\ndef modulo_unsafe(a, b):\n    return a % b\n\nresult = modulo_unsafe(10, 0)"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.div_zero_002.modulo_unsafe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "standalone.div_zero_002.modulo_unsafe"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `set_session_cookie()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/insecure_cookie_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Insecure Cookie: Cookie set without Secure flag\"\"\"\n\ndef set_session_cookie(response, session_id):\n    \"\"\"BUG: INSECURE_COOKIE - Cookie without Secure flag\"\"\"\n    response.set_cookie('session', session_id)  # BUG: No secure=True\n    return response"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.insecure_cookie_001.set_session_cookie",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.insecure_cookie_001.set_session_cookie"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `divide_unsafe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/div_zero_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 4,
+                  "snippet": {
+                    "text": "\"\"\"Standalone buggy function tests for DIV_ZERO detection.\"\"\"\n\n# Test 1: Direct division by zero\ndef divide_unsafe(a, b):\n    return a / b\n\nresult1 = divide_unsafe(10, 0)"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.div_zero_001.divide_unsafe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "standalone.div_zero_001.divide_unsafe"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `hash_password()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/weak_crypto_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Weak Crypto: Using MD5 for password hashing\"\"\"\n\ndef hash_password(password):\n    \"\"\"BUG: WEAK_CRYPTO - MD5 is broken for password hashing\"\"\"\n    import hashlib\n    return hashlib.md5(password.encode()).hexdigest()  # BUG: MD5 is weak"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.weak_crypto_001.hash_password",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.weak_crypto_001.hash_password"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `execute_query()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/sql_injection_interprocedural_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 17,
+                  "snippet": {
+                    "text": "    \"\"\"Builds SQL filter clause\"\"\"\n    return f\"{field} = '{value}'\"\n\ndef execute_query(table, filter_clause):\n    \"\"\"Executes SQL query\"\"\"\n    import sqlite3\n    conn = sqlite3.connect('test.db')"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.sql_injection_interprocedural_001.execute_query",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.sql_injection_interprocedural_001.execute_query"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `execute_safe()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/command_injection_safe_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Command Injection: SAFE - subprocess without shell\"\"\"\n\ndef execute_safe(filename):\n    \"\"\"SAFE: Uses subprocess without shell=True\"\"\"\n    import subprocess\n    subprocess.run(['cat', filename], shell=False)  # SAFE: No shell parsing"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.command_injection_safe_001.execute_safe",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.command_injection_safe_001.execute_safe"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `match_and_group()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/null_ptr_007.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Standalone test for NULL_PTR - regex match.\"\"\"\n\ndef match_and_group():\n    m = None\n    return m.group(1)  # m is None\n"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.null_ptr_007.match_and_group",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.null_ptr_007.match_and_group"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `log_query()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/combined_sql_logging_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Combined Bugs: SQL injection AND cleartext logging\"\"\"\n\ndef log_query(query):\n    \"\"\"Logs the query\"\"\"\n    import logging\n    logging.info(f\"Executing query: {query}\")  # Logs tainted query"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.combined_sql_logging_001.log_query",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.combined_sql_logging_001.log_query"
+          }
+        },
+        {
+          "ruleId": "PFS003",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Potential index out of bounds in `execute_user_query()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/combined_sql_logging_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 8,
+                  "snippet": {
+                    "text": "    import logging\n    logging.info(f\"Executing query: {query}\")  # Logs tainted query\n\ndef execute_user_query(username, password):\n    \"\"\"BUG: Multiple issues - SQL injection AND cleartext logging\"\"\"\n    import sys\n    import sqlite3"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.combined_sql_logging_001.execute_user_query",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "BOUNDS",
+            "qualifiedName": "standalone.combined_sql_logging_001.execute_user_query"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `execute_grep()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/command_injection_002.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Command Injection: subprocess.run with shell=True\"\"\"\n\ndef execute_grep(pattern, filename):\n    \"\"\"BUG: COMMAND_INJECTION - subprocess with shell=True and tainted input\"\"\"\n    import subprocess\n    cmd = f\"grep {pattern} {filename}\""
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.command_injection_002.execute_grep",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.command_injection_002.execute_grep"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `query_user()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/sql_injection_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"SQL Injection: Direct concatenation in single function\"\"\"\n\ndef query_user(username):\n    \"\"\"BUG: SQL_INJECTION - Direct string concatenation\"\"\"\n    import sqlite3\n    conn = sqlite3.connect('users.db')"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.sql_injection_001.query_user",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.sql_injection_001.query_user"
+          }
+        },
+        {
+          "ruleId": "PFS002",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Potential NoneType dereference in `set_user_cookie()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "standalone/cookie_injection_001.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 3,
+                  "snippet": {
+                    "text": "\"\"\"Cookie Injection: User input in cookie name\"\"\"\n\ndef set_user_cookie(response, cookie_name):\n    \"\"\"BUG: COOKIE_INJECTION - Tainted cookie name allows header injection\"\"\"\n    response.set_cookie(cookie_name, 'static_value')  # BUG: cookie_name is tainted\n    return response"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "standalone.cookie_injection_001.set_user_cookie",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "NULL_PTR",
+            "qualifiedName": "standalone.cookie_injection_001.set_user_cookie"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `normalize_query_time()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "prog06_database/query.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 87,
+                  "snippet": {
+                    "text": "    return operations * base_cost\n\n\ndef normalize_query_time(time: float, baseline: float) -> float:\n    \"\"\"Normalize query time against baseline.\"\"\"\n    # BUG: DIV_ZERO\n    return time / baseline"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "prog06_database.query.normalize_query_time",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "prog06_database.query.normalize_query_time"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `normalize_score()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "prog04_gameengine/game_logic.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 40,
+                  "snippet": {
+                    "text": "    return (dx * dx + dy * dy) ** 0.5\n\n\ndef normalize_score(score: int, max_score: int) -> float:\n    \"\"\"Normalize score to 0-1 range.\"\"\"\n    # BUG: DIV_ZERO - max_score could be 0\n    return score / max_score"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "prog04_gameengine.game_logic.normalize_score",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "prog04_gameengine.game_logic.normalize_score"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `split_order()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "prog09_ecommerce/order.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 66,
+                  "snippet": {
+                    "text": "    return order.total * tax_rate\n\n\ndef split_order(order: Order, split_count: int) -> list:\n    \"\"\"Split order into parts.\"\"\"\n    # BUG: DIV_ZERO\n    items_per_split = len(order.items) // split_count"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "prog09_ecommerce.order.split_order",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "prog09_ecommerce.order.split_order"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `divide()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "multifile/calc/arithmetic.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 12,
+                  "snippet": {
+                    "text": "def multiply(a, b):\n    return a * b\n\ndef divide(a, b):\n    return a / b  # BUG: No guard for b=0\n\n# Trigger the bug"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "multifile.calc.arithmetic.divide",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "multifile.calc.arithmetic.divide"
+          }
+        },
+        {
+          "ruleId": "PFS001",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Potential division by zero in `percentage()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "multifile/calc/advanced.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 14,
+                  "snippet": {
+                    "text": "    guess = x / 2\n    return guess  # Simplified\n\ndef percentage(value, total):\n    return value / total * 100  # BUG: No guard for total=0\n\n# Trigger"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "multifile.calc.advanced.percentage",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "DIV_ZERO",
+            "qualifiedName": "multifile.calc.advanced.percentage"
+          }
+        },
+        {
+          "ruleId": "PFS003",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Potential index out of bounds in `dequeue()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "multifile/stack/queue.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 10,
+                  "snippet": {
+                    "text": "    def enqueue(self, item):\n        self.items.append(item)\n    \n    def dequeue(self):\n        return self.items[0]  # BUG: No check for empty\n\n# Trigger  "
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "multifile.stack.queue.Queue.dequeue",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "BOUNDS",
+            "qualifiedName": "multifile.stack.queue.Queue.dequeue"
+          }
+        },
+        {
+          "ruleId": "PFS003",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Potential index out of bounds in `peek()` (DSE-confirmed reachable)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "multifile/stack/stack.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 13,
+                  "snippet": {
+                    "text": "    def pop(self):\n        return self.items.pop()  # BUG: No check for empty\n    \n    def peek(self):\n        return self.items[-1]  # BUG: No check for empty\n\n# Trigger"
+                  }
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "multifile.stack.stack.Stack.peek",
+                  "kind": "function"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "dseConfirmed": true,
+            "bugType": "BOUNDS",
+            "qualifiedName": "multifile.stack.stack.Stack.peek"
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "properties": {
+        "metrics": {
+          "totalFunctions": 470,
+          "totalBugs": 463,
+          "provenFP": 429,
+          "remainingCandidates": 34
+        }
+      }
+    }
+  ]
+}

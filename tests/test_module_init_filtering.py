@@ -14,7 +14,7 @@ a caveat message, maintaining soundness by being conservative.
 import pytest
 import tempfile
 from pathlib import Path
-from pyfromscratch.analyzer import analyze_file
+from a3_python.analyzer import analyze_file
 
 
 def test_module_init_filter_enabled():

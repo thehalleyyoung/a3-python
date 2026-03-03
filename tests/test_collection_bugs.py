@@ -11,7 +11,7 @@ Instead, we track `Emptiness` through dataflow:
 import sys
 sys.path.insert(0, '/Users/halleyyoung/Documents/PythonFromScratch')
 
-from pyfromscratch.semantics.bytecode_summaries import (
+from a3_python.semantics.bytecode_summaries import (
     Emptiness, DictKeySet, AbstractValue
 )
 

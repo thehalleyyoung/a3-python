@@ -6,8 +6,8 @@ Tests both BUG cases (uncaught AssertionError) and NON-BUG cases
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 def test_assert_false_unconditional_bug():

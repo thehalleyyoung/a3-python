@@ -18,9 +18,9 @@ class AnalysisConfig:
     interprocedural: bool = True
     kitchensink: bool = True
     dse_verify: bool = True
-    min_confidence: float = 0.3
+    min_confidence: float = 0.7
     deduplicate: bool = True
-    no_intent_filter: bool = True
+    no_intent_filter: bool = False
     max_dse_steps: int = 100
 
 
@@ -85,9 +85,9 @@ class A3Config:
             interprocedural=analysis_raw.get("interprocedural", True),
             kitchensink=analysis_raw.get("kitchensink", True),
             dse_verify=analysis_raw.get("dse-verify", analysis_raw.get("dse_verify", True)),
-            min_confidence=float(analysis_raw.get("min-confidence", analysis_raw.get("min_confidence", 0.3))),
+            min_confidence=float(analysis_raw.get("min-confidence", analysis_raw.get("min_confidence", 0.7))),
             deduplicate=analysis_raw.get("deduplicate", True),
-            no_intent_filter=analysis_raw.get("no-intent-filter", analysis_raw.get("no_intent_filter", True)),
+            no_intent_filter=analysis_raw.get("no-intent-filter", analysis_raw.get("no_intent_filter", False)),
             max_dse_steps=int(analysis_raw.get("max-dse-steps", analysis_raw.get("max_dse_steps", 100))),
         )
 
@@ -111,8 +111,8 @@ class A3Config:
     def to_yaml(self) -> str:
         """Serialise to YAML string."""
         lines = [
-            "# .a3.yml — PythonFromScratch configuration",
-            "# See: https://github.com/thehalleyyoung/PythonFromScratch",
+            "# .a3.yml — a3-python configuration",
+            "# See: https://github.com/thehalleyyoung/a3-python",
             "",
             "analysis:",
             f"  interprocedural: {str(self.analysis.interprocedural).lower()}",

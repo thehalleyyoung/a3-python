@@ -1,4 +1,4 @@
-from pyfromscratch.barriers.hscc2004 import prove_guarded_div_zero_in_affine_loops
+from a3_python.barriers.hscc2004 import prove_guarded_div_zero_in_affine_loops
 
 
 def test_hscc2004_guarded_div_zero_loop_proves_safe():

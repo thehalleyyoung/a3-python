@@ -7,9 +7,9 @@ kitchen-sink portfolio.
 
 import z3
 
-from pyfromscratch.barriers.int_bmc import bmc_find_counterexample
-from pyfromscratch.barriers.pdr_spacer import pdr_check_safety
-from pyfromscratch.barriers.ice import ice_learn_conjunction
+from a3_python.barriers.int_bmc import bmc_find_counterexample
+from a3_python.barriers.pdr_spacer import pdr_check_safety
+from a3_python.barriers.ice import ice_learn_conjunction
 
 
 def test_bmc_finds_counterexample():

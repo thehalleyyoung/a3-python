@@ -7,8 +7,8 @@ This is used primarily in set comprehensions.
 import pytest
 import dis
 import types
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
-from pyfromscratch.z3model.values import SymbolicValue, ValueTag
+from a3_python.semantics.symbolic_vm import SymbolicVM, SymbolicMachineState, SymbolicFrame
+from a3_python.z3model.values import SymbolicValue, ValueTag
 
 
 def test_set_add_opcode_in_comprehension():
@@ -129,7 +129,7 @@ def test_set_add_manual_multiple():
 
 def test_set_comprehension_execution():
     """Test that set comprehension executes without NotImplementedError."""
-    from pyfromscratch.semantics.symbolic_vm import symbolic_execute
+    from a3_python.semantics.symbolic_vm import symbolic_execute
     
     # Set comprehension that will use BUILD_SET + SET_ADD
     source = "{x for x in [1, 2]}"
@@ -150,7 +150,7 @@ def test_set_comprehension_execution():
 
 def test_set_comprehension_with_filter():
     """Test set comprehension with a filter condition."""
-    from pyfromscratch.semantics.symbolic_vm import symbolic_execute
+    from a3_python.semantics.symbolic_vm import symbolic_execute
     
     # Set comprehension with conditional
     source = "{x for x in [1, 2, 3] if x > 1}"
@@ -164,7 +164,7 @@ def test_set_comprehension_with_filter():
 
 def test_nested_set_comprehension():
     """Test nested set comprehension (set of tuples)."""
-    from pyfromscratch.semantics.symbolic_vm import symbolic_execute
+    from a3_python.semantics.symbolic_vm import symbolic_execute
     
     # Nested comprehension: {(x, y) for x in [1, 2] for y in [3, 4]}
     source = "{(x, y) for x in [1, 2] for y in [3, 4]}"

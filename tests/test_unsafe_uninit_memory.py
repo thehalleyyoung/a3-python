@@ -13,9 +13,9 @@ memory access by tracking initialization state of buffers and memory regions.
 """
 
 import pytest
-from pyfromscratch.unsafe import uninit_memory
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import uninit_memory
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 class MockState:

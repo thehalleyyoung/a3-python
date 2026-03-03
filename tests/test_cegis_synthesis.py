@@ -7,13 +7,13 @@ by iteratively refining based on counterexamples from failed verification attemp
 
 import pytest
 import z3
-from pyfromscratch.barriers.cegis import (
+from a3_python.barriers.cegis import (
     CEGISBarrierSynthesizer,
     CEGISConfig,
     synthesize_barrier_cegis,
 )
-from pyfromscratch.semantics.symbolic_vm import SymbolicMachineState
-from pyfromscratch.z3model.values import SymbolicValue
+from a3_python.semantics.symbolic_vm import SymbolicMachineState
+from a3_python.z3model.values import SymbolicValue
 
 
 def test_cegis_basic_configuration():

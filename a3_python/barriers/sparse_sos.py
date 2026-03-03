@@ -1526,7 +1526,7 @@ class CompositionalBarrierSynthesizer:
 
 class SparseSOSIntegration:
     """
-    Main integration class for sparse SOS in PythonFromScratch.
+    Main integration class for sparse SOS in a3-python.
     
     Provides the interface for the kitchen-sink orchestrator to use
     sparse SOS-based barrier synthesis with program-aware sparsity.

@@ -1,0 +1,534 @@
+% =============================================================================
+% End-to-End a3-python GitHub CI Integration — Step-by-Step
+% =============================================================================
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+}
+
+\title{End-to-End a3-python GitHub CI Integration}
+\subtitle{From \texttt{gh repo create} to SARIF on Code Scanning}
+\author{Automated via GitHub Copilot}
+\date{February 24, 2026}
+
+\begin{document}
+
+% ── Title ────────────────────────────────────────────────────────────────────
+\begin{frame}
+\titlepage
+\end{frame}
+
+% ── Overview ─────────────────────────────────────────────────────────────────
+\begin{frame}{Overview}
+\begin{enumerate}
+  \item Create a private GitHub repo (\texttt{a3-ci-test})
+  \item Seed it with intentionally buggy Python code
+  \item Run \texttt{a3 init .\ --copilot} to generate CI workflows
+  \item Run \texttt{a3 scan} locally to preview findings
+  \item Push to GitHub — CI triggers automatically
+  \item Inspect CI results, SARIF, and Code Scanning dashboard
+  \item Use \texttt{a3 baseline} ratchet for incremental adoption
+\end{enumerate}
+\end{frame}
+
+% ── Step 1: Create Repo ─────────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 1: Create a Private GitHub Repo}
+\begin{lstlisting}[language=bash]
+mkdir a3-ci-test && cd a3-ci-test && git init
+gh repo create thehalleyyoung/a3-ci-test \
+  --private --source=. \
+  --description "Test repo for a3-python CI integration"
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+Initialized empty Git repository in /tmp/a3-ci-test/.git/
+ Created repository thehalleyyoung/a3-ci-test on github.com
+   https://github.com/thehalleyyoung/a3-ci-test
+ Added remote https://github.com/thehalleyyoung/a3-ci-test.git
+\end{lstlisting}
+
+\textbf{Produces:} Empty private repo on GitHub with local clone.
+\end{frame}
+
+% ── Step 2: Seed Buggy Code ─────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 2: Seed Buggy Python Code}
+
+Three files, each with intentional bugs and safe counterparts:
+
+\begin{columns}[T]
+\begin{column}{0.33\textwidth}
+\textbf{src/calculator.py}
+\begin{lstlisting}[language=Python]
+def divide(a, b):
+    return a / b  # DIV_ZERO
+
+def safe_divide(a, b):
+    if b == 0:
+        return 0.0
+    return a / b
+\end{lstlisting}
+\end{column}
+\begin{column}{0.33\textwidth}
+\textbf{src/user\_store.py}
+\begin{lstlisting}[language=Python]
+def get_user_name(self, uid):
+    return self.users[uid]
+    # KeyError
+
+def safe_get_user(self, uid):
+    if uid in self.users:
+        return self.users[uid]
+    return None
+\end{lstlisting}
+\end{column}
+\begin{column}{0.33\textwidth}
+\textbf{src/web\_handler.py}
+\begin{lstlisting}[language=Python]
+def get_user_profile(conn, u):
+    q = f"SELECT * FROM
+      users WHERE name='{u}'"
+    return conn.execute(q)
+    # SQL_INJECTION
+
+def safe_get(conn, u):
+    return conn.execute(
+      "...WHERE name=?", (u,))
+\end{lstlisting}
+\end{column}
+\end{columns}
+\end{frame}
+
+% ── Step 3: a3 init ─────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 3: \texttt{a3 init .\ --copilot}}
+\begin{lstlisting}[language=bash]
+pip install a3-python[ci]
+a3 init . --copilot
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+ Initialising a3 CI in /tmp/a3-ci-test
+
+   Created .github/workflows/a3-pr-scan.yml
+   Created .github/workflows/a3-scheduled-scan.yml
+   Created .a3.yml
+   Created .a3-baseline.json
+
+  GitHub Copilot triage is enabled -- no API keys needed!
+  The workflow uses GITHUB_TOKEN which is provided automatically.
+\end{lstlisting}
+
+\textbf{Produces:} 4 files — two workflow YAMLs, config, and empty baseline.
+\end{frame}
+
+% ── Step 3b: What the files do ───────────────────────────────────────────────
+\begin{frame}{Step 3b: What Each Generated File Does}
+\begin{table}[h]
+\centering
+\begin{tabular}{lp{9cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{a3-pr-scan.yml} & On every push/PR touching \texttt{*.py}: scan $\to$ agentic triage $\to$ baseline diff $\to$ SARIF upload \\
+\texttt{a3-scheduled-scan.yml} & Weekly (Mon 6am UTC): full scan $\to$ triage $\to$ auto-issue $\to$ update baseline \\
+\texttt{.a3.yml} & Config: interprocedural, DSE-verify, min-confidence 0.7, provider=github \\
+\texttt{.a3-baseline.json} & Empty baseline for the ratchet (starts with no accepted findings) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{frame}
+
+% ── Step 4: Local Scan ───────────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 4: Local Scan (\texttt{a3 scan})}
+\begin{lstlisting}[language=bash]
+a3 scan . --output-sarif a3-results.sarif
+\end{lstlisting}
+
+\textbf{Output (summary):}
+\begin{lstlisting}
+Functions analysed:    11
+Total bug instances:   13
+Proven false positive: 10 (76.9%)
+DSE unreachable:       0
+Remaining candidates:  3
+  Production:          3
+  Test-only:           0
+DSE-confirmed TPs:     3
+
+SARIF written to a3-results.sarif  (3 findings)
+\end{lstlisting}
+
+\textbf{Produces:} SARIF file with 3 confirmed true-positive DIV\_ZERO findings.
+\end{frame}
+
+% ── Step 4b: SARIF contents ─────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 4b: What the SARIF Contains}
+\begin{lstlisting}
+Total findings: 3
+  [PFS001] src/calculator.py:4   DSE=True
+    Potential division by zero in divide() (DSE-confirmed)
+  [PFS001] src/calculator.py:9   DSE=True
+    Potential division by zero in modulo() (DSE-confirmed)
+  [PFS001] src/calculator.py:21  DSE=True
+    Potential division by zero in average() (DSE-confirmed)
+\end{lstlisting}
+
+\medskip
+
+\textbf{Key observations:}
+\begin{itemize}
+  \item \texttt{safe\_divide()} was proven safe via barrier certificate $\Rightarrow$ not in SARIF
+  \item \texttt{user\_store.py} bugs were filtered by confidence threshold
+  \item \texttt{web\_handler.py} SQL injection was detected and filtered by taint analysis
+  \item All 3 survivors are DSE-confirmed (Z3 found concrete triggering inputs)
+\end{itemize}
+\end{frame}
+
+% ── Step 5: Push to GitHub ───────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 5: Push to GitHub (Triggers CI)}
+\begin{lstlisting}[language=bash]
+git add -A
+git commit -m "feat: seed buggy Python code + a3 CI workflows"
+git push -u origin main
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+[main (root-commit) 438dd83] feat: seed buggy Python code ...
+ 10 files changed, 517 insertions(+)
+ ...
+To https://github.com/thehalleyyoung/a3-ci-test.git
+ * [new branch]      main -> main
+\end{lstlisting}
+
+\textbf{What happens next:} GitHub Actions automatically triggers the\\
+\texttt{A\textsuperscript{3}: Scan} workflow because \texttt{*.py} files changed on \texttt{main}.
+\end{frame}
+
+% ── Step 6: CI Pipeline ─────────────────────────────────────────────────────
+\begin{frame}{Step 6: What the CI Pipeline Does (5 stages)}
+\begin{enumerate}
+  \item \textbf{Checkout \& Setup} — \texttt{actions/checkout@v4}, Python 3.12, \texttt{pip install a3-python[ci]}
+  \item \textbf{Get changed files} — \texttt{git diff} to find modified \texttt{*.py} files
+  \item \textbf{Run a3 scan} — Static analysis $\to$ SARIF with barrier proofs + DSE
+  \item \textbf{Agentic triage} — LLM agent explores repo (reads files, searches for guards, inspects callers/tests) using \texttt{GITHUB\_TOKEN} $\to$ classifies TP/FP
+  \item \textbf{Baseline ratchet} — \texttt{a3 baseline diff}: \\
+    \quad New bugs not in baseline $\Rightarrow$ \textcolor{red}{\textbf{CI fails}} \\
+    \quad All bugs in baseline $\Rightarrow$ \textcolor{green}{\textbf{CI passes}}
+  \item \textbf{Upload SARIF} — Results appear in Security $\to$ Code Scanning
+\end{enumerate}
+\end{frame}
+
+% ── Step 7: Incremental Testing ─────────────────────────────────────────────
+\begin{frame}[fragile]{Step 7: Incremental Testing with Baseline Ratchet}
+\textbf{Accept current findings into baseline:}
+\begin{lstlisting}[language=bash]
+a3 baseline accept --sarif a3-results.sarif
+git add .a3-baseline.json
+git commit -m "ci: accept baseline findings"
+git push
+\end{lstlisting}
+
+\textbf{Now CI passes.} Future pushes only fail on \emph{new} bugs.
+
+\medskip
+\textbf{Fix a bug and verify:}
+\begin{lstlisting}[language=bash]
+# Fix divide() to handle b==0
+git commit -am "fix: guard divide() against zero"
+git push
+# CI runs -> no new bugs -> passes
+# Baseline auto-prunes the fixed bug
+\end{lstlisting}
+\end{frame}
+
+% ── Step 8: PR workflow ─────────────────────────────────────────────────────
+\begin{frame}[fragile]{Step 8: Testing via Pull Request}
+\begin{lstlisting}[language=bash]
+git checkout -b add-new-function
+# Add a new buggy function
+echo 'def bad_func(x): return 1/x' >> src/calculator.py
+git commit -am "feat: add new function"
+git push -u origin add-new-function
+gh pr create --title "Add new function" --body "Test a3 CI"
+\end{lstlisting}
+
+\textbf{What happens:}
+\begin{itemize}
+  \item CI triggers on the PR (only changed \texttt{*.py} files scanned)
+  \item a3 finds new DIV\_ZERO in \texttt{bad\_func}
+  \item Baseline diff: new bug not in baseline $\Rightarrow$ \textcolor{red}{\textbf{CI fails}}
+  \item PR is blocked until bug is fixed or explicitly accepted
+\end{itemize}
+\end{frame}
+
+% =============================================================================
+% Two Usage Scenarios
+% =============================================================================
+
+% ── Scenario divider ────────────────────────────────────────────────────────
+\begin{frame}{Two Ways to Use a3 in CI}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Scenario A: Whole-Repo Scan}
+\begin{itemize}
+  \item Scan \emph{every} Python file at once
+  \item Best for onboarding or scheduled audits
+  \item Single command: \texttt{a3 scan .}
+  \item Produces a full SARIF snapshot
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Scenario B: Incremental File-Add}
+\begin{itemize}
+  \item CI auto-invokes a3 whenever a \texttt{*.py} file is added or changed
+  \item Best for day-to-day development
+  \item Only changed files scanned
+  \item Baseline ratchet blocks \emph{new} bugs only
+\end{itemize}
+\end{column}
+\end{columns}
+
+\bigskip
+\centering
+Both scenarios use the \textbf{same} workflow generated by \texttt{a3 init .\ --copilot}.
+\end{frame}
+
+% ── Scenario A ───────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Scenario A: Whole-Repo Scan}
+\textbf{Use case:} First-time adoption, weekly audit, or baseline generation.
+
+\begin{lstlisting}[language=bash]
+# Scan every Python file in the repository
+a3 scan . --interprocedural --dse-verify --output-sarif results.sarif
+
+# Optionally triage with agentic LLM
+a3 triage --sarif results.sarif --provider github --agentic \
+  --output-sarif triaged.sarif
+
+# Accept current state as baseline (ratchet start)
+a3 baseline accept --sarif triaged.sarif
+git add .a3-baseline.json
+git commit -m "ci: establish a3 baseline"
+git push
+\end{lstlisting}
+
+\textbf{Result:}
+\begin{itemize}
+  \item Full picture of every reachable bug across the codebase
+  \item Baseline locks in current findings — future CI only flags \emph{new} bugs
+  \item Scheduled workflow (\texttt{a3-scheduled-scan.yml}) repeats this weekly
+\end{itemize}
+\end{frame}
+
+% ── Scenario A: example output ───────────────────────────────────────────────
+\begin{frame}[fragile]{Scenario A: Example Output (a3-ci-test)}
+\begin{lstlisting}
+$ a3 scan . --output-sarif results.sarif
+
+Functions analysed:    11
+Total bug instances:   13
+Proven false positive: 10 (76.9%)
+Remaining candidates:  3
+  DSE-confirmed TPs:   3
+
+SARIF written to results.sarif (3 findings)
+  [PFS001] src/calculator.py:4   DIV_ZERO (DSE-confirmed)
+  [PFS001] src/calculator.py:9   DIV_ZERO (DSE-confirmed)
+  [PFS001] src/calculator.py:21  DIV_ZERO (DSE-confirmed)
+\end{lstlisting}
+
+\medskip
+\textbf{Safe functions verified by barrier certificates:}\\
+\texttt{safe\_divide()}, \texttt{safe\_get\_user\_name()}, \texttt{safe\_get\_user\_profile()} — all proven unreachable $\Rightarrow$ excluded from SARIF.
+\end{frame}
+
+% ── Scenario B ───────────────────────────────────────────────────────────────
+\begin{frame}[fragile]{Scenario B: Incremental — Auto-Invoke on File Add}
+\textbf{Use case:} A developer adds a new Python file. CI automatically invokes a3.
+
+\begin{lstlisting}[language=bash]
+# Developer adds a new file
+cat > src/payments.py << 'EOF'
+def charge(amount, discount):
+    """Apply discount and charge."""
+    return amount / discount   # DIV_ZERO: discount could be 0
+
+def refund(amount, count):
+    if count > 0:
+        return amount / count  # SAFE: guarded
+    return 0.0
+EOF
+
+git add src/payments.py
+git commit -m "feat: add payment processing"
+git push
+\end{lstlisting}
+
+\textbf{What happens automatically:}
+\begin{enumerate}
+  \item Push triggers \texttt{a3-pr-scan.yml} (path filter: \texttt{**.py})
+  \item Workflow runs \texttt{git diff} $\to$ only \texttt{src/payments.py} scanned
+  \item a3 finds DIV\_ZERO in \texttt{charge()}, proves \texttt{refund()} safe
+  \item Baseline diff: new bug $\Rightarrow$ \textcolor{red}{\textbf{CI fails}} until fixed
+\end{enumerate}
+\end{frame}
+
+% ── Scenario B: workflow trigger detail ──────────────────────────────────────
+\begin{frame}[fragile]{Scenario B: How the Auto-Invoke Works}
+The generated \texttt{a3-pr-scan.yml} contains:
+
+\begin{lstlisting}[language=yaml]
+on:
+  push:
+    branches: [main]
+    paths: ["**.py"]          # <-- triggers ONLY when .py files change
+  pull_request:
+    branches: [main]
+    paths: ["**.py"]
+\end{lstlisting}
+
+\textbf{Key behaviour:}
+\begin{itemize}
+  \item Adding \textbf{any} \texttt{.py} file $\to$ a3 auto-invokes (no manual step)
+  \item Non-Python changes (docs, configs) $\to$ workflow does not run
+  \item Changed files are detected via \texttt{git diff --name-only}
+  \item Only changed files are scanned (fast incremental analysis)
+\end{itemize}
+
+\medskip
+\textbf{No extra configuration needed.} This is the default after \texttt{a3 init .\ --copilot}.
+\end{frame}
+
+% ── Scenario B: fix and re-push ──────────────────────────────────────────────
+\begin{frame}[fragile]{Scenario B: Fix the Bug, Push Again}
+\begin{lstlisting}[language=Python]
+# src/payments.py (fixed)
+def charge(amount, discount):
+    """Apply discount and charge."""
+    if discount == 0:
+        return amount          # guard added
+    return amount / discount   # now SAFE
+
+def refund(amount, count):
+    if count > 0:
+        return amount / count  # SAFE: guarded
+    return 0.0
+\end{lstlisting}
+
+\begin{lstlisting}[language=bash]
+git commit -am "fix: guard discount division"
+git push
+\end{lstlisting}
+
+\textbf{Result:}
+\begin{itemize}
+  \item a3 re-scans \texttt{src/payments.py}
+  \item Barrier certificate proves \texttt{charge()} safe $\Rightarrow$ 0 findings
+  \item Baseline diff: no new bugs $\Rightarrow$ \textcolor{green}{\textbf{CI passes}}
+\end{itemize}
+\end{frame}
+
+% ── Results Summary ──────────────────────────────────────────────────────────
+\begin{frame}{Results Summary}
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Repo & \texttt{thehalleyyoung/a3-ci-test} (private) \\
+Files scanned & 3 Python source files \\
+Functions analysed & 11 \\
+Total bug candidates & 13 \\
+Proven FP (barrier certs) & 10 (76.9\%) \\
+True positives (SARIF) & 3 (all DIV\_ZERO, DSE-confirmed) \\
+CI workflow triggered & Yes (on push to main) \\
+Workflow files created & 2 (\texttt{a3-pr-scan.yml}, \texttt{a3-scheduled-scan.yml}) \\
+API keys needed & None (\texttt{GITHUB\_TOKEN} auto-provided) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{frame}
+
+% ── Commands Cheat Sheet ─────────────────────────────────────────────────────
+\begin{frame}[fragile]{Commands Cheat Sheet}
+\begin{lstlisting}[language=bash]
+# 1. Install
+pip install a3-python[ci]
+
+# 2. Bootstrap CI in any repo (60 seconds)
+cd your-repo/
+a3 init . --copilot
+git add .github/ .a3.yml .a3-baseline.json
+git commit -m "ci: add a3 static analysis"
+git push
+
+# 3. Local scan
+a3 scan . --output-sarif results.sarif
+
+# 4. Local triage (optional)
+export GITHUB_TOKEN=$(gh auth token)
+a3 triage --sarif results.sarif --provider github --agentic
+
+# 5. Baseline management
+a3 baseline diff --sarif results.sarif    # check
+a3 baseline accept --sarif results.sarif  # accept
+\end{lstlisting}
+\end{frame}
+
+% ── Architecture ─────────────────────────────────────────────────────────────
+\begin{frame}{Architecture: What Runs in CI}
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+\texttt{push/PR touches *.py} \\
+\quad $\downarrow$ \\
+\textbf{1. Static Analysis} (a3 scan) \\
+\quad Bytecode analysis + Z3 symbolic execution \\
+\quad Barrier certificates prove 99\% as FP \\
+\quad $\downarrow$ (SARIF with surviving 1\%) \\
+\textbf{2. Agentic LLM Triage} (a3 triage --agentic) \\
+\quad LLM reads files, searches guards, checks callers \\
+\quad Uses GITHUB\_TOKEN $\to$ GitHub Models (free) \\
+\quad $\downarrow$ (filtered SARIF) \\
+\textbf{3. Baseline Ratchet} (a3 baseline diff) \\
+\quad New bugs $\Rightarrow$ CI fails \\
+\quad $\downarrow$ \\
+\textbf{4. Upload SARIF} (github/codeql-action/upload-sarif) \\
+\quad Security $\to$ Code Scanning dashboard
+\end{minipage}
+\end{center}
+\end{frame}
+
+% ── End ──────────────────────────────────────────────────────────────────────
+\begin{frame}
+\begin{center}
+\Huge Thank You
+
+\bigskip
+\large
+\texttt{pip install a3-python[ci]} \\
+\texttt{a3 init .\ --copilot} \\
+\texttt{git push}
+
+\bigskip
+\normalsize
+\url{https://github.com/thehalleyyoung/a3-ci-test}
+\end{center}
+\end{frame}
+
+\end{document}

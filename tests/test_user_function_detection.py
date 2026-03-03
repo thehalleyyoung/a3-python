@@ -6,7 +6,7 @@ Future phases will implement actual function body analysis.
 """
 
 import pytest
-from pyfromscratch.analyzer import Analyzer
+from a3_python.analyzer import Analyzer
 
 
 def test_user_function_detection_basic(tmp_path):

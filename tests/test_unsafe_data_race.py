@@ -13,8 +13,8 @@ using lockset algorithm (Eraser) and happens-before analysis.
 """
 
 import pytest
-from pyfromscratch.unsafe import data_race
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe import data_race
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 class MockState:

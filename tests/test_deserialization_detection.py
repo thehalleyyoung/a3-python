@@ -8,7 +8,7 @@ where user-controlled input flows to pickle.loads or yaml.load.
 import pytest
 import tempfile
 from pathlib import Path
-from pyfromscratch.semantics.intraprocedural_taint import analyze_file_intraprocedural
+from a3_python.semantics.intraprocedural_taint import analyze_file_intraprocedural
 
 
 def analyze_code(code: str):

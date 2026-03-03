@@ -7,10 +7,10 @@ do not propagate as bugs.
 
 import pytest
 import sys
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.assert_fail import is_unsafe_assert_fail
-from pyfromscratch.unsafe.div_zero import is_unsafe_div_zero
-from pyfromscratch.unsafe.panic import is_unsafe_panic
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.assert_fail import is_unsafe_assert_fail
+from a3_python.unsafe.div_zero import is_unsafe_div_zero
+from a3_python.unsafe.panic import is_unsafe_panic
 
 
 class TestExceptionHandlers:

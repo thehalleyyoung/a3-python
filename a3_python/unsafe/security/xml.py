@@ -6,7 +6,7 @@ Bug Types:
 - TAR_SLIP (CWE-022): Arbitrary file write during tarfile extraction
 
 Note: XML_BOMB detection now uses the lattice-based detector in
-pyfromscratch.unsafe.security.lattice_detectors for precise taint tracking.
+a3_python.unsafe.security.lattice_detectors for precise taint tracking.
 """
 
 from typing import Any, Optional

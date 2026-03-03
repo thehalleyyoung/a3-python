@@ -1,6 +1,6 @@
-from pyfromscratch.stochastic_risk import risk_interval_for_precondition
-from pyfromscratch.semantics.crash_summaries import Precondition, PreconditionType
-from pyfromscratch.semantics.interprocedural_bugs import ValueState
+from a3_python.stochastic_risk import risk_interval_for_precondition
+from a3_python.semantics.crash_summaries import Precondition, PreconditionType
+from a3_python.semantics.interprocedural_bugs import ValueState
 
 
 def test_not_zero_risk_uses_upper_bound():

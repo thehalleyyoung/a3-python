@@ -584,6 +584,26 @@ def _analyze_file(args):
             isinstance_bugs.extend(ia_bugs)
         except Exception:
             pass
+
+        # AST-based inconsistent error guard detector (fastapi#12 pattern)
+        error_guard_bugs = []
+        try:
+            from .semantics.inconsistent_error_guard_detector import scan_file_for_inconsistent_error_guard_bugs
+            eg_bugs = scan_file_for_inconsistent_error_guard_bugs(args.target)
+            eg_bugs = [b for b in eg_bugs if b.confidence >= max(args.min_confidence, 0.45)]
+            error_guard_bugs.extend(eg_bugs)
+        except Exception:
+            pass
+
+        # AST + CFG + Z3 stale-seed / stale-state detector (keras#1 pattern)
+        stale_seed_bugs = []
+        try:
+            from .semantics.stale_seed_state_detector import scan_file_for_stale_seed_state_bugs
+            ss_bugs = scan_file_for_stale_seed_state_bugs(args.target)
+            ss_bugs = [b for b in ss_bugs if b.confidence >= max(args.min_confidence, 0.60)]
+            stale_seed_bugs.extend(ss_bugs)
+        except Exception:
+            pass
         
         # Report results
         print(f"\n{'='*60}")
@@ -591,7 +611,7 @@ def _analyze_file(args):
         if use_intent_filter:
             print(f"(High-confidence TPs only, threshold={args.min_confidence})")
         print(f"{'='*60}")
-        print(f"Total bugs found: {len(bugs) + len(ast_bugs) + len(kwarg_bugs) + len(isinstance_bugs)}")
+        print(f"Total bugs found: {len(bugs) + len(ast_bugs) + len(kwarg_bugs) + len(isinstance_bugs) + len(error_guard_bugs) + len(stale_seed_bugs)}")
         
         # Group bugs by type
         bugs_by_type = {}
@@ -631,9 +651,23 @@ def _analyze_file(args):
             print(f"  - {ib.function_name}")
             print(f"    {ib.reason}")
             print(f"    Confidence: {ib.confidence:.2f}")
+
+        # Print inconsistent error guard bugs in parseable format
+        for eg in error_guard_bugs:
+            print(f"\n  [BUG] ASSERT_FAIL (line {eg.line_number})")
+            print(f"  - {eg.function_name}")
+            print(f"    {eg.reason}")
+            print(f"    Confidence: {eg.confidence:.2f}")
+
+        # Print stale-seed / stale-state bugs in parseable format
+        for sb in stale_seed_bugs:
+            print(f"\n  [BUG] STALE_STATE (line {sb.line_number})")
+            print(f"  - {sb.function_name}")
+            print(f"    {sb.reason}")
+            print(f"    Confidence: {sb.confidence:.2f}")
         
         # Return exit code
-        return 1 if (bugs or ast_bugs or kwarg_bugs or isinstance_bugs) else 0
+        return 1 if (bugs or ast_bugs or kwarg_bugs or isinstance_bugs or error_guard_bugs or stale_seed_bugs) else 0
     
     elif args.all_functions:
         # Analyze ALL functions with tainted parameters

@@ -11,9 +11,9 @@ import pytest
 from pathlib import Path
 import types
 
-from pyfromscratch.analyzer import Analyzer
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
+from a3_python.analyzer import Analyzer
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
 
 
 class TestAnalyzerDSEIntegration:
@@ -82,7 +82,7 @@ class TestAnalyzerDSEIntegration:
     
     def test_constraint_extraction_from_path(self):
         """Test that we can extract constraints from a symbolic path."""
-        from pyfromscratch.dse.constraint_solver import ConstraintExtractor
+        from a3_python.dse.constraint_solver import ConstraintExtractor
         
         code = compile("x = 10\ny = x / 0", "<test>", "exec")
         

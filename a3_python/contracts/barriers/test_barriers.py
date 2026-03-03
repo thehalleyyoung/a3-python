@@ -14,10 +14,11 @@ This module tests the barrier framework including:
 import unittest
 import sys
 import ast
+from pathlib import Path
 from typing import List, Tuple
 
 # Add parent directory to path for imports
-sys.path.insert(0, '/Users/halleyyoung/Documents/PythonFromScratch')
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 
 class TestIntervalDomain(unittest.TestCase):

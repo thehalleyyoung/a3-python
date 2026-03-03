@@ -7,7 +7,7 @@ Tests the Z3-integrated (τ, κ, σ) lattice model for all 47 CodeQL security bu
 import pytest
 import z3
 
-from pyfromscratch.z3model.taint_lattice import (
+from a3_python.z3model.taint_lattice import (
     SourceType, SinkType, SanitizerType,
     TaintLabel, SymbolicTaintLabel,
     PCTaint, SymbolicPCTaint,

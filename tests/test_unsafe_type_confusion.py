@@ -11,9 +11,9 @@ These tests validate that:
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.unsafe.registry import check_unsafe_regions
-from pyfromscratch.unsafe.type_confusion import is_unsafe_type_confusion, extract_counterexample
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.unsafe.registry import check_unsafe_regions
+from a3_python.unsafe.type_confusion import is_unsafe_type_confusion, extract_counterexample
 
 
 def test_type_confusion_int_str_add():

@@ -1,4 +1,4 @@
-from pyfromscratch.barriers.sos_safety import prove_guarded_hazards_unreachable
+from a3_python.barriers.sos_safety import prove_guarded_hazards_unreachable
 
 
 def test_sos_for_safety_proves_guarded_div_zero_site_unreachable():

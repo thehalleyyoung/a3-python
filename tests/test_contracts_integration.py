@@ -8,8 +8,8 @@ Verifies that:
 """
 
 import pytest
-from pyfromscratch.semantics.symbolic_vm import SymbolicVM
-from pyfromscratch.contracts.schema import get_contract, list_contracts
+from a3_python.semantics.symbolic_vm import SymbolicVM
+from a3_python.contracts.schema import get_contract, list_contracts
 
 
 class TestContractIntegration:

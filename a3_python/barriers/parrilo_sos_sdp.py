@@ -1181,7 +1181,7 @@ class SOSBarrierSynthesizer:
     """
     Synthesizes barrier certificates using SOS-SDP.
     
-    This is the main integration point with the PythonFromScratch framework.
+    This is the main integration point with the a3-python framework.
     It extracts polynomial models from program semantics and finds certificates
     using Positivstellensatz-based reasoning.
     """
@@ -1596,7 +1596,7 @@ def _affine_guard_to_polynomial(guard, variables: List[str]) -> Optional[Polynom
 
 class ParriloSOSIntegration:
     """
-    Main integration class for Parrilo SOS-SDP in PythonFromScratch.
+    Main integration class for Parrilo SOS-SDP in a3-python.
     
     This class provides the interface for the kitchen-sink orchestrator
     to invoke SOS-based barrier synthesis and certification.
