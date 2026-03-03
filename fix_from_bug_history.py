@@ -9,7 +9,6 @@ diff to GitHub Copilot asking:
 
   "Was this actually a bug introduction / bug fix, or a false positive?"
 
-After verifying all events it:
   1. Prints a per-bug-type accuracy table
   2. For each false-positive pattern, asks Copilot to suggest a targeted
      improvement to the corresponding a3-python checker
@@ -25,11 +24,10 @@ Usage
   python fix_from_bug_history.py \\
       --history results/bug_history.md \\
       --workdir /tmp/a3_top_python_repos \\
-      --out results/a3_calibration.md \\
-      --apply                  # actually write edits to a3_python/
+      --out results/a3_calibration.md
 
-  # Use a different GitHub Models model
-  python fix_from_bug_history.py --model claude-3.5-sonnet
+  # Skip fix generation (verify only, no file edits)
+  python fix_from_bug_history.py --no-fixes
 
 Prerequisites
 -------------
@@ -54,13 +52,12 @@ import ast
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import textwrap
 import time
 import hashlib
-import urllib.request
-import urllib.error
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -287,83 +284,63 @@ def get_file_before_after(repo: Path, sha: str, filepath: str) -> Tuple[str, str
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LLM client — delegates to `gh api` (GitHub CLI, uses gh auth credentials)
+# LLM client — GitHub Copilot CLI  (`copilot -p "{prompt}" --allow-all-tools`)
 # ═══════════════════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════════════════
-# LLM client — GitHub Models API, authenticated via `gh auth token`
-# ═══════════════════════════════════════════════════════════════════════════
-
-MODELS_URL = "https://models.inference.ai.azure.com/chat/completions"
-DEFAULT_MODEL = "gpt-4o"
-
-
-def _check_gh_auth() -> bool:
-    """Return True if `gh auth status` succeeds (user is logged in)."""
-    r = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
-    return r.returncode == 0
-
-
-def _gh_token() -> str:
-    """Return the active GitHub OAuth token via `gh auth token`."""
-    r = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(
-            "`gh auth token` failed — run `gh auth login` first.\n"
-            + r.stderr.strip()
-        )
-    return r.stdout.strip()
+COPILOT_BIN: str = shutil.which("copilot") or "copilot"
 
 
 class LLMClient:
     """
-    Calls the GitHub Models API (models.inference.ai.azure.com) using the
-    OAuth token managed by the GitHub CLI (`gh auth token`).
+    Wraps the GitHub Copilot CLI for non-interactive scripting:
+        copilot -p "{prompt}" --allow-all-tools
 
-    No API keys needed in code — `gh auth login` handles everything.
+    For verification queries the prompt receives a JSON-reply instruction
+    and we parse the result from stdout.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL, hostname: str = "", verbose: bool = False):
-        self.model   = model
+    def __init__(self, verbose: bool = False, **_kwargs):
         self.verbose = verbose
-        if not _check_gh_auth():
+        if not shutil.which("copilot"):
             print(
-                f"{YELLOW}WARNING: `gh auth status` failed.\n"
-                f"  Run `gh auth login` before using this script.{RESET}",
+                f"{YELLOW}WARNING: `copilot` not found on PATH.\n"
+                f"  Expected at: {COPILOT_BIN}{RESET}",
                 file=sys.stderr,
             )
-        self._token: Optional[str] = None   # lazily fetched
-
-    def _get_token(self) -> str:
-        if not self._token:
-            self._token = _gh_token()
-        return self._token
 
     def chat(self, messages: List[dict], temperature: float = 0.1) -> str:
-        """Send messages to GitHub Models API and return the reply text."""
-        token = self._get_token()
-        payload = json.dumps({
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": 1024,
-        }).encode()
+        """Run `copilot -p <prompt> --allow-all-tools` and return stdout.
 
-        req = urllib.request.Request(MODELS_URL, data=payload, method="POST")
-        req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("Content-Type", "application/json")
-        req.add_header("Accept", "application/json")
+        The messages list is flattened: system messages are prepended to the
+        user prompt separated by a blank line.
+        """
+        parts = []
+        for m in messages:
+            role    = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "system":
+                parts.insert(0, content)
+            else:
+                parts.append(content)
+        prompt = "\n\n".join(parts)
 
-        if self.verbose:
-            print(f"    [LLM] POST {MODELS_URL} model={self.model}", file=sys.stderr)
-
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = json.loads(resp.read().decode())
-            return data["choices"][0]["message"]["content"]
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode(errors="replace")
-            raise RuntimeError(f"HTTP {exc.code}: {body[:400]}")
+        cmd = ["copilot", "-p", prompt, "--allow-all-tools"]
+        print(f"    [copilot] prompt ({len(prompt)} chars)", file=sys.stderr)
+        lines: List[str] = []
+        with subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=str(A3_ROOT),
+        ) as proc:
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+                lines.append(line)
+            proc.wait()
+        if proc.returncode not in (0, 1):
+            raise RuntimeError(f"copilot exited {proc.returncode}")
+        return "".join(lines)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -406,40 +383,6 @@ Bug types:  {bug_types}
 
 === GIT DIFF (truncated to {n} chars) ===
 {diff}
-"""
-
-
-FIX_SYSTEM = """\
-You are a Python static-analysis expert helping improve a3-python, a symbolic \
-execution tool that detects security bugs.
-
-The code for a3-python bug detection live in a3_python/, and is based on a deep semantic barrier analysis of python code (see docs/).
-Each detector exports a function with signature:
-    check_<name>(paths: List[SymbolicPath], ...) -> List[Finding]
-
-Your job is to write a targeted, minimal Python patch that:
-  1. Does NOT break true positives.
-  2. Suppresses the described false-positive pattern.
-  3. Uses only the Python standard library + z3.
-  4. Is not based on surface pattern matching, but on a deep, thorough understanding of the technology behind a3-python and its interactions with z3.
-
-Respond ONLY with a JSON object (no markdown fences) with keys:
-  - "target_file":   "a3_python/unsafe/<checker>.py"   (relative to repo root)
-  - "description":   ≤2 sentences describing the change
-  - "diff":          A unified diff string (--- a/...  +++ b/...) for the change
-  - "confidence":    0.0–1.0  (how confident you are the patch is correct)
-"""
-
-FIX_USER_TMPL = """\
-Checker:              {bug_types}
-False-positive label: {fp_label}
-Number of FP examples seen: {count}
-
-Representative diff where a3-python incorrectly fired:
-{diff}
-
-Current checker source (a3_python/unsafe/ excerpt):
-{checker_src}
 """
 
 
@@ -611,137 +554,197 @@ def _load_checker_src(bug_type: str) -> str:
     return "", ""
 
 
+# ─── prompt template for fix+apply (Copilot will edit files directly) ───────
+
+FIX_APPLY_TMPL = """\
+You are a senior static-analysis engineer improving the a3-python security
+analyser to eliminate false positives for the {bug_type} checker.
+
+══════════════════════════════════════════════════════════════
+FALSE-POSITIVE PATTERN BEING FIXED
+══════════════════════════════════════════════════════════════
+Pattern label : {fp_label}
+Occurrences   : {fp_count} times in the calibration corpus
+Checker file  : {checker_file}
+
+── Representative diff where a3-python fired INCORRECTLY ────
+{diff}
+
+══════════════════════════════════════════════════════════════
+HOW a3-python CHECKERS WORK
+══════════════════════════════════════════════════════════════
+Each checker module exports one or more functions that receive an AST node
+(or a CFG/dataflow summary) and return either:
+  - A BugReport(...) instance   → a3-python calls this a true positive
+  - None / empty list           → no bug found (no report)
+
+False positives occur when the checker reports a bug on code that is in fact
+safe.  The goal is to add guards BEFORE the report() call so that the
+checker stays silent on patterns like "{fp_label}".
+
+══════════════════════════════════════════════════════════════
+COMMON FIX STRATEGIES — choose whichever fits the pattern
+══════════════════════════════════════════════════════════════
+
+A. Add an AST guard at the top of the check function
+   ─────────────────────────────────────────────────
+   Inspect the AST node (node.annotation, node.returns, node.decorator_list,
+   etc.) before doing any expensive analysis.  Return early (None / []) when
+   the node matches the known-safe pattern.
+
+   Example:  if is_type_annotation_context(node):  return []
+
+   Useful helpers already in a3_python/:
+     • a3_python/frontend/ast_helpers.py   – node predicates
+     • a3_python/fp_context.py             – existing FP-suppression utilities
+
+B. Tighten the detection predicate
+   ────────────────────────────────
+   If the checker matches too broadly (e.g., any attribute assigned to `None`)
+   make the match more specific (e.g., only when the type annotation is absent
+   and the name is not in an `__init__` method).
+
+C. Add a naming / annotation whitelist
+   ────────────────────────────────────
+   If the FP is caused by a naming convention (e.g., a class called `Type`,
+   a method called `__init__`, an argument annotated with Optional[...]) add
+   a lookup against a small whitelist rather than reporting.
+
+D. Propagate context from the enclosing scope
+   ────────────────────────────────────────────
+   Use the `context` or `scope` objects (if the checker already accepts them)
+   to check whether the site is inside a try/except, a type-checking block
+   (TYPE_CHECKING guard), a test file, etc.  Skip reporting inside safe scopes.
+
+E. Check that the diff represents a semantic change, not a refactor
+   ────────────────────────────────────────────────────────────────
+   Refactor-only changes (renames, type-annotation additions, whitespace)
+   should never trigger a security checker.  Add a guard that checks whether
+   the suspicious value actually flows into a dangerous sink (call, return,
+   assignment, etc.) or whether it only appears in an annotation / docstring.
+
+══════════════════════════════════════════════════════════════
+EXACT STEPS TO FOLLOW
+══════════════════════════════════════════════════════════════
+
+Step 1 – Open and carefully read {checker_file}.
+         Identify the function(s) that produce {bug_type} reports.
+         Understand exactly which AST patterns cause the blast.
+
+Step 2 – Trace WHY the false positive fires on the diff above.
+         - What does the checker match on?
+         - What characteristic of the diff makes it NOT a real bug?
+         - What predicate, when true, guarantees the code is safe?
+
+Step 3 – Implement the guard using the most appropriate strategy from A–E.
+         Requirements for the guard:
+           • Must return [] / None (or skip append) for the FP pattern.
+           • Must NOT change behaviour for genuine {bug_type} bugs.
+           • Should be ≤ 15 lines of new code unless unavoidable.
+           • Should include a comment:  # FP-guard: {fp_label}
+
+Step 4 – If (and only if) helper utilities are missing:
+         open the relevant helper file in a3_python/frontend/ast_helpers.py
+         or a3_python/fp_context.py, add the missing predicate there, then
+         import and use it in {checker_file}.
+
+Step 5 – Save every file you modified.
+
+Step 6 – Run the tests to confirm nothing is broken:
+             cd {a3_root}
+             python -m pytest tests/ -x -q 2>&1 | tail -20
+         If tests fail, read the failure and fix the regression before saving.
+
+Step 7 – Write a brief comment block at the top of your edits (inside the
+         source, not to me) documenting:
+             # Calibration fix ({fp_count} FPs suppressed)
+             # Pattern  : {fp_label}
+             # Strategy : <A|B|C|D|E> – one sentence explanation
+
+══════════════════════════════════════════════════════════════
+CONSTRAINTS
+══════════════════════════════════════════════════════════════
+• Do NOT rewrite or restructure the whole checker — make the smallest
+  targeted edit that fixes the stated FP pattern.
+• Do NOT disable or comment-out the checker entirely.
+• Do NOT produce a patch or describe what you would do.
+  Use your file-editing tools to make the changes directly and save them.
+• Do NOT output any code blocks — the edits go directly into the files.
+"""
+
+
 def generate_fixes(
     stats: Dict[str, BugTypeStats],
     client: LLMClient,
     cache: Dict[str, dict],
+    apply: bool = False,
     verbose: bool = False,
 ) -> List[dict]:
-    """Ask Copilot for a fix for each bug type with false positives."""
+    """
+    For each bug type with false positives, run:
+        copilot -p "{fix_prompt}" --allow-all-tools
+    so Copilot can read and directly edit the checker source.
+
+    When apply=False the prompt is still sent but files may still be written
+    (Copilot has --allow-all-tools); pass apply=True to make the intent clear
+    in the prompt header.
+    """
     fixes: List[dict] = []
+
     for bt, s in stats.items():
         if s.false_positive == 0:
             continue
-        print(f"\n  Generating fix for {YELLOW}{bt}{RESET}  "
+        print(f"\n  Fixing {YELLOW}{bt}{RESET}  "
               f"({s.false_positive} FP / {s.total} total) …")
 
-        # Group FPs by their stated label
+        checker_src, checker_file = _load_checker_src(bt)
+        if not checker_file:
+            print(f"    {YELLOW}SKIP: checker source not found for {bt}{RESET}")
+            continue
+
+        # Group FPs by pattern label
         fp_labels: Dict[str, list] = defaultdict(list)
         for ex in s.examples:
-            label = _extract_json(ex.raw_response).get("false_positive_pattern",
-                                                        "unspecified pattern")
+            label = _extract_json(ex.raw_response).get(
+                "false_positive_pattern", "unspecified pattern")
             fp_labels[str(label)].append(ex)
 
         for label, exs in fp_labels.items():
             fix_key = f"fix:{bt}:{label}"
             if fix_key in cache:
-                raw_json = cache[fix_key]
-                print(f"    (cached fix for '{label}')")
-            else:
-                checker_src, _ = _load_checker_src(bt)
-                representative = exs[0]
-                user_msg = FIX_USER_TMPL.format(
-                    bug_types=bt,
-                    fp_label=label,
-                    count=len(exs),
-                    diff=_truncate(representative.diff, MAX_DIFF_CHARS),
-                    checker_src=_truncate(checker_src, MAX_FILE_CHARS),
-                )
-                try:
-                    raw_text = client.chat([
-                        {"role": "system", "content": FIX_SYSTEM},
-                        {"role": "user",   "content": user_msg},
-                    ])
-                    raw_json = _extract_json(raw_text)
-                    raw_json["_raw"] = raw_text
-                    raw_json["_bug_type"] = bt
-                    raw_json["_fp_label"] = label
-                    raw_json["_fp_count"] = len(exs)
-                    cache[fix_key] = raw_json
-                except Exception as exc:
-                    print(f"    {RED}LLM error: {exc}{RESET}")
-                    continue
+                print(f"    (cached) '{label}'")
+                fixes.append(cache[fix_key])
+                continue
 
-            conf = raw_json.get("confidence", 0.0)
-            desc = raw_json.get("description", "")
-            tgt  = raw_json.get("target_file", "")
-            print(f"    {GREEN}Fix{RESET} → {tgt}  (conf={conf})  {desc[:80]}")
-            fixes.append(raw_json)
+            representative = exs[0]
+            prompt = FIX_APPLY_TMPL.format(
+                bug_type=bt,
+                fp_label=label,
+                fp_count=len(exs),
+                diff=_truncate(representative.diff, MAX_DIFF_CHARS),
+                checker_file=checker_file,
+                a3_root=str(A3_ROOT),
+            )
+
+            try:
+                output = client.chat([{"role": "user", "content": prompt}])
+                entry = {
+                    "_bug_type":   bt,
+                    "_fp_label":   label,
+                    "_fp_count":   len(exs),
+                    "_checker":    checker_file,
+                    "_output":     output,
+                    "_applied":    True,     # copilot edits files directly
+                }
+                cache[fix_key] = entry
+                fixes.append(entry)
+                print(f"    {GREEN}Done{RESET}  '{label}'  →  {checker_file}")
+                if verbose:
+                    print(textwrap.indent(output[:400], "      "))
+            except Exception as exc:
+                print(f"    {RED}error: {exc}{RESET}")
 
     return fixes
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Applying fixes to a3-python source
-# ═══════════════════════════════════════════════════════════════════════════
-
-_DIFF_HUNK_RE = re.compile(
-    r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@",
-    re.MULTILINE
-)
-
-
-def apply_unified_diff(repo_root: Path, diff_str: str) -> Optional[str]:
-    """
-    Apply a unified diff string produced by the LLM.
-    Uses `patch -p1` under the hood.
-    Returns the path that was patched, or None on failure.
-    """
-    if not diff_str or "+++" not in diff_str:
-        return None
-
-    # Extract target file from +++ line
-    target_match = re.search(r"^\+\+\+\s+(?:b/)?(.+?)$", diff_str, re.MULTILINE)
-    if not target_match:
-        return None
-    target_rel = target_match.group(1).strip()
-    target_abs = repo_root / target_rel
-    if not target_abs.exists():
-        return None
-
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".patch",
-                                     delete=False, encoding="utf-8") as pf:
-        pf.write(diff_str)
-        patch_path = pf.name
-
-    result = subprocess.run(
-        ["patch", "-p1", "--forward", "-i", patch_path],
-        cwd=str(repo_root), capture_output=True, text=True
-    )
-    Path(patch_path).unlink(missing_ok=True)
-
-    if result.returncode == 0:
-        return target_rel
-    # patch(1) failed – return None
-    return None
-
-
-def apply_fixes(fixes: List[dict], repo_root: Path, dry_run: bool = True) -> None:
-    if dry_run:
-        print(f"\n{YELLOW}(--apply not set; skipping writes){RESET}")
-        return
-
-    applied = 0
-    for fix in fixes:
-        diff_str = fix.get("diff", "")
-        if not diff_str:
-            continue
-        conf = float(fix.get("confidence", 0))
-        if conf < 0.6:
-            print(f"  {YELLOW}SKIP{RESET} low-confidence fix "
-                  f"({conf:.2f}) for {fix.get('_bug_type')} "
-                  f"'{fix.get('_fp_label')}'")
-            continue
-        target = apply_unified_diff(repo_root, diff_str)
-        if target:
-            fix["_applied_file"] = target
-            print(f"  {GREEN}APPLIED{RESET} → {target}")
-            applied += 1
-        else:
-            print(f"  {RED}FAILED{RESET} to apply diff for "
-                  f"{fix.get('_bug_type')} '{fix.get('_fp_label')}'")
-    print(f"\n  Applied {applied}/{len(fixes)} fixes.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -802,26 +805,22 @@ def render_report(
         ]
 
     if fixes:
-        lines += ["## Proposed a3-python Fixes", ""]
+        lines += ["## Applied Fixes (via Copilot CLI)", ""]
         for fix in fixes:
-            conf     = fix.get("confidence", 0)
-            tgt      = fix.get("target_file", "?")
             bt       = fix.get("_bug_type", "?")
             fp_label = fix.get("_fp_label", "?")
-            desc     = fix.get("description", "")
-            diff_str = fix.get("diff", "")
-            applied  = fix.get("_applied_file", "")
-            status   = f"✅ applied to `{applied}`" if applied else "⚠ not applied"
+            checker  = fix.get("_checker", "?")
+            output   = fix.get("_output", "")
+            status   = "✅ applied" if fix.get("_applied") else "⚠ skipped"
 
             lines += [
                 f"### {bt} — {fp_label}",
-                f"**Target:** `{tgt}`  **Confidence:** {conf:.0%}  **Status:** {status}",
-                f"{desc}",
+                f"**Checker:** `{checker}`  **Status:** {status}",
                 "",
-                "<details><summary>Diff</summary>",
+                "<details><summary>Copilot output</summary>",
                 "",
-                "```diff",
-                diff_str[:3000],
+                "```",
+                output[:3000],
                 "```",
                 "",
                 "</details>",
@@ -844,19 +843,10 @@ def parse_args() -> argparse.Namespace:
                    help=f"Path to bug_history.md (default: {DEFAULT_HISTORY})")
     p.add_argument("--workdir", default=str(DEFAULT_WORKDIR),
                    help=f"Directory with cloned repos (default: {DEFAULT_WORKDIR})")
-    p.add_argument("--hostname", default="",
-                   metavar="HOST",
-                   help="(unused, kept for compatibility)")
-    p.add_argument("--model", default=DEFAULT_MODEL,
-                   help=f"GitHub Models model name (default: {DEFAULT_MODEL})")
     p.add_argument("--out", default=str(DEFAULT_OUT),
                    help=f"Markdown report output (default: {DEFAULT_OUT})")
     p.add_argument("--cache", default=str(CACHE_PATH),
                    help=f"JSON cache for LLM responses (default: {CACHE_PATH})")
-    p.add_argument("--apply", action="store_true",
-                   help="Actually write Copilot-suggested fixes to a3_python/ source")
-    p.add_argument("--min-confidence", type=float, default=0.6,
-                   help="Minimum Copilot confidence to act on (default: 0.6)")
     p.add_argument("--limit-events", type=int, default=0,
                    help="Cap number of events to verify (0 = all, useful for testing)")
     p.add_argument("--verbose", action="store_true",
@@ -897,7 +887,7 @@ def main() -> int:
 
     # ── 2. Build LLM client ───────────────────────────────────────────────
     client = LLMClient(
-        model=args.model,
+
         verbose=args.verbose,
     )
     cache = load_cache(cache_p)
@@ -922,15 +912,14 @@ def main() -> int:
               f"{s.precision:.0%}  ({s.true_positive}/{s.total})")
     print(f"{'='*60}\n")
 
-    # ── 5. Generate fixes ─────────────────────────────────────────────────
+    # ── 5. Generate + apply fixes via Copilot CLI ──────────────────────────
     fixes: List[dict] = []
     if not args.no_fixes:
-        print(f"{BOLD}Generating fixes for false-positive patterns …{RESET}")
-        fixes = generate_fixes(stats, client, cache, verbose=args.verbose)
+        print(f"{BOLD}Applying fixes via Copilot CLI …{RESET}")
+        print(f"  (Copilot will read and edit checker files directly)\n")
+        fixes = generate_fixes(stats, client, cache, apply=True,
+                               verbose=args.verbose)
         save_cache(cache_p, cache)
-
-    # ── 6. Apply fixes ────────────────────────────────────────────────────
-    apply_fixes(fixes, A3_ROOT, dry_run=not args.apply)
 
     # ── 7. Write report ───────────────────────────────────────────────────
     out_path = Path(args.out)
