@@ -37,6 +37,8 @@ def is_unsafe_uninit_memory(state) -> bool:
     
     Returns True if the machine state σ shows a read from uninitialized memory:
     - uninit_memory_reached flag set (indicating uninitialized memory access)
+    - OR UnboundLocalError (variable used before assignment)
+    - OR NameError (variable not defined at all)
     - OR AttributeError from accessing uninitialized __slots__
     - OR ValueError from operating on uninitialized buffer
     - OR uninitialized buffer read tracked by symbolic VM
@@ -44,13 +46,27 @@ def is_unsafe_uninit_memory(state) -> bool:
     The symbolic VM tracks buffer/memory initialization state and detects
     when read operations target uninitialized regions.
     
-    Note: Pure Python objects are always initialized. This bug occurs at:
-    - Native boundary (ctypes, buffers, extensions)
-    - __slots__ without defaults
-    - Buffer protocol objects before initialization
+    Note: In Python, uninitialized variable access maps to UnboundLocalError
+    (for locals) or NameError (for globals/names). These are the Python
+    equivalent of uninitialized memory reads in C/C++.
     """
+    # Check if catch guard is established (exception caught by handler)
+    if hasattr(state, 'has_catch_guard'):
+        exc = getattr(state, 'exception', None)
+        if exc and state.has_catch_guard(exc):
+            return False
+    
     # Check for explicit uninitialized memory flag
     if hasattr(state, 'uninit_memory_reached') and state.uninit_memory_reached:
+        return True
+    
+    # UnboundLocalError: variable used before assignment in local scope
+    # This is the Python equivalent of reading uninitialized memory
+    if state.exception == "UnboundLocalError":
+        return True
+    
+    # NameError: variable not defined (similar to uninitialized read)
+    if state.exception == "NameError":
         return True
     
     # Check for buffer states tracking uninitialized reads

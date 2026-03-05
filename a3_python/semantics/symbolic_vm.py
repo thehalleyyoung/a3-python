@@ -708,25 +708,44 @@ class SymbolicVM:
         # ====================================================================
         state.update_guards_from_analysis(code, instruction.offset)
         
-        # Check if we have an exception before execution
-        had_exception_before = state.exception is not None
+        # Track exception state before execution to detect both NEW exceptions
+        # and exception CHANGES (e.g., UnboundLocalError raised inside a
+        # ValueError handler body).
+        exception_before = state.exception  # None, or the exception type string
+        had_exception_before = exception_before is not None
         
         # ITERATION 414: Fix infinite loop when exception persists
         # If there's already an unhandled exception, don't try to execute more instructions
         if had_exception_before:
-            # Look for exception handler
-            handler_offset = self._get_exception_handler(code, instruction.offset)
-            if handler_offset is not None:
-                # Jump to exception handler
-                frame.instruction_offset = handler_offset
-                path.trace.append(f"  -> EXCEPTION {state.exception}, jumping to handler at {handler_offset}")
-                # Clear had_exception_before so we can detect new exceptions after handler
-                had_exception_before = False
+            # If a catch guard is established for this exception, we're inside
+            # the handler body — continue executing normally.
+            if hasattr(state, 'has_catch_guard') and state.has_catch_guard(state.exception):
+                pass  # Inside handler body, continue executing
             else:
-                # No handler found - this path is done, halt to prevent infinite loop
-                state.halted = True
-                path.trace.append(f"  -> UNHANDLED EXCEPTION: {state.exception} (halting)")
-                return [path]
+                # Look for exception handler (any depth)
+                handler_info = self._get_exception_handler_info(code, instruction.offset, any_depth=True)
+                if handler_info is not None:
+                    handler_offset, handler_depth, handler_lasti = handler_info
+                    # Unwind operand stack to the specified depth
+                    if len(frame.operand_stack) > handler_depth:
+                        frame.operand_stack = frame.operand_stack[:handler_depth]
+                    if handler_lasti:
+                        frame.operand_stack.append(
+                            SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
+                        )
+                    # Jump to exception handler
+                    frame.instruction_offset = handler_offset
+                    path.trace.append(f"  -> EXCEPTION {state.exception}, jumping to handler at {handler_offset}")
+                    # Establish g_catch guard for this exception type
+                    state.set_guard("catch", state.exception)
+                    # Update tracking so we can detect new exceptions after handler
+                    exception_before = state.exception
+                    had_exception_before = False
+                else:
+                    # No handler found - this path is done, halt to prevent infinite loop
+                    state.halted = True
+                    path.trace.append(f"  -> UNHANDLED EXCEPTION: {state.exception} (halting)")
+                    return [path]
         
         try:
             # ================================================================
@@ -850,15 +869,18 @@ class SymbolicVM:
                 # Fork paths for each alternative case
                 import copy
                 
+                # Capture and clear fork info BEFORE deepcopy to prevent re-forking
+                fork_cases = state.fork_relational_cases
+                del state.fork_relational_cases
+                # Also clear any fork_exception_types to prevent leaking to alt states
+                saved_fork_exc = getattr(state, 'fork_exception_types', [])
+                state.fork_exception_types = []
+                
                 alternative_paths = []
                 # Skip the first case (already applied to current state in _apply_relational_summary)
-                for case_info in state.fork_relational_cases[1:]:
-                    # Deep copy state BEFORE modifying
+                for case_info in fork_cases[1:]:
+                    # Deep copy state (fork info already cleared, preventing re-fork)
                     alt_state = copy.deepcopy(state)
-                    
-                    # Remove fork_relational_cases from alt_state to avoid infinite recursion
-                    if hasattr(alt_state, 'fork_relational_cases'):
-                        del alt_state.fork_relational_cases
                     
                     # Apply the alternative case's postcondition
                     case = case_info['case']
@@ -895,8 +917,9 @@ class SymbolicVM:
                         # Look for exception handler
                         handler_offset = self._get_exception_handler(frame.code, instruction.offset)
                         if handler_offset is not None:
-                            # Jump to exception handler
+                            # Jump to exception handler and establish catch guard
                             alt_state.frame_stack[-1].instruction_offset = handler_offset
+                            alt_state.set_guard("catch", alt_state.exception)
                             alt_path_desc = f"  -> FORK: Alternative outcome '{case.name}' for {func_name} (exception -> handler at {handler_offset})"
                         else:
                             # No handler, this path will terminate with unhandled exception
@@ -912,8 +935,10 @@ class SymbolicVM:
                     
                     alternative_paths.append(alt_path)
                 
-                # Clear fork info from primary path
-                del state.fork_relational_cases
+                # Restore fork_exception_types on primary state (they'll be
+                # processed in the next check below)
+                if saved_fork_exc:
+                    state.fork_exception_types = saved_fork_exc
                 
                 # Return primary path + all alternative paths
                 # Primary path continues normally with first case already applied
@@ -923,35 +948,66 @@ class SymbolicVM:
             # EXCEPTION PATH FORKING: Handle may_raise from contracts
             # ================================================================
             if hasattr(state, 'fork_exception_types') and state.fork_exception_types:
+                # Capture fork info BEFORE clearing (needed for trace messages)
+                fork_func_name = getattr(state, 'fork_function_name', 'unknown')
+                fork_case_name = getattr(state, 'fork_case_name', '')
+                fork_exc_types = list(state.fork_exception_types)
+                
+                # Clear fork info on primary state FIRST to prevent re-fork
+                state.fork_exception_types = []
+                if hasattr(state, 'fork_function_name'):
+                    del state.fork_function_name
+                if hasattr(state, 'fork_case_name'):
+                    del state.fork_case_name
+                
                 # Create forked paths for each exception type
                 exception_paths = []
-                for exc_type in state.fork_exception_types:
+                for exc_type in fork_exc_types:
                     # Deep copy state for exception path
+                    # CRITICAL: fork info is already cleared on state, so deepcopy
+                    # won't carry fork_exception_types to the new state (prevents
+                    # exponential re-forking at every subsequent step)
                     import copy
                     exc_state = copy.deepcopy(state)
                     exc_state.exception = exc_type
                     
                     # Mark specific bug types
                     if exc_type == "ValueError":
-                        if hasattr(state, 'fork_case_name') and 'domain' in state.fork_case_name.lower():
+                        if fork_case_name and 'domain' in fork_case_name.lower():
                             exc_state.fp_domain_error_reached = True
-                            exc_state.domain_error_context = f"{state.fork_function_name}: {state.fork_case_name}"
+                            exc_state.domain_error_context = f"{fork_func_name}: {fork_case_name}"
                     elif exc_type == "TypeError":
                         exc_state.type_confusion_reached = True
+                    
+                    # Look for exception handler in the current frame
+                    handler_info = self._get_exception_handler_info(frame.code, instruction.offset)
+                    if handler_info is not None:
+                        handler_offset, handler_depth, handler_lasti = handler_info
+                        # Truncate operand stack to the correct depth specified
+                        # by the exception table.  The success path pushed the
+                        # call result onto the stack, but on the exception path
+                        # the call never returned — the stack must be unwound.
+                        exc_frame = exc_state.frame_stack[-1]
+                        if len(exc_frame.operand_stack) > handler_depth:
+                            exc_frame.operand_stack = exc_frame.operand_stack[:handler_depth]
+                        # If lasti, push the faulting instruction offset
+                        if handler_lasti:
+                            exc_frame.operand_stack.append(
+                                SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
+                            )
+                        # Jump to exception handler and establish catch guard
+                        exc_frame.instruction_offset = handler_offset
+                        exc_state.set_guard("catch", exc_type)
+                        fork_desc = f"  -> FORK: {exc_type} from {fork_func_name} (handled at {handler_offset}, stack depth {handler_depth})"
+                    else:
+                        fork_desc = f"  -> FORK: {exc_type} from {fork_func_name} (unhandled)"
                     
                     # Create exception path with the same trace up to this point
                     exc_path = SymbolicPath(exc_state)
                     exc_path.trace = path.trace.copy()
-                    exc_path.trace.append(f"  -> FORK: {exc_type} may be raised by {state.fork_function_name}")
+                    exc_path.trace.append(fork_desc)
                     
                     exception_paths.append(exc_path)
-                
-                # Clear fork info
-                state.fork_exception_types = []
-                if hasattr(state, 'fork_function_name'):
-                    del state.fork_function_name
-                if hasattr(state, 'fork_case_name'):
-                    del state.fork_case_name
                 
                 # Return both success path and exception paths
                 # Success path continues normally
@@ -993,13 +1049,28 @@ class SymbolicVM:
                 return [path] + branch_paths
             
             # After instruction execution, check if exception was newly raised
-            if state.exception and not had_exception_before:
-                # Look for exception handler
-                handler_offset = self._get_exception_handler(code, instruction.offset)
-                if handler_offset is not None:
+            # or changed (e.g., UnboundLocalError inside a ValueError handler)
+            exception_is_new = (state.exception and not had_exception_before)
+            exception_changed = (state.exception and had_exception_before 
+                                 and state.exception != exception_before)
+            if exception_is_new or exception_changed:
+                # Look for exception handler (with depth info for stack unwinding)
+                # Use any_depth=True to find handlers at any nesting level (e.g.,
+                # exceptions raised inside a handler body have depth > 0)
+                handler_info = self._get_exception_handler_info(code, instruction.offset, any_depth=True)
+                if handler_info is not None:
+                    handler_offset, handler_depth, handler_lasti = handler_info
+                    # Unwind operand stack to the depth specified by exception table
+                    if len(frame.operand_stack) > handler_depth:
+                        frame.operand_stack = frame.operand_stack[:handler_depth]
+                    # If lasti, push the faulting instruction offset
+                    if handler_lasti:
+                        frame.operand_stack.append(
+                            SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
+                        )
                     # Jump to exception handler
                     frame.instruction_offset = handler_offset
-                    path.trace.append(f"  -> EXCEPTION {state.exception}, jumping to handler at {handler_offset}")
+                    path.trace.append(f"  -> EXCEPTION {state.exception}, jumping to handler at {handler_offset} (stack depth {handler_depth})")
                     # Establish g_catch guard for this exception type
                     state.set_guard("catch", state.exception)
                 else:
@@ -1010,8 +1081,15 @@ class SymbolicVM:
                     return [path]
         
         except NotImplementedError as e:
-            state.exception = str(e)
-            path.trace.append(f"{instruction.offset:4d}: {instruction.opname} -> EXCEPTION: {e}")
+            # Mark the path as having hit an unimplemented opcode.
+            # Crucially, do NOT set state.exception — that would make downstream
+            # PANIC detection treat this as a real runtime exception and report a
+            # false-positive BUG.  Instead, flag the state so the analyzer can
+            # conservatively return UNKNOWN for this path.
+            state.halted = True
+            state.unsupported_opcode = str(e)
+            # Keep exception_is_specific False so it is NOT classified as PANIC
+            path.trace.append(f"{instruction.offset:4d}: {instruction.opname} -> UNSUPPORTED: {e} (path halted, not a bug)")
         
         return [path]
     
@@ -1088,26 +1166,31 @@ class SymbolicVM:
             # An exception is unhandled only if there's no handler available
             # and we're not actively executing handler opcodes
             if path.state.exception:
-                frame = path.state.current_frame
-                if frame:
-                    # Check if current instruction is a handler opcode that might clear the exception
-                    instr = self._get_instruction(frame)
-                    handler_clearing_opcodes = {'POP_EXCEPT', 'RERAISE', 'CHECK_EXC_MATCH', 'PUSH_EXC_INFO', 'NOT_TAKEN', 'POP_TOP'}
-                    if instr and instr.opname in handler_clearing_opcodes:
-                        # About to execute a handler opcode or handler body instruction, let it run
-                        pass
-                    else:
-                        # Check if there's a handler available for the current location (any depth)
-                        handler = self._get_exception_handler(frame.code, frame.instruction_offset, any_depth=True)
-                        if handler is None:
-                            # No handler available and not at a handler opcode, exception is unhandled
-                            completed.append(path)
-                            continue
-                    # If handler exists or we're at handler opcode, continue executing
+                # If catch guard is established for this exception, we're inside the
+                # handler body — let execution continue through POP_EXCEPT
+                if hasattr(path.state, 'has_catch_guard') and path.state.has_catch_guard(path.state.exception):
+                    pass  # Inside handler body, continue executing
                 else:
-                    # No frame, exception is unhandled
-                    completed.append(path)
-                    continue
+                    frame = path.state.current_frame
+                    if frame:
+                        # Check if current instruction is a handler opcode that might clear the exception
+                        instr = self._get_instruction(frame)
+                        handler_clearing_opcodes = {'POP_EXCEPT', 'RERAISE', 'CHECK_EXC_MATCH', 'PUSH_EXC_INFO', 'NOT_TAKEN', 'POP_TOP'}
+                        if instr and instr.opname in handler_clearing_opcodes:
+                            # About to execute a handler opcode or handler body instruction, let it run
+                            pass
+                        else:
+                            # Check if there's a handler available for the current location (any depth)
+                            handler = self._get_exception_handler(frame.code, frame.instruction_offset, any_depth=True)
+                            if handler is None:
+                                # No handler available and not at a handler opcode, exception is unhandled
+                                completed.append(path)
+                                continue
+                        # If handler exists or we're at handler opcode, continue executing
+                    else:
+                        # No frame, exception is unhandled
+                        completed.append(path)
+                        continue
             
             # Check path feasibility
             self.solver.push()
@@ -1422,6 +1505,33 @@ class SymbolicVM:
                     if start <= offset < end:
                         if any_depth or depth == 0:
                             return target
+            except Exception:
+                pass
+        
+        return None
+
+    def _get_exception_handler_info(self, code: types.CodeType, offset: int, any_depth: bool = False):
+        """
+        Get full exception handler info for a given instruction offset.
+        
+        Returns (target, depth, lasti) tuple if there's an active exception handler,
+        None otherwise.  Uses Python 3.11+ exception table.
+        
+        - target: handler offset to jump to
+        - depth: expected operand stack depth at handler entry
+        - lasti: whether to push last instruction offset before jumping
+        """
+        if not hasattr(code, 'co_exceptiontable') or code.co_exceptiontable is None:
+            return None
+        
+        import sys
+        if sys.version_info >= (3, 11):
+            try:
+                from dis import _parse_exception_table
+                for start, end, target, depth, lasti in _parse_exception_table(code):
+                    if start <= offset < end:
+                        if any_depth or depth == 0:
+                            return (target, depth, lasti)
             except Exception:
                 pass
         
@@ -5199,6 +5309,61 @@ class SymbolicVM:
             
             frame.instruction_offset = self._next_offset(frame, instr)
         
+        elif opname == "BINARY_SUBSCR":
+            # BINARY_SUBSCR: Python 3.11 opcode for container[index]
+            # Stack: [..., container, index] → [..., result]
+            # In Python 3.12+ this became BINARY_OP(26/SUBSCRIPT), but 3.11 uses
+            # the dedicated BINARY_SUBSCR opcode.
+            if len(frame.operand_stack) < 2:
+                state.exception = "StackUnderflow"
+                return
+            
+            index = frame.operand_stack.pop()   # TOS = index/key
+            container = frame.operand_stack.pop()  # TOS1 = container
+            
+            result, type_ok, bounds_violated, none_misuse = binary_op_subscript(
+                container, index, state.heap, self.solver
+            )
+            
+            # Check if None misuse is reachable on this path
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(none_misuse)
+            if self.solver.check() == z3.sat:
+                state.none_misuse_reached = True
+                state.exception = "TypeError"
+            self.solver.pop()
+            
+            if not state.exception:
+                # Check if index out of bounds is reachable on this path
+                self.solver.push()
+                self.solver.add(state.path_condition)
+                self.solver.add(bounds_violated)
+                if self.solver.check() == z3.sat:
+                    state.index_out_of_bounds = True
+                    # Determine exception type based on container type
+                    if container.is_dict():
+                        state.exception = "KeyError"
+                    else:
+                        state.exception = "IndexError"
+                self.solver.pop()
+            
+            if not state.exception:
+                # Continue on non-violation path
+                state.path_condition = z3.And(
+                    state.path_condition, type_ok,
+                    z3.Not(bounds_violated), z3.Not(none_misuse)
+                )
+                frame.operand_stack.append(result)
+                
+                # Propagate taint through subscript
+                if state.security_tracker:
+                    from a3_python.semantics.security_tracker_lattice import handle_subscript
+                    handle_subscript(state.security_tracker, container, index, result)
+            
+            if not state.exception:
+                frame.instruction_offset = self._next_offset(frame, instr)
+        
         elif opname == "UNARY_NEGATIVE":
             # UNARY_NEGATIVE: -x
             # Stack: [..., x] → [..., -x]
@@ -5999,7 +6164,31 @@ class SymbolicVM:
             # If not, this is an error
             if not state.exception:
                 state.exception = "RuntimeError"  # RERAISE with no active exception
-            # Don't advance instruction pointer; exception is re-raised
+            
+            # RERAISE acts like raising an exception — dispatch to handler
+            # in the exception table.  Without this, the path gets stuck at
+            # the RERAISE offset in an infinite loop.
+            handler_info = self._get_exception_handler_info(
+                frame.code, instr.offset, any_depth=True
+            )
+            if handler_info is not None:
+                handler_offset, handler_depth, handler_lasti = handler_info
+                # Unwind operand stack to the specified depth
+                if len(frame.operand_stack) > handler_depth:
+                    frame.operand_stack = frame.operand_stack[:handler_depth]
+                if handler_lasti:
+                    frame.operand_stack.append(
+                        SymbolicValue(ValueTag.INT, z3.IntVal(instr.offset))
+                    )
+                frame.instruction_offset = handler_offset
+                # Do NOT set catch guard here — RERAISE means the current
+                # handler did NOT handle the exception.  The outer handler
+                # (e.g., finally clause / bare except) will decide.
+            else:
+                # No handler in this frame — don't advance instruction pointer.
+                # The path will be terminated by explore_bounded or the caller
+                # will pop the frame.
+                pass
         
         elif opname == "NOP":
             # No operation
@@ -7842,12 +8031,653 @@ class SymbolicVM:
                 frame.operand_stack.append(result)
                 frame.instruction_offset = self._next_offset(frame, instr)
         
+        # ================================================================
+        # Python 3.11-specific opcodes
+        # ================================================================
+
+        elif opname == "FORMAT_VALUE":
+            # FORMAT_VALUE(flags): Format TOS as a string (f-string formatting).
+            # flags & 0x03: conversion type (0=none, 1=str, 2=repr, 3=ascii)
+            # flags & 0x04: if set, TOS is format_spec, TOS1 is value
+            # Stack (no fmt_spec): value → formatted_str
+            # Stack (with fmt_spec): value, fmt_spec → formatted_str
+            flags = instr.arg if instr.arg is not None else 0
+            has_fmt_spec = (flags & 0x04) != 0
+
+            if has_fmt_spec:
+                if len(frame.operand_stack) < 2:
+                    state.exception = "StackUnderflow"
+                    return
+                fmt_spec = frame.operand_stack.pop()
+                value = frame.operand_stack.pop()
+            else:
+                if len(frame.operand_stack) < 1:
+                    state.exception = "StackUnderflow"
+                    return
+                value = frame.operand_stack.pop()
+
+            # Over-approximate: produce a fresh symbolic string
+            str_id = z3.Int(f"fmtval_{instr.offset}_{id(frame)}")
+            result = SymbolicValue.str(str_id)
+
+            # Propagate taint through formatting
+            if state.security_tracker:
+                value_label = state.security_tracker.get_label(value)
+                state.security_tracker.set_label(result, value_label)
+                value_sym = state.security_tracker.get_symbolic_label(value)
+                state.security_tracker.set_symbolic_label(result, value_sym)
+
+            frame.operand_stack.append(result)
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "LOAD_METHOD":
+            # Python 3.11 LOAD_METHOD: loads a method from TOS.
+            # Stack: obj → NULL|self, method
+            # In 3.12+ this was merged into LOAD_ATTR with (arg & 1).
+            # Semantically identical to LOAD_ATTR with the method-call bit.
+            attr_name = instr.argval
+
+            if not frame.operand_stack:
+                state.exception = "StackUnderflow"
+                return
+
+            obj = frame.operand_stack.pop()
+
+            # --- None dereference check (NULL_PTR) ---
+            if obj.tag == ValueTag.NONE:
+                state.none_misuse_reached = True
+                state.exception = "AttributeError"
+                return
+
+            if obj.tag == ValueTag.OBJ:
+                var_name = self._get_variable_name_for_value(state, obj)
+                is_proven_nonnull = False
+                if var_name:
+                    analysis = state.get_intraproc_analysis(frame.code)
+                    if analysis and analysis.is_nonnull(instr.offset, var_name):
+                        is_proven_nonnull = True
+                    guard_key = f"nonnull:{var_name}"
+                    if guard_key in state.established_guards:
+                        is_proven_nonnull = True
+
+                if not is_proven_nonnull:
+                    self.solver.push()
+                    self.solver.add(state.path_condition)
+                    self.solver.add(obj.is_none())
+                    could_be_none = (self.solver.check() == z3.sat)
+                    self.solver.pop()
+                    if could_be_none:
+                        state.none_misuse_reached = True
+                        state.exception = "AttributeError"
+                        return
+
+            # --- Framework mock lookup ---
+            if hasattr(state, 'framework_mocks') and id(obj) in state.framework_mocks:
+                mock = state.framework_mocks[id(obj)]
+                if attr_name in mock.methods:
+                    mock_method = mock.methods[attr_name]
+                    method_val = mock_method.return_value
+                    if not hasattr(state, 'mock_methods'):
+                        state.mock_methods = {}
+                    state.mock_methods[id(method_val)] = mock_method
+                    if not hasattr(state, 'func_names'):
+                        state.func_names = {}
+                    obj_name = state.func_names.get(id(obj), "unknown")
+                    state.func_names[id(method_val)] = f"{obj_name}.{attr_name}"
+                    # Push NULL (self placeholder) then method
+                    frame.operand_stack.append(obj)
+                    frame.operand_stack.append(method_val)
+                    frame.instruction_offset = self._next_offset(frame, instr)
+                    return
+                if attr_name in mock.attributes:
+                    mock_attr = mock.attributes[attr_name]
+                    attr_val = mock_attr.value
+                    if mock_attr.taint_label and state.security_tracker:
+                        state.security_tracker.set_label(attr_val, mock_attr.taint_label)
+                    frame.operand_stack.append(obj)
+                    frame.operand_stack.append(attr_val)
+                    frame.instruction_offset = self._next_offset(frame, instr)
+                    return
+
+            # --- Module attribute lookup ---
+            if obj.tag == ValueTag.OBJ and hasattr(state, 'module_names'):
+                if isinstance(obj.payload, z3.IntNumRef):
+                    module_id = obj.payload.as_long()
+                    if module_id in state.module_names:
+                        module_name = state.module_names[module_id]
+                        qualified = f"{module_name}.{attr_name}"
+                        method_val = SymbolicValue(ValueTag.OBJ,
+                            z3.Int(f"method_{qualified}_{instr.offset}"))
+                        if not hasattr(state, 'func_names'):
+                            state.func_names = {}
+                        state.func_names[id(method_val)] = qualified
+                        # Propagate taint
+                        if state.security_tracker and state.security_tracker.enabled:
+                            state.security_tracker.handle_getattr(obj, attr_name, method_val)
+                        # Push self, then unbound method
+                        frame.operand_stack.append(obj)
+                        frame.operand_stack.append(method_val)
+                        frame.instruction_offset = self._next_offset(frame, instr)
+                        return
+
+            # --- General case: create fresh symbolic attribute ---
+            attr_val = SymbolicValue(ValueTag.OBJ,
+                z3.Int(f"attr_{attr_name}_{instr.offset}_{id(frame)}"))
+            if not hasattr(state, 'func_names'):
+                state.func_names = {}
+            obj_name = state.func_names.get(id(obj), "")
+            if obj_name:
+                state.func_names[id(attr_val)] = f"{obj_name}.{attr_name}"
+            else:
+                state.func_names[id(attr_val)] = attr_name
+
+            # Propagate taint from object to attribute
+            if state.security_tracker:
+                state.security_tracker.handle_getattr(obj, attr_name, attr_val)
+
+            # Push self (obj) then method on the stack
+            frame.operand_stack.append(obj)
+            frame.operand_stack.append(attr_val)
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "STORE_ATTR":
+            # STORE_ATTR(namei): obj.attr = value
+            # Stack: value, obj → (consumed)
+            attr_name = instr.argval
+            if len(frame.operand_stack) < 2:
+                state.exception = "StackUnderflow"
+                return
+
+            obj = frame.operand_stack.pop()   # TOS
+            value = frame.operand_stack.pop()  # TOS1
+
+            # None dereference check
+            if obj.tag == ValueTag.NONE:
+                state.none_misuse_reached = True
+                state.exception = "AttributeError"
+                return
+
+            # Store attribute symbolically
+            if not hasattr(state, 'heap_attrs'):
+                state.heap_attrs = {}
+            state.heap_attrs[(id(obj), attr_name)] = value
+
+            # Propagate taint from value to object
+            if state.security_tracker:
+                val_label = state.security_tracker.get_label(value)
+                obj_label = state.security_tracker.get_label(obj)
+                from ..z3model.taint_lattice import label_join
+                state.security_tracker.set_label(obj, label_join(obj_label, val_label))
+
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "DELETE_FAST":
+            # DELETE_FAST(var_num): Deletes local variable co_varnames[var_num]
+            var_name = instr.argval
+            if var_name in frame.locals:
+                del frame.locals[var_name]
+            # else: would raise UnboundLocalError at runtime, but we
+            # over-approximate and skip (harmless for bug finding)
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "DELETE_NAME":
+            # DELETE_NAME(namei): Deletes name co_names[namei] from local namespace
+            var_name = instr.argval
+            if var_name in frame.locals:
+                del frame.locals[var_name]
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "DELETE_SUBSCR":
+            # DELETE_SUBSCR: Implements del container[index]
+            # Stack: container, index → (consumed)
+            if len(frame.operand_stack) < 2:
+                state.exception = "StackUnderflow"
+                return
+
+            index = frame.operand_stack.pop()      # TOS
+            container = frame.operand_stack.pop()   # TOS1
+
+            # None dereference check
+            if container.tag == ValueTag.NONE:
+                state.none_misuse_reached = True
+                state.exception = "TypeError"
+                return
+
+            # For symbolic execution we simply consume the operands.
+            # The heap entry remains unchanged (sound over-approximation:
+            # the deleted key *may* still appear reachable symbolically).
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "BUILD_CONST_KEY_MAP":
+            # BUILD_CONST_KEY_MAP(count): Builds a dict from `count` values and
+            # a tuple of keys on TOS.
+            # Stack: val_1, val_2, ..., val_count, keys_tuple → dict
+            count = instr.argval if instr.argval is not None else instr.arg
+            if len(frame.operand_stack) < count + 1:
+                state.exception = "StackUnderflow"
+                return
+
+            keys_tuple_val = frame.operand_stack.pop()   # TOS: tuple of key names
+            values = []
+            for _ in range(count):
+                values.append(frame.operand_stack.pop())
+            values.reverse()
+
+            # The keys tuple is a constant from co_consts — try to recover the
+            # actual Python tuple.  If it was loaded via LOAD_CONST the raw
+            # Python tuple lives on the SymbolicValue payload (or we can look
+            # it up from the code object constants).
+            keys_set = set()
+            values_dict = {}
+            raw_keys = None
+            if hasattr(keys_tuple_val, 'concrete_value'):
+                raw_keys = keys_tuple_val.concrete_value
+            elif keys_tuple_val.tag == ValueTag.TUPLE and hasattr(keys_tuple_val, '_items'):
+                raw_keys = keys_tuple_val._items
+            # Fallback: try looking up what LOAD_CONST pushed – the payload
+            # might be the index into co_consts.
+
+            if raw_keys and hasattr(raw_keys, '__iter__'):
+                for i, key in enumerate(raw_keys):
+                    if i < len(values):
+                        if isinstance(key, str):
+                            keys_set.add(key)
+                            values_dict[key] = values[i]
+
+            dict_id = state.heap.allocate_dict(keys=keys_set, values=values_dict)
+            result = SymbolicValue(ValueTag.DICT, z3.IntVal(dict_id))
+
+            # Propagate taint from values
+            if state.security_tracker:
+                for v in values:
+                    v_label = state.security_tracker.get_label(v)
+                    existing = state.security_tracker.get_label(result)
+                    from ..z3model.taint_lattice import label_join
+                    state.security_tracker.set_label(result, label_join(existing, v_label))
+
+            frame.operand_stack.append(result)
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "BUILD_SLICE":
+            # BUILD_SLICE(argc): Build a slice object.
+            # argc == 2: Stack: start, stop → slice
+            # argc == 3: Stack: start, stop, step → slice
+            argc = instr.argval if instr.argval is not None else instr.arg
+            if len(frame.operand_stack) < argc:
+                state.exception = "StackUnderflow"
+                return
+
+            if argc == 3:
+                step = frame.operand_stack.pop()
+                stop = frame.operand_stack.pop()
+                start = frame.operand_stack.pop()
+            else:
+                stop = frame.operand_stack.pop()
+                start = frame.operand_stack.pop()
+                step = SymbolicValue.none()
+
+            obj_id = state.heap.allocate_slice(start, stop, step)
+            result = SymbolicValue.slice_obj(obj_id)
+            frame.operand_stack.append(result)
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "KW_NAMES":
+            # KW_NAMES(consti): Python 3.11 instruction that precedes CALL.
+            # Stores a tuple of keyword argument names (co_consts[consti])
+            # to be used by the next CALL instruction.
+            # We stash the tuple on the state for the CALL handler to consume.
+            kw_names = instr.argval  # Tuple of keyword argument name strings
+            if not hasattr(state, 'kw_names'):
+                state.kw_names = None
+            state.kw_names = kw_names
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "CALL_FUNCTION_EX":
+            # CALL_FUNCTION_EX(flags): Call with *args and optionally **kwargs.
+            # flags & 0x01: if set, TOS is **kwargs, TOS1 is *args, TOS2 is callable
+            # else: TOS is *args, TOS1 is callable
+            flags = instr.arg if instr.arg is not None else 0
+            has_kwargs = (flags & 0x01) != 0
+
+            if has_kwargs:
+                if len(frame.operand_stack) < 3:
+                    state.exception = "StackUnderflow"
+                    return
+                kwargs = frame.operand_stack.pop()
+                args = frame.operand_stack.pop()
+                callable_obj = frame.operand_stack.pop()
+            else:
+                if len(frame.operand_stack) < 2:
+                    state.exception = "StackUnderflow"
+                    return
+                args = frame.operand_stack.pop()
+                callable_obj = frame.operand_stack.pop()
+
+            # Over-approximate: produce a fresh symbolic result.
+            # Taint from all arguments is merged into the result.
+            result = SymbolicValue(ValueTag.OBJ,
+                z3.Int(f"call_ex_{instr.offset}_{id(frame)}"))
+
+            if state.security_tracker:
+                for source in ([args, callable_obj] + ([kwargs] if has_kwargs else [])):
+                    src_label = state.security_tracker.get_label(source)
+                    existing = state.security_tracker.get_label(result)
+                    from ..z3model.taint_lattice import label_join
+                    state.security_tracker.set_label(result, label_join(existing, src_label))
+
+            frame.operand_stack.append(result)
+            frame.instruction_offset = self._next_offset(frame, instr)
+
+        elif opname == "JUMP_IF_TRUE_OR_POP":
+            # JUMP_IF_TRUE_OR_POP(target): If TOS is true, jump to target
+            # (leaving TOS on stack). Otherwise pop TOS and fall through.
+            if not frame.operand_stack:
+                state.exception = "StackUnderflow"
+                return
+
+            condition = frame.operand_stack[-1]  # peek, don't pop yet
+            condition_true = is_true(condition, self.solver)
+
+            target_offset = instr.argval
+            fallthrough_offset = self._next_offset(frame, instr)
+
+            # Check feasibility of both branches
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(condition_true)
+            true_feasible = self._solver_maybe_sat()
+            self.solver.pop()
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(z3.Not(condition_true))
+            false_feasible = self._solver_maybe_sat()
+            self.solver.pop()
+
+            if true_feasible and false_feasible:
+                import copy
+                # True branch: keep TOS, jump
+                true_state = copy.deepcopy(state)
+                true_state.path_condition = z3.And(state.path_condition, condition_true)
+                true_state.frame_stack[-1].instruction_offset = target_offset
+
+                # False branch: pop TOS, fall through
+                frame.operand_stack.pop()
+                state.path_condition = z3.And(state.path_condition, z3.Not(condition_true))
+                frame.instruction_offset = fallthrough_offset
+
+                state.fork_branch_successors = [true_state]
+
+            elif true_feasible:
+                # Only true: keep TOS, jump
+                state.path_condition = z3.And(state.path_condition, condition_true)
+                frame.instruction_offset = target_offset
+            elif false_feasible:
+                # Only false: pop TOS, fall through
+                frame.operand_stack.pop()
+                state.path_condition = z3.And(state.path_condition, z3.Not(condition_true))
+                frame.instruction_offset = fallthrough_offset
+            else:
+                state.exception = "InfeasiblePath"
+
+        elif opname == "POP_JUMP_FORWARD_IF_NONE":
+            # Python 3.11: pop TOS, jump forward if None.
+            # Semantically identical to POP_JUMP_IF_NONE (3.12+).
+            if not frame.operand_stack:
+                state.exception = "StackUnderflow"
+                return
+
+            value = frame.operand_stack.pop()
+            is_none = (value.tag == z3.IntVal(ValueTag.NONE.value))
+
+            var_name = self._get_variable_name_for_value(state, value)
+
+            target_offset = instr.argval
+            fallthrough_offset = self._next_offset(frame, instr)
+
+            if self.oracle:
+                expected_next = self.oracle.pop_branch_next_offset(frame.code, instr.offset)
+                if expected_next in (target_offset, fallthrough_offset):
+                    took_jump = expected_next == target_offset
+                    state.path_condition = z3.And(
+                        state.path_condition,
+                        is_none if took_jump else z3.Not(is_none),
+                    )
+                    if not took_jump and var_name:
+                        state.established_guards[f"nonnull:{var_name}"] = True
+                    frame.instruction_offset = expected_next
+                    return
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(is_none)
+            none_feasible = (self.solver.check() == z3.sat)
+            self.solver.pop()
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(z3.Not(is_none))
+            not_none_feasible = (self.solver.check() == z3.sat)
+            self.solver.pop()
+
+            if none_feasible and not_none_feasible:
+                import copy
+                none_state = copy.deepcopy(state)
+                none_state.path_condition = z3.And(state.path_condition, is_none)
+                none_state.frame_stack[-1].instruction_offset = target_offset
+
+                state.path_condition = z3.And(state.path_condition, z3.Not(is_none))
+                if var_name:
+                    state.established_guards[f"nonnull:{var_name}"] = True
+                frame.instruction_offset = fallthrough_offset
+
+                state.fork_branch_successors = [none_state]
+            elif none_feasible:
+                state.path_condition = z3.And(state.path_condition, is_none)
+                frame.instruction_offset = target_offset
+            elif not_none_feasible:
+                state.path_condition = z3.And(state.path_condition, z3.Not(is_none))
+                if var_name:
+                    state.established_guards[f"nonnull:{var_name}"] = True
+                frame.instruction_offset = fallthrough_offset
+            else:
+                state.exception = "InfeasiblePath"
+
+        elif opname == "POP_JUMP_FORWARD_IF_NOT_NONE":
+            # Python 3.11: pop TOS, jump forward if NOT None.
+            # Semantically identical to POP_JUMP_IF_NOT_NONE (3.12+).
+            if not frame.operand_stack:
+                state.exception = "StackUnderflow"
+                return
+
+            value = frame.operand_stack.pop()
+            is_none = (value.tag == z3.IntVal(ValueTag.NONE.value))
+
+            var_name = self._get_variable_name_for_value(state, value)
+
+            target_offset = instr.argval
+            fallthrough_offset = self._next_offset(frame, instr)
+
+            if self.oracle:
+                expected_next = self.oracle.pop_branch_next_offset(frame.code, instr.offset)
+                if expected_next in (target_offset, fallthrough_offset):
+                    took_jump = expected_next == target_offset
+                    state.path_condition = z3.And(
+                        state.path_condition,
+                        z3.Not(is_none) if took_jump else is_none,
+                    )
+                    if took_jump and var_name:
+                        state.established_guards[f"nonnull:{var_name}"] = True
+                    frame.instruction_offset = expected_next
+                    return
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(z3.Not(is_none))
+            not_none_feasible = (self.solver.check() == z3.sat)
+            self.solver.pop()
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(is_none)
+            none_feasible = (self.solver.check() == z3.sat)
+            self.solver.pop()
+
+            if not_none_feasible and none_feasible:
+                import copy
+                not_none_state = copy.deepcopy(state)
+                not_none_state.path_condition = z3.And(state.path_condition, z3.Not(is_none))
+                if var_name:
+                    not_none_state.established_guards[f"nonnull:{var_name}"] = True
+                not_none_state.frame_stack[-1].instruction_offset = target_offset
+
+                state.path_condition = z3.And(state.path_condition, is_none)
+                frame.instruction_offset = fallthrough_offset
+
+                state.fork_branch_successors = [not_none_state]
+            elif not_none_feasible:
+                state.path_condition = z3.And(state.path_condition, z3.Not(is_none))
+                if var_name:
+                    state.established_guards[f"nonnull:{var_name}"] = True
+                frame.instruction_offset = target_offset
+            elif none_feasible:
+                state.path_condition = z3.And(state.path_condition, is_none)
+                frame.instruction_offset = fallthrough_offset
+            else:
+                state.exception = "InfeasiblePath"
+
+        elif opname == "POP_JUMP_BACKWARD_IF_FALSE":
+            # Python 3.11: pop TOS, jump backward if false.
+            # Same semantics as POP_JUMP_FORWARD_IF_FALSE but target is backward.
+            if not frame.operand_stack:
+                state.exception = "StackUnderflow"
+                return
+
+            condition = frame.operand_stack.pop()
+            condition_true = is_true(condition, self.solver)
+
+            target_offset = instr.argval
+            fallthrough_offset = self._next_offset(frame, instr)
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(condition_true)
+            true_feasible = self._solver_maybe_sat()
+            self.solver.pop()
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(z3.Not(condition_true))
+            false_feasible = self._solver_maybe_sat()
+            self.solver.pop()
+
+            if true_feasible and false_feasible:
+                import copy
+                false_state = copy.deepcopy(state)
+                false_state.path_condition = z3.And(state.path_condition, z3.Not(condition_true))
+                false_state.frame_stack[-1].instruction_offset = target_offset
+
+                state.path_condition = z3.And(state.path_condition, condition_true)
+                frame.instruction_offset = fallthrough_offset
+
+                state.fork_branch_successors = [false_state]
+            elif false_feasible:
+                state.path_condition = z3.And(state.path_condition, z3.Not(condition_true))
+                frame.instruction_offset = target_offset
+            elif true_feasible:
+                state.path_condition = z3.And(state.path_condition, condition_true)
+                frame.instruction_offset = fallthrough_offset
+            else:
+                state.exception = "InfeasiblePath"
+
+        elif opname == "POP_JUMP_BACKWARD_IF_TRUE":
+            # Python 3.11: pop TOS, jump backward if true.
+            if not frame.operand_stack:
+                state.exception = "StackUnderflow"
+                return
+
+            condition = frame.operand_stack.pop()
+            condition_true = is_true(condition, self.solver)
+
+            target_offset = instr.argval
+            fallthrough_offset = self._next_offset(frame, instr)
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(condition_true)
+            true_feasible = self._solver_maybe_sat()
+            self.solver.pop()
+
+            self.solver.push()
+            self.solver.add(state.path_condition)
+            self.solver.add(z3.Not(condition_true))
+            false_feasible = self._solver_maybe_sat()
+            self.solver.pop()
+
+            if true_feasible and false_feasible:
+                import copy
+                true_state = copy.deepcopy(state)
+                true_state.path_condition = z3.And(state.path_condition, condition_true)
+                true_state.frame_stack[-1].instruction_offset = target_offset
+
+                state.path_condition = z3.And(state.path_condition, z3.Not(condition_true))
+                frame.instruction_offset = fallthrough_offset
+
+                state.fork_branch_successors = [true_state]
+            elif true_feasible:
+                state.path_condition = z3.And(state.path_condition, condition_true)
+                frame.instruction_offset = target_offset
+            elif false_feasible:
+                state.path_condition = z3.And(state.path_condition, z3.Not(condition_true))
+                frame.instruction_offset = fallthrough_offset
+            else:
+                state.exception = "InfeasiblePath"
+
+        # ================================================================
+        # Bookkeeping / no-op opcodes
+        # ================================================================
+
         elif opname == "EXTENDED_ARG":
             # EXTENDED_ARG is a prefix instruction that extends the argument of the next instruction.
             # dis.get_instructions() already resolves EXTENDED_ARG and includes the combined argument
             # in the arg/argval fields of the following instruction. We simply skip EXTENDED_ARG.
             # Semantically: EXTENDED_ARG does not modify machine state, it only affects bytecode decoding.
             frame.instruction_offset = self._next_offset(frame, instr)
+        
+        elif opname == "PRECALL":
+            # Python 3.11 bookkeeping instruction that precedes CALL.
+            # PRECALL performs adaptive specialisation housekeeping; it has
+            # no effect on the abstract machine state.  Simply advance PC.
+            frame.instruction_offset = self._next_offset(frame, instr)
+        
+        elif opname == "CACHE":
+            # Python 3.11+ inline-cache slot.  dis.get_instructions() may
+            # surface CACHE entries.  They are no-ops at the semantic level.
+            frame.instruction_offset = self._next_offset(frame, instr)
+        
+        elif opname == "BEFORE_WITH":
+            # Python 3.11 replaces the older SETUP_WITH with BEFORE_WITH.
+            # It calls __enter__ on TOS and pushes the context-manager exit
+            # method.  For soundness we over-approximate: push a fresh
+            # symbolic object for the __enter__ result and advance.
+            if len(frame.operand_stack) >= 1:
+                cm = frame.operand_stack.pop()
+                # Push __exit__ placeholder (will be used by WITH_EXCEPT_START)
+                exit_obj = SymbolicValue(ValueTag.OBJ,
+                    z3.Int(f"with_exit_{instr.offset}_{id(frame)}"))
+                frame.operand_stack.append(exit_obj)
+                # Push __enter__() result
+                enter_result = SymbolicValue(ValueTag.OBJ,
+                    z3.Int(f"with_enter_{instr.offset}_{id(frame)}"))
+                frame.operand_stack.append(enter_result)
+            frame.instruction_offset = self._next_offset(frame, instr)
+        
+        elif opname == "JUMP_BACKWARD_NO_INTERRUPT":
+            # Python 3.11+  unconditional backward jump that does NOT check
+            # for pending interrupts / signals.  Used inside generators and
+            # comprehensions.  Treat identically to JUMP_BACKWARD.
+            target = instr.argval if instr.argval is not None else instr.arg
+            frame.instruction_offset = target
         
         else:
             raise NotImplementedError(f"Opcode {opname}")

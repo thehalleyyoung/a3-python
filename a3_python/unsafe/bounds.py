@@ -35,11 +35,16 @@ def is_unsafe_bounds(state) -> bool:
     - OR exception == "KeyError" (uncaught)
     
     GUARD CHECK: If g_bounds is established for the (container, index) pair,
-    the access is considered safe.
+    the access is considered safe. Also checks catch guard for handler coverage.
     
     Note: The symbolic VM tracks bounds violations during BINARY_OP (subscript)
     execution. This predicate captures that semantic state.
     """
+    # Check for catch guard: if IndexError/KeyError is caught by handler, not unsafe
+    if hasattr(state, 'has_catch_guard'):
+        if state.has_catch_guard("IndexError") or state.has_catch_guard("KeyError"):
+            return False
+    
     # Check if bounds guard is established
     if hasattr(state, 'bounds_context') and state.bounds_context:
         container = state.bounds_context.get('container_var')

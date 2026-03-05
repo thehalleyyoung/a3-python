@@ -32,10 +32,17 @@ def is_unsafe_div_zero(state) -> bool:
     
     GUARD CHECK: If g_div is established for the divisor variable, the
     division is considered safe even if symbolically unconstrained.
+    Also checks catch guard: if ZeroDivisionError is caught by handler,
+    no bug reported.
     
     Note: The symbolic VM already tracks division-by-zero feasibility
     during BINARY_OP execution. This predicate captures that semantic state.
     """
+    # Check if catch guard for ZeroDivisionError is established
+    # (exception is caught by try/except)
+    if hasattr(state, 'has_catch_guard') and state.has_catch_guard("ZeroDivisionError"):
+        return False
+    
     # Check if div guard is established
     if hasattr(state, 'div_by_zero_context') and state.div_by_zero_context:
         divisor_var = state.div_by_zero_context.get('divisor_var')

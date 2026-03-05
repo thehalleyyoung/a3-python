@@ -27,9 +27,15 @@ def is_unsafe_fp_domain(state) -> bool:
       error on the current symbolic path
     - OR exception == "ValueError" with domain-error context (from math module)
     
+    Also checks catch guard: if ValueError is caught, no bug reported.
+    
     Note: The symbolic VM tracks math domain feasibility during function calls
     to math.sqrt, math.log, etc. This predicate captures that semantic state.
     """
+    # Check if catch guard for ValueError is established
+    if hasattr(state, 'has_catch_guard') and state.has_catch_guard("ValueError"):
+        return False
+
     if hasattr(state, 'fp_domain_error_reached') and state.fp_domain_error_reached:
         return True
     

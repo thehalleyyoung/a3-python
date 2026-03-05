@@ -596,3 +596,74 @@ def get_fp_detector() -> FPContextDetector:
     if _detector is None:
         _detector = FPContextDetector()
     return _detector
+
+
+# ============================================================================
+# TYPE ANNOTATION GUARD FOR TYPE_CONFUSION FP SUPPRESSION
+# ============================================================================
+
+import ast as _ast
+import functools as _functools
+
+
+@_functools.lru_cache(maxsize=256)
+def _parse_source_cached(filepath: str):
+    """Parse a Python source file, returning AST tree or None."""
+    try:
+        source = Path(filepath).read_text(encoding="utf-8", errors="ignore")
+        return _ast.parse(source, filename=filepath)
+    except Exception:
+        return None
+
+
+def module_all_functions_type_annotated(co_filename: str) -> bool:
+    """Return True if every top-level function in *co_filename* has fully annotated params + return.
+
+    Used to suppress TYPE_CONFUSION FPs during module-level symbolic execution
+    of new files where the VM cannot inline annotated function calls and
+    falls back to OBJ-typed results.
+    """
+    tree = _parse_source_cached(co_filename)
+    if tree is None:
+        return False
+    found_any = False
+    for node in _ast.iter_child_nodes(tree):
+        if not isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            continue
+        found_any = True
+        args = node.args
+        all_params = args.posonlyargs + args.args + args.kwonlyargs
+        if not all_params:
+            continue  # zero-param helper – skip, don't disqualify
+        for arg in all_params:
+            if arg.annotation is None:
+                return False
+        if node.returns is None:
+            return False
+    return found_any
+
+
+def has_all_params_type_annotated(co_filename: str, co_name: str) -> bool:
+    """Return True if every parameter of *co_name* in *co_filename* has a type annotation.
+
+    Used to suppress TYPE_CONFUSION false positives on functions where the
+    developer has provided complete type hints (the symbolic VM cannot
+    leverage annotations and thus may flag type-safe operations).
+    """
+    tree = _parse_source_cached(co_filename)
+    if tree is None:
+        return False
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)) and node.name == co_name:
+            args = node.args
+            all_params = args.posonlyargs + args.args + args.kwonlyargs
+            if not all_params:
+                return False  # no params → nothing to guard
+            for arg in all_params:
+                if arg.annotation is None:
+                    return False
+            # Also require a return annotation for higher confidence
+            if node.returns is None:
+                return False
+            return True
+    return False

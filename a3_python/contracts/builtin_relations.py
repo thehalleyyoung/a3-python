@@ -864,17 +864,15 @@ def init_builtin_relations():
     ))
     
     # Case 2: FileNotFoundError (file does not exist, mode is 'r' or similar)
-    # This case is nondeterministic - we model that it MAY raise FileNotFoundError
+    # DISABLED: Environmental exceptions depend on file system state (not logic bugs).
+    # Forking paths for these creates false positives when analyzing code for
+    # non-I/O bugs (e.g., double-free, bounds checks). The file system is an
+    # external oracle whose state is unknowable at static analysis time.
+    # If the user's code has try/except around open(), the success path is what
+    # matters for logic bug detection.
     def open_guard_file_not_found(state, args):
-        """Guard: same as success (cannot distinguish symbolically)."""
-        # This is the key insight: we cannot determine file existence at symbolic time
-        # So we must model BOTH success and failure paths
-        # This case represents the "file might not exist" path
-        if not args:
-            return z3.BoolVal(False)
-        
-        file_arg = args[0]
-        return z3.BoolVal(file_arg.tag == ValueTag.STR)
+        """Guard: DISABLED — environmental exception, always returns False."""
+        return z3.BoolVal(False)
     
     def open_post_file_not_found(state, args, fresh_symbols):
         """Postcondition: raises FileNotFoundError."""
@@ -895,12 +893,8 @@ def init_builtin_relations():
     
     # Case 3: PermissionError (insufficient permissions to open file)
     def open_guard_permission_error(state, args):
-        """Guard: same as success (cannot distinguish symbolically)."""
-        if not args:
-            return z3.BoolVal(False)
-        
-        file_arg = args[0]
-        return z3.BoolVal(file_arg.tag == ValueTag.STR)
+        """Guard: DISABLED — environmental exception, always returns False."""
+        return z3.BoolVal(False)
     
     def open_post_permission_error(state, args, fresh_symbols):
         """Postcondition: raises PermissionError."""
@@ -921,12 +915,8 @@ def init_builtin_relations():
     
     # Case 4: IsADirectoryError (trying to open directory as file)
     def open_guard_is_directory_error(state, args):
-        """Guard: same as success (cannot distinguish symbolically)."""
-        if not args:
-            return z3.BoolVal(False)
-        
-        file_arg = args[0]
-        return z3.BoolVal(file_arg.tag == ValueTag.STR)
+        """Guard: DISABLED — environmental exception, always returns False."""
+        return z3.BoolVal(False)
     
     def open_post_is_directory_error(state, args, fresh_symbols):
         """Postcondition: raises IsADirectoryError."""

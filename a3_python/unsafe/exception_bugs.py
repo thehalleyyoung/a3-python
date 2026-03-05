@@ -614,6 +614,11 @@ def is_unsafe_exception(state, exception_type: ExceptionBugType) -> bool:
     if exc == "InfeasiblePath":
         return False
     
+    # Check if exception is caught by a handler (catch guard)
+    # If g_catch(exception_type) is established, the exception is handled
+    if hasattr(state, 'has_catch_guard') and state.has_catch_guard(exc):
+        return False
+    
     # Check if exception matches type
     exc_name = exc if isinstance(exc, str) else type(exc).__name__
     classified = classify_exception(exc_name)
