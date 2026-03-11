@@ -1,0 +1,32 @@
+\frametitle{Concrete Example: DIV\_ZERO with a Polynomial Barrier}
+\begin{columns}[T]
+\begin{column}{0.44\textwidth}
+\begin{lstlisting}[language=Python]
+def safe_divide(a, b):
+    if b != 0:
+        return a / b  # safe?
+    return 0.0
+\end{lstlisting}
+
+\vspace{0.5em}
+\textbf{State variable:} $x = \texttt{b}$\\[3pt]
+\textbf{Unsafe set:} $U = \{x : x = 0\}$\\[3pt]
+\textbf{Guard:} division reached only when $x \neq 0$
+\end{column}
+\begin{column}{0.52\textwidth}
+\begin{block}{Choose barrier: $B(x) = x - \tfrac{1}{2}$}
+\end{block}
+
+\vspace{0.3em}
+\textbf{Check three obligations:}
+\begin{enumerate}
+  \item \textcolor{safe}{\faCheck}\; \textbf{Init:} after guard, $|x| \ge 1$ (integers)\\$\Rightarrow B(x) \ge \tfrac{1}{2} > 0$
+  \item \textcolor{safe}{\faCheck}\; \textbf{Consecution:} $x$ is unchanged on the path to division
+  \item \textcolor{safe}{\faCheck}\; \textbf{Separation:} $B(0) = -\tfrac{1}{2} < 0$
+\end{enumerate}
+
+\vspace{0.5em}
+$\Rightarrow$ \textbf{DIV\_ZERO is unreachable.}\\
+\textit{Proven by Hilbert $\to$ Stengle $\to$ Parrilo $\to$ Prajna.}
+\end{column}
+\end{columns}

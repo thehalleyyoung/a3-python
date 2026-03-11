@@ -188,7 +188,7 @@ class CHCClause:
         
         for pred, args in self.body_predicates:
             func = pred_funcs.get(pred.name)
-            if func:
+            if func is not None:
                 body_parts.append(func(*args))
         
         body = z3.And(body_parts) if len(body_parts) > 1 else body_parts[0]
@@ -198,7 +198,7 @@ class CHCClause:
             head = z3.BoolVal(False)
         else:
             func = pred_funcs.get(self.head.name)
-            head = func(*self.head_args) if func else z3.BoolVal(True)
+            head = func(*self.head_args) if func is not None else z3.BoolVal(True)
         
         return z3.Implies(body, head)
 
@@ -339,19 +339,22 @@ class SpacerSolver:
             func = self.problem.pred_funcs[pred.name]
             self.fp.register_relation(func)
         
-        # Add clauses as rules
+        # Add clauses as rules (skip query clauses, they're added separately)
         for clause in self.problem.clauses:
+            if clause.is_query():
+                continue
             rule = clause.to_z3(self.problem.pred_funcs)
-            self.fp.add_rule(rule, clause.clause_id)
+            self.fp.add_rule(rule)
         
-        # Add queries
+        # Add queries: check if Inv(x) ∧ error(x) is reachable
         for query in self.problem.get_query_clauses():
             query_expr = query.body_constraint
             for pred, args in query.body_predicates:
                 func = self.problem.pred_funcs[pred.name]
-                query_expr = z3.And(query_expr, func(*args))
+                if func is not None:
+                    query_expr = z3.And(query_expr, func(*args))
             
-            self.fp.add_rule(z3.Implies(query_expr, z3.BoolVal(False)), "query")
+            self.fp.add_rule(z3.Implies(query_expr, z3.BoolVal(False)))
         
         # Solve
         self._stats['solver_calls'] += 1

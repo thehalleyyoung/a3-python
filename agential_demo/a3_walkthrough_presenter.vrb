@@ -1,0 +1,11 @@
+\frametitle{22. Practical run modes}
+\begin{block}{Single command}
+\texttt{a3 scan . --triage}
+\end{block}
+\begin{block}{Explicit staged mode}
+\texttt{a3 scan . --output-sarif results.sarif}\\
+\texttt{a3 triage --sarif results.sarif --provider github --agentic}
+\end{block}
+\begin{itemize}
+  \item Staged mode is preferred for CI observability and audit trails
+\end{itemize}

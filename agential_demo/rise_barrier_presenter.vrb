@@ -1,0 +1,37 @@
+\frametitle{Contracts: How PyTorch Meets Barriers}
+\begin{center}
+\textbf{Problem:} the analyzer hits \texttt{torch.cosine\_similarity()} --- what is the output?
+\end{center}
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.52\textwidth}
+\begin{lstlisting}[language=Python]
+sim = torch.cosine_similarity(x, y)
+score = sim - 3
+result = 1.0 / score  # DIV_ZERO?
+\end{lstlisting}
+
+\vspace{0.3em}
+\textbf{Without contract:} \texttt{sim} is unknown $\to$ FP.
+
+\vspace{0.3em}
+\textbf{With contract:} \texttt{sim} $\in [-1, 1]$\\
+$\Rightarrow$ \texttt{score} $\in [-4, -2]$\\
+$\Rightarrow$ $0 \notin [-4, -2]$\\
+$\Rightarrow$ \textcolor{safe}{\textbf{Division is provably safe.}}
+\end{column}
+\begin{column}{0.43\textwidth}
+\centering
+\begin{tikzpicture}[scale=0.75]
+  \draw[->] (-5,0) -- (2,0) node[right,font=\scriptsize]{value};
+  \draw[very thick, accent] (-4,0.4) -- (-2,0.4);
+  \fill[accent] (-4,0.4) circle (3pt);
+  \fill[accent] (-2,0.4) circle (3pt);
+  \node[above, font=\scriptsize, accent] at (-3,0.5) {\texttt{score} $\in [-4,-2]$};
+  \draw[very thick, unsafe, dashed] (0,-0.6) -- (0,1);
+  \node[above, font=\scriptsize, unsafe] at (0,1) {$0$ (crash)};
+  \node[font=\scriptsize, safe] at (-3,-0.6) {\textbf{safely separated}};
+\end{tikzpicture}
+\end{column}
+\end{columns}

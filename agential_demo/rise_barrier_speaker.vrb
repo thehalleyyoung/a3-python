@@ -1,0 +1,19 @@
+\frametitle{Concrete Example: DIV\_ZERO with Polynomial Barrier}
+\syncline{Presenter slide 12}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the \texttt{safe\_divide} example step by step.
+  \item State variable: $x = b$ (the denominator). This is the only variable relevant to the division safety.
+  \item Unsafe set: $U = \{x : x = 0\}$. If $x = 0$ at the division, we crash.
+  \item Guard: the \texttt{if b != 0} check means the division is only reachable when $x \neq 0$.
+  \item Template choice: $B(x) = x - 1/2$. This is a degree-1 polynomial.
+  \item Check obligations:
+  \begin{enumerate}
+    \item Init: after the guard, for integers, $|x| \ge 1$, so $B(x) \ge 1/2 > 0$. \checkmark
+    \item Consecution: $x$ is not modified between the guard and the division, so $B$ is preserved. \checkmark
+    \item Separation: $B(0) = -1/2 < 0$. The barrier is negative at the unsafe point. \checkmark
+  \end{enumerate}
+  \item All three hold $\Rightarrow$ DIV\_ZERO is provably unreachable. This finding is eliminated as an FP with a proof artifact.
+  \item Emphasize: ``This is Hilbert $\to$ Stengle $\to$ Parrilo $\to$ Prajna, instantiated on one Python function. The 126-year thread works.''
+  \item If asked about more complex examples: for multi-variable cases, the polynomial has cross-terms and degree $> 1$. SOS synthesizes the coefficients via SDP. The principle is identical.
+\end{itemize}

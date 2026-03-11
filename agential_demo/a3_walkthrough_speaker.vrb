@@ -1,0 +1,9 @@
+\frametitle{21. Operational run modes}
+\syncline{Slide 21}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Quick demo mode: \texttt{a3 scan . --triage}
+  \item Explicit CI mode: \texttt{a3 scan . --output-sarif results.sarif}, then \texttt{a3 triage --sarif results.sarif --agentic}
+  \item Keep stage separation for debugging, traceability, and policy governance.
+  \item For reproducibility in CI, pin model/provider and archive SARIF artifacts.
+\end{itemize}

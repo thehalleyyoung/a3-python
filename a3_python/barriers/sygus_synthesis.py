@@ -957,6 +957,9 @@ class SyGuSVerifier:
     
     def _check_initiation(self, inv: z3.ExprRef) -> Tuple[VerificationResult, Optional[Counterexample]]:
         """Check Init → I."""
+        # Coerce integer invariants to boolean (polynomial >= 0)
+        if z3.is_arith(inv):
+            inv = inv >= 0
         self._solver.push()
         
         # Find state: Init ∧ ¬I
@@ -980,6 +983,9 @@ class SyGuSVerifier:
     
     def _check_consecution(self, inv: z3.ExprRef) -> Tuple[VerificationResult, Optional[Counterexample]]:
         """Check I ∧ Trans → I'."""
+        # Coerce integer invariants to boolean (polynomial >= 0)
+        if z3.is_arith(inv):
+            inv = inv >= 0
         self._solver.push()
         
         # Build I'
@@ -1011,6 +1017,9 @@ class SyGuSVerifier:
     
     def _check_safety(self, inv: z3.ExprRef) -> Tuple[VerificationResult, Optional[Counterexample]]:
         """Check I → Property."""
+        # Coerce integer invariants to boolean (polynomial >= 0)
+        if z3.is_arith(inv):
+            inv = inv >= 0
         self._solver.push()
         
         # Find state: I ∧ ¬Property

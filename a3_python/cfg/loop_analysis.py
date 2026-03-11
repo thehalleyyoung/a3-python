@@ -102,12 +102,21 @@ def extract_loops(code_obj, *, cfg: Optional[ControlFlowGraph] = None) -> List[L
         if not back_edge_body_offsets:
             back_edge_body_offsets = body_offsets
         
-        # Extract modified and compared variables
+        # Extract modified and compared variables.
+        # First try narrow scan (back-edge source blocks) for counter detection;
+        # if nothing is found, widen to the full loop body.
         modified_vars, compared_vars = _extract_loop_variables(
             code_obj,
             modified_offsets=back_edge_body_offsets,
             compared_offsets=header_offsets
         )
+        if not modified_vars and body_offsets != back_edge_body_offsets:
+            modified_vars, compared_vars2 = _extract_loop_variables(
+                code_obj,
+                modified_offsets=body_offsets,
+                compared_offsets=header_offsets
+            )
+            compared_vars |= compared_vars2
         
         loops.append(LoopInfo(
             header_offset=header_offset,

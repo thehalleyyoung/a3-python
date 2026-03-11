@@ -55,6 +55,9 @@ def is_unsafe_panic(state) -> bool:
     # Internal sentinel used for pruning; not a program crash.
     if exc == "InfeasiblePath":
         return False
+    # Internal VM errors — not real Python exceptions
+    if exc in ("StackUnderflow", "StackOverflow_internal"):
+        return False
     
     # Check if exception is caught by a handler
     # Guard system: g_catch(exception_type) is established when jumping to handler

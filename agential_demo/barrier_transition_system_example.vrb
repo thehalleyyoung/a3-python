@@ -1,0 +1,42 @@
+\frametitle{How A3 Implements This End-to-End}
+\begin{center}
+\begin{tikzpicture}[
+  stage/.style={draw, rounded corners=5pt, thick, minimum width=3cm,
+                minimum height=1cm, align=center, font=\scriptsize},
+  arr/.style={-{Stealth[length=5pt]}, thick}
+]
+  % Pipeline
+  \node[stage, fill=codebg, draw=gray] (load) at (0,0) {\texttt{loader.py}\\Load \& compile};
+  \node[stage, fill=accent!10, draw=accent] (cfg) at (3.5,0) {\texttt{control\_flow.py}\\Build CFG};
+  \node[stage, fill=taint!10, draw=taint] (sym) at (7,0) {\texttt{symbolic\_vm.py}\\Symbolic exec\\+ taint track};
+  \node[stage, fill=unsafe!10, draw=unsafe] (check) at (10.5,0) {\texttt{registry.py}\\Check unsafe\\predicates};
+
+  \draw[arr, gray] (load) -- (cfg);
+  \draw[arr, accent] (cfg) -- (sym);
+  \draw[arr, taint] (sym) -- (check);
+
+  % Barrier branch
+  \node[stage, fill=hilbert!10, draw=hilbert] (synth) at (7,-2) {\texttt{certificate\_core.py}\\Barrier synthesis};
+  \node[stage, fill=safe!10, draw=safe] (verdict) at (10.5,-2) {Verdict:\\SAFE / BUG};
+
+  \draw[arr, hilbert] (check) -- node[right, font=\tiny]{no bug found} (synth);
+  \draw[arr, safe] (synth) -- (verdict);
+  \draw[arr, unsafe] (check) -- node[right, font=\tiny]{bug found} (verdict);
+
+  % Files referenced
+  \node[font=\tiny, gray, below=0.1cm of load] {frontend/loader.py};
+  \node[font=\tiny, gray, below=0.1cm of cfg] {cfg/control\_flow.py};
+  \node[font=\tiny, gray, below=0.1cm of sym] {semantics/symbolic\_vm.py};
+  \node[font=\tiny, gray, below=0.1cm of check] {unsafe/registry.py};
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.3em}
+\footnotesize
+\begin{enumerate}
+  \item \texttt{loader.py} compiles Python $\to$ bytecode
+  \item \texttt{control\_flow.py} extracts the CFG with edge types (normal, exception, conditional)
+  \item \texttt{symbolic\_vm.py} runs symbolic execution; \texttt{security\_tracker.py} propagates taint
+  \item \texttt{registry.py} checks 108 unsafe predicates (SQL injection: CWE-089)
+  \item If no violation found on safe path: \texttt{certificate\_core.py} synthesizes a barrier certificate to \textbf{prove} safety via SOS
+\end{enumerate}

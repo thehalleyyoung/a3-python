@@ -1,0 +1,360 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+
+\title{From Chaos to Certificates}
+\subtitle{Speaker Notes: barrier-story deep technical script}
+\author{Halley Young}
+\date{March 2026}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\newcommand{\syncline}[2]{\textbf{#1} \hfill \textcolor{gray}{#2}}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{1. The crazy path (honest version)}
+\syncline{Slide 1}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Open with ``we started messy'' to build credibility. Do not pretend there was a linear theorem plan.
+  \item Say: we had many AI-generated ideas; most failed either executable semantics or regression pressure.
+  \item The key engineering move was a \textbf{survival filter}: a method survives only if it discharges a barrier obligation or improves synthesis search.
+  \item This frames the whole talk as integration rigor, not novelty theater.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{2. Dot cloud to connected system}
+\syncline{Slide 2}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Explain the visual: left side is random-method generation; right side is one verification interface.
+  \item Emphasize: we did not pick one ``best'' paper; we forced all methods through one obligation API.
+  \item This is why the portfolio is coherent rather than eclectic.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{3. Why barrier synthesis as center of gravity}
+\syncline{Slide 3}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Read the three obligations clearly: init, consecution, separation.
+  \item Stress that each method is scored by its contribution to one of these obligations.
+  \item Mention operational policy: failure means reroute, not silent discard.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{4. Why useful vs existing approaches}
+\syncline{Slide 4}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Contrast single-method fragility with obligation-centered routing.
+  \item Key line: ``we preserve soundness by keeping UNKNOWN, not by forcing optimistic decisions.''
+  \item Close with concrete value proposition: lower FP burden with auditable artifacts.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{5. One bug-class as polynomial invariant}
+\syncline{Slide 5}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the DIV\_ZERO example slowly.
+  \item State variable \(x=den\), unsafe set \(x=0\), candidate barrier \(B(x)=x-1/2\).
+  \item Show each obligation in one sentence.
+  \item Important caveat: this proof is local to the encoded transition assumptions and path reachability conditions.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{6. How this maps to elimination}
+\syncline{Slide 6}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Barrier synthesis is a formal filter; it is not a probabilistic ranking step.
+  \item If obligations hold: eliminate as unreachable.
+  \item If obligations fail or solver says UNKNOWN: preserve candidate and escalate.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{6b. Contracts: why they matter in barrier theory}
+\syncline{Slide 6b}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item External/library calls are where many proof attempts die.
+  \item Contracts provide conservative call summaries: pre/post constraints plus side-effect boundaries.
+  \item Explain formula: \(C_f: \text{Pre}(x) \Rightarrow \text{Post}(x,x')\) is embedded into call-edge transition semantics.
+  \item Without contracts, consecution often degenerates to UNKNOWN because call effects are unconstrained.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{6c. PyTorch-style contract example}
+\syncline{Slide 6c}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Example: \texttt{torch.clamp(x,min=0)}. Contract says output elementwise nonnegative and same shape.
+  \item Mention shape/dtype/effect dimensions: they are all needed in practice, not just value range.
+  \item How this helps barrier: if downstream safety needs nonnegativity, this contract gives a direct consecution witness through call edges.
+  \item Also mention mutation contract: prevents hidden state drift that would invalidate transition assumptions.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{6d. Contracts inside obligations}
+\syncline{Slide 6d}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Give this line verbatim: ``Consecution is checked over program transitions \emph{and} contract transitions.''
+  \item Quality tradeoff:
+  \begin{itemize}
+    \item weak contracts increase UNKNOWN
+    \item unsound contracts are unacceptable (proof corruption)
+    \item conservative contracts preserve sound elimination
+  \end{itemize}
+  \item If asked about PyTorch source mismatch: say contracts are versioned and validated via concolic replay tests.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{7. 20 papers, one per slide: mapping rule}
+\syncline{Slide 7}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item For each paper: native contribution, how we bent it, barrier slot.
+  \item Keep pace fast: ~45 seconds each paper slide.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{8. Paper 1/20 — Stengle 1974}
+\syncline{Slide 8}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: algebraic certificate for semialgebraic infeasibility.
+  \item Bent: bounded program domains + finite template classes to make existence arguments operational.
+  \item Slot: theoretical existence basis for separation.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{9. Paper 2/20 — Parrilo 2000}
+\syncline{Slide 9}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: SOS as SDP.
+  \item Bent: monomial basis from symbolic program slices, not arbitrary global basis.
+  \item Slot: practical coefficient synthesis for candidate barriers.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{10. Paper 3/20 — Lasserre 2001}
+\syncline{Slide 10}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: relaxation hierarchy convergence.
+  \item Bent: finite budgeted degree ladder in CI; escalate only on need.
+  \item Slot: controlled completeness-pressure vs runtime.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{11. Paper 4/20 — Prajna \& Jadbabaie 2004}
+\syncline{Slide 11}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: formal barrier obligations.
+  \item Bent: map from continuous dynamics to discrete bytecode transition-state tuples.
+  \item Slot: the interface itself.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{12. Paper 5/20 — Prajna et al. 2007}
+\syncline{Slide 12}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: stochastic barriers.
+  \item Bent: use for uncertainty/risk tracks while preserving deterministic elimination gate.
+  \item Slot: probabilistic extension around consecution.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{13. Paper 6/20 — Ahmadi \& Majumdar 2019}
+\syncline{Slide 13}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: DSOS/SDSOS speedups.
+  \item Bent: tier-0 CI backend before expensive SDP.
+  \item Slot: fast conservative candidate filtering.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{14. Paper 7/20 — Waki et al. 2006}
+\syncline{Slide 14}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: exploit correlative sparsity.
+  \item Bent: derive sparsity blocks from symbolic dataflow/call slices.
+  \item Slot: scalable SDP decomposition.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{15. Paper 8/20 — Ames et al. 2019}
+\syncline{Slide 15}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: control barrier function slope constraints.
+  \item Bent: discrete successor constraints + unknown-call contracts.
+  \item Slot: consecution intuition and call abstraction discipline.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{16. Paper 9/20 — Sheeran et al. 2000}
+\syncline{Slide 16}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: k-induction.
+  \item Bent: fallback consecution path when polynomial synthesis stalls.
+  \item Slot: bounded-to-inductive route.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{17. Paper 10/20 — Bradley 2011}
+\syncline{Slide 17}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: IC3 frame strengthening.
+  \item Bent: treat frame conjunction as implicit barrier surface.
+  \item Slot: non-polynomial consecution discharge.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{18. Paper 11/20 — Een et al. 2011}
+\syncline{Slide 18}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: industrial PDR scaling.
+  \item Bent: emit blocking-clause trace as SARIF proof evidence.
+  \item Slot: auditable operational proof route.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{19. Paper 12/20 — Gurfinkel et al. 2015}
+\syncline{Slide 19}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: CHC software verification.
+  \item Bent: interprocedural summaries become CHC predicates linked to barrier obligations.
+  \item Slot: cross-procedure consecution.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{20. Paper 13/20 — Clarke et al. 2000}
+\syncline{Slide 20}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: CEGAR loop.
+  \item Bent: obligation-failure traces refine barrier monomial template only where needed.
+  \item Slot: synthesis refinement engine.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{21. Paper 14/20 — Ball et al. 2001}
+\syncline{Slide 21}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: SLAM predicate abstraction.
+  \item Bent: mine guards/predicates from symbolic traces as barrier feature seeds.
+  \item Slot: candidate predicate generation.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{22. Paper 15/20 — McMillan 2003}
+\syncline{Slide 22}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: Craig interpolants.
+  \item Bent: translate interpolants into new inequality features for next synthesis round.
+  \item Slot: spurious-counterexample repair signal.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{23. Paper 16/20 — Henzinger et al. 2004}
+\syncline{Slide 23}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: lazy abstraction.
+  \item Bent: localize barrier refinement to failing candidate region.
+  \item Slot: cost containment during repair.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{24. Paper 17/20 — Flanagan \& Leino 2001}
+\syncline{Slide 24}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: Houdini maximal inductive subset.
+  \item Bent: prune broad coefficient/predicate pools with obligation counterexamples.
+  \item Slot: candidate curation front-end.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{25. Paper 18/20 — Garg et al. 2014}
+\syncline{Slide 25}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: ICE learning from implication examples.
+  \item Bent: encode obligation failures as implication data for feature learning.
+  \item Slot: data-driven invariant shaping.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{26. Paper 19/20 — Alur et al. 2013}
+\syncline{Slide 26}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: SyGuS grammar-constrained synthesis.
+  \item Bent: constrain barrier template grammar to keep search tractable and auditable.
+  \item Slot: bounded synthesis control.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=18]{27. Paper 20/20 — Godefroid et al. 2005}
+\syncline{Slide 27}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Native: concolic witness generation.
+  \item Bent: confirm SAT survivors and invalidate spurious abstract models post-synthesis.
+  \item Slot: witness grounding after proof uncertainty.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{28. What this gives us in practice}
+\syncline{Slide 28}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Reiterate integration value: one interface, many methods, auditable decisions.
+  \item Explainable elimination and principled escalation are the practical differentiators.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{29. Final notes for the audience}
+\syncline{Slide 29}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Core thesis: AI generated options; proofs and tests selected survivors.
+  \item ``Bending'' papers is disciplined adaptation, not citation theater.
+  \item Final frame: the obligations are the architecture.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{30. Close}
+\syncline{Slide 30}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item End line: ``Init. Consecution. Separation. Everything else is routing.''
+  \item Take Q\&A from contracts, consecution, and evidence artifacts first.
+\end{itemize}
+\end{frame}
+
+\end{document}

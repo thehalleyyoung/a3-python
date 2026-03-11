@@ -408,14 +408,24 @@ class ImpactVerificationResult:
 class ImpactVerifier:
     """
     IMPACT: Lazy Abstraction with Interpolants.
-    
-    Main algorithm:
-    1. Build ART lazily
-    2. When path to error found, check if spurious
-    3. If spurious, compute interpolants and refine locally
-    4. Continue until safe or real bug found
+
+    Implements McMillan's CAV 2006 algorithm:
+      1. Build ART lazily — expand one leaf per iteration.
+      2. When a leaf can reach the error region, check the path.
+      3. If the path is spurious (UNSAT), compute interpolants to refine.
+      4. Try to *cover* nodes so the ART remains finite.
+      5. Terminate SAFE when every leaf is covered, or UNSAFE when a
+         concrete counterexample is found.
+
+    Key fixes over the original stub:
+    * Variables are renamed with the correct z3 sort (``Int`` not ``Real``).
+    * Interpolation is approximated via QE-based weakening of the prefix
+      (a valid over-approximation for Craig interpolants).
+    * Locations model a single loop: after expanding at location *k* we
+      may return to location 0 (the loop header), so covering can actually
+      fire.
     """
-    
+
     def __init__(self, variables: List[z3.ArithRef],
                  primed_variables: List[z3.ArithRef],
                  transition_relation: z3.BoolRef,
@@ -432,219 +442,282 @@ class ImpactVerifier:
         self.max_iterations = max_iterations
         self.timeout_ms = timeout_ms
         self.verbose = verbose
-        
+
+        # Pre-compute a solver-friendly version of the transition for
+        # quantifier elimination (QE).  QE is exact for LIA.
+        self._var_sorts = {str(v): v.sort() for v in variables}
         self.interpolator = InterpolantComputer(timeout_ms, verbose)
-        
-        self.stats = {
+
+        self.stats: Dict[str, Any] = {
             'iterations': 0,
             'refinements': 0,
             'covering_checks': 0,
+            'time_ms': 0.0,
         }
-    
+
+    # ── helpers: z3 variable creation (respects Int/Real sort) ────────
+
+    def _make_step_var(self, base_var: z3.ArithRef, step: int) -> z3.ArithRef:
+        """Create a step-indexed copy of *base_var* with the same sort."""
+        name = f"{base_var}__s{step}"
+        if base_var.sort() == z3.RealSort():
+            return z3.Real(name)
+        return z3.Int(name)
+
+    def _rename_for_step(self, formula: z3.BoolRef, step: int) -> z3.BoolRef:
+        """Rename every current-state variable ``v`` to ``v__s<step>``."""
+        step_vars = [self._make_step_var(v, step) for v in self.variables]
+        return z3.substitute(formula, list(zip(self.variables, step_vars)))
+
+    def _rename_transition(self, step: int) -> z3.BoolRef:
+        """Rename transition for step *i* → *i+1*.
+
+        ``v`` ↦ ``v__s<step>``, ``v_prime`` ↦ ``v__s<step+1>``
+        """
+        step_vars = [self._make_step_var(v, step) for v in self.variables]
+        next_vars = [self._make_step_var(v, step + 1) for v in self.variables]
+        subs = list(zip(self.variables, step_vars)) + \
+               list(zip(self.primed_variables, next_vars))
+        return z3.substitute(self.transition, subs)
+
+    def _unrename_from_step(self, formula: z3.BoolRef, step: int) -> z3.BoolRef:
+        """Undo a step-rename: ``v__s<step>`` → ``v``."""
+        step_vars = [self._make_step_var(v, step) for v in self.variables]
+        return z3.substitute(formula, list(zip(step_vars, self.variables)))
+
+    # ── satisfiability helper ─────────────────────────────────────────
+
+    def _is_satisfiable(self, formula: z3.BoolRef,
+                        timeout: int | None = None) -> bool:
+        solver = z3.Solver()
+        solver.set("timeout", timeout or max(self.timeout_ms // 100, 500))
+        solver.add(formula)
+        return solver.check() == z3.sat
+
+    def _implies(self, phi1: z3.BoolRef, phi2: z3.BoolRef) -> bool:
+        """Return True iff ``phi1 ⟹ phi2`` (phi1 ∧ ¬phi2 is UNSAT)."""
+        solver = z3.Solver()
+        solver.set("timeout", max(self.timeout_ms // 50, 500))
+        solver.add(phi1)
+        solver.add(z3.Not(phi2))
+        return solver.check() == z3.unsat
+
+    # ── post-image computation with QE ────────────────────────────────
+
+    def _compute_post(self, formula: z3.BoolRef) -> z3.BoolRef:
+        """Compute ``Post(formula)  =  ∃ x. formula(x) ∧ T(x, x')``,
+        then rename ``x' → x`` so the result is over current-state vars.
+
+        Uses z3's built-in quantifier-elimination tactic for LIA.
+        """
+        body = z3.And(formula, self.transition)
+
+        # Quantifier elimination ─────────────────────────────────────
+        try:
+            g = z3.Goal()
+            g.add(z3.Exists(list(self.variables), body))
+            res = z3.Then("qe", "simplify")(g)
+            if len(res) == 1:
+                clauses = list(res[0])
+                if clauses:
+                    projected = z3.And(clauses) if len(clauses) > 1 else clauses[0]
+                else:
+                    projected = z3.BoolVal(True)
+            else:
+                projected = body            # fallback: keep everything
+        except Exception:
+            projected = body
+
+        # Rename primed → current
+        subs = list(zip(self.primed_variables, self.variables))
+        return z3.simplify(z3.substitute(projected, subs))
+
+    # ── is_error helper ───────────────────────────────────────────────
+
+    def _is_error(self, node: ARTNode) -> bool:
+        return node.is_error or self._is_satisfiable(
+            z3.And(node.formula, self.error))
+
+    # ── main algorithm ────────────────────────────────────────────────
+
     def verify(self) -> ImpactVerificationResult:
-        """
-        Run IMPACT verification.
-        """
-        start_time = time.time()
-        
-        # Initialize ART
+        """Run IMPACT verification."""
+        t0 = time.time()
+
         tree = AbstractReachabilityTree(self.initial, 0)
-        
-        for iteration in range(self.max_iterations):
+
+        for _it in range(self.max_iterations):
             self.stats['iterations'] += 1
-            
-            # Get uncovered leaves
+
+            elapsed_ms = (time.time() - t0) * 1000
+            if elapsed_ms > self.timeout_ms:
+                break
+
+            # 1. Pick an uncovered leaf ───────────────────────────────
             leaves = tree.get_uncovered_leaves()
-            
             if not leaves:
-                # All paths explored
-                self.stats['time_ms'] = (time.time() - start_time) * 1000
+                self.stats['time_ms'] = (time.time() - t0) * 1000
                 return ImpactVerificationResult(
                     result=ImpactResult.SAFE,
                     tree=tree,
                     statistics=self.stats,
-                    message="All paths explored, system is safe"
+                    message="All ART leaves covered — system is SAFE",
                 )
-            
-            # Pick a leaf to expand
-            leaf = self._select_leaf(leaves)
-            
-            # Try to expand
-            expanded = self._expand(tree, leaf)
-            
-            if not expanded:
-                # Check if leaf is error
-                if self._is_error(leaf):
-                    # Check if path is spurious
-                    path = leaf.get_path_to_root()
-                    is_spurious = self._check_spurious(path)
-                    
-                    if is_spurious:
-                        # Refine using interpolants
-                        self._refine(tree, path)
-                        self.stats['refinements'] += 1
-                    else:
-                        # Real counterexample
-                        self.stats['time_ms'] = (time.time() - start_time) * 1000
-                        return ImpactVerificationResult(
-                            result=ImpactResult.UNSAFE,
-                            counterexample=path,
-                            tree=tree,
-                            statistics=self.stats,
-                            message="Real counterexample found"
-                        )
-            
-            # Try covering
-            self._try_covering(tree, leaf)
-        
-        self.stats['time_ms'] = (time.time() - start_time) * 1000
+
+            leaf = leaves[-1]              # DFS pick
+
+            # 2. Expand ───────────────────────────────────────────────
+            post = self._compute_post(leaf.formula)
+            if not self._is_satisfiable(post):
+                # Dead-end: no successor — mark as "closed" by
+                # self-covering (effectively removing it from the
+                # worklist).
+                tree.mark_covered(leaf, leaf)
+                continue
+
+            # For a loop model we cycle back to location 0 so
+            # covering against earlier iterations can fire.
+            child_loc = 0
+            child = tree.add_child(leaf, child_loc, post)
+
+            # 3. Check error reachability ─────────────────────────────
+            if self._is_satisfiable(z3.And(post, self.error)):
+                child.is_error = True
+
+                path = child.get_path_to_root()
+                spurious = self._check_spurious(path)
+
+                if spurious:
+                    self._refine(tree, path)
+                    self.stats['refinements'] += 1
+                else:
+                    self.stats['time_ms'] = (time.time() - t0) * 1000
+                    return ImpactVerificationResult(
+                        result=ImpactResult.UNSAFE,
+                        counterexample=path,
+                        tree=tree,
+                        statistics=self.stats,
+                        message="Real counterexample found",
+                    )
+
+            # 4. Try covering ─────────────────────────────────────────
+            self._try_covering(tree, child)
+
+        self.stats['time_ms'] = (time.time() - t0) * 1000
         return ImpactVerificationResult(
             result=ImpactResult.UNKNOWN,
             tree=tree,
             statistics=self.stats,
-            message="Max iterations reached"
+            message="Max iterations / timeout reached",
         )
-    
-    def _select_leaf(self, leaves: List[ARTNode]) -> ARTNode:
-        """Select next leaf to expand (DFS order)."""
-        return leaves[-1]  # DFS: pick last
-    
-    def _expand(self, tree: AbstractReachabilityTree, node: ARTNode) -> bool:
-        """
-        Expand node by computing successors.
-        
-        Returns True if expansion created new nodes.
-        """
-        # Compute post-image
-        post_formula = self._compute_post(node.formula)
-        
-        if self._is_satisfiable(post_formula):
-            # Create child at next location
-            child = tree.add_child(node, node.location + 1, post_formula)
-            
-            # Check if child reaches error
-            if self._is_satisfiable(z3.And(post_formula, self.error)):
-                child.is_error = True
-            
-            return True
-        
-        return False
-    
-    def _compute_post(self, formula: z3.BoolRef) -> z3.BoolRef:
-        """Compute post-image of states."""
-        # ∃ x. formula(x) ∧ T(x, x')
-        post = z3.And(formula, self.transition)
-        
-        # Project to primed variables (simplified)
-        # Full implementation would use quantifier elimination
-        subs = list(zip(self.primed_variables, self.variables))
-        post_projected = z3.substitute(post, subs)
-        
-        return z3.simplify(post_projected)
-    
-    def _is_error(self, node: ARTNode) -> bool:
-        """Check if node can reach error."""
-        return node.is_error or self._is_satisfiable(z3.And(node.formula, self.error))
-    
-    def _is_satisfiable(self, formula: z3.BoolRef) -> bool:
-        """Check if formula is SAT."""
-        solver = z3.Solver()
-        solver.set("timeout", self.timeout_ms // 100)
-        solver.add(formula)
-        return solver.check() == z3.sat
-    
+
+    # ── spurious-path check ───────────────────────────────────────────
+
     def _check_spurious(self, path: List[ARTNode]) -> bool:
+        """Check if *path* to error is spurious.
+
+        Build  ``φ_0(x_0) ∧ T(x_0,x_1) ∧ φ_1(x_1) ∧ … ∧ error(x_n)``
+        and return True iff the conjunction is UNSAT (path is infeasible).
         """
-        Check if path to error is spurious.
-        
-        Build path formula and check SAT.
-        """
-        formulas = []
-        
-        for i, node in enumerate(path):
-            # Add state formula (with renamed variables for step i)
-            step_formula = self._rename_for_step(node.formula, i)
-            formulas.append(step_formula)
-            
-            # Add transition to next step
-            if i < len(path) - 1:
-                trans_formula = self._rename_transition(i)
-                formulas.append(trans_formula)
-        
-        # Add error at end
-        error_formula = self._rename_for_step(self.error, len(path) - 1)
-        formulas.append(error_formula)
-        
-        # Check if conjunction is SAT
         solver = z3.Solver()
-        solver.set("timeout", self.timeout_ms // 10)
-        
-        for f in formulas:
-            solver.add(f)
-        
-        return solver.check() == z3.unsat  # Spurious if UNSAT
-    
-    def _refine(self, tree: AbstractReachabilityTree, path: List[ARTNode]) -> None:
-        """
-        Refine using interpolants.
-        """
-        # Build path formula
-        formulas = []
+        solver.set("timeout", max(self.timeout_ms // 5, 1000))
+
         for i, node in enumerate(path):
-            step_formula = self._rename_for_step(node.formula, i)
-            formulas.append(step_formula)
-        
-        # Compute interpolants
-        result = self.interpolator.compute_sequence(formulas)
-        
-        if result.result == InterpolationResult.SUCCESS:
-            # Apply interpolants to nodes
-            for i, interpolant in enumerate(result.interpolants):
-                if i < len(path):
-                    path[i].interpolant = interpolant
-                    # Strengthen node formula
-                    path[i].formula = z3.And(path[i].formula, interpolant)
-    
-    def _try_covering(self, tree: AbstractReachabilityTree, node: ARTNode) -> bool:
+            solver.add(self._rename_for_step(node.formula, i))
+            if i < len(path) - 1:
+                solver.add(self._rename_transition(i))
+
+        solver.add(self._rename_for_step(self.error, len(path) - 1))
+        return solver.check() == z3.unsat
+
+    # ── refinement via (approximate) interpolation ────────────────────
+
+    def _refine(self, tree: AbstractReachabilityTree,
+                path: List[ARTNode]) -> None:
+        """Refine ART along *path* using Craig-style interpolants.
+
+        Proper Craig interpolation over LIA is hard to extract from z3.
+        We approximate by computing, at every cut point *i*, a **QE-weakened
+        prefix**: ``∃ x_0…x_{i-1}. (φ_0 ∧ T_{01} ∧ … ∧ T_{(i-1)i})``.
+        This is a valid over-approximation of the reachable states at step *i*
+        and satisfies the interpolation axioms.  We rename the result back
+        into the original variable space and strengthen the ART node.
         """
-        Try to cover node by existing node at same location.
+        n = len(path)
+        if n < 2:
+            return
+
+        # Build cumulative prefix formulas (step-indexed)
+        prefix: List[z3.BoolRef] = []
+        for i, node in enumerate(path):
+            prefix.append(self._rename_for_step(node.formula, i))
+            if i < n - 1:
+                prefix.append(self._rename_transition(i))
+
+        # At each cut point, compute an interpolant (over-approximation
+        # of reachable states at that step, expressed in step-i variables).
+        for i in range(1, n):
+            # A = formulas from step 0 … step i  (prefix up to step i)
+            # We ask: what must hold at step i?  Project away steps 0…i-1.
+            step_i_vars = [self._make_step_var(v, i) for v in self.variables]
+
+            # Collect all step-indexed variables for steps < i so we can
+            # existentially quantify them away.
+            earlier_vars: List[z3.ArithRef] = []
+            for s in range(i):
+                earlier_vars.extend(
+                    self._make_step_var(v, s) for v in self.variables)
+
+            # Build prefix conjunction up to step i
+            parts: List[z3.BoolRef] = []
+            for j in range(i + 1):
+                parts.append(self._rename_for_step(path[j].formula, j))
+                if j < i:
+                    parts.append(self._rename_transition(j))
+
+            conjunction = z3.And(parts)
+
+            # QE: ∃ earlier_vars. conjunction  →  formula over step_i vars
+            try:
+                g = z3.Goal()
+                g.add(z3.Exists(earlier_vars, conjunction))
+                res = z3.Then("qe", "simplify")(g)
+                if len(res) == 1 and list(res[0]):
+                    clauses = list(res[0])
+                    interp_at_i = z3.And(clauses) if len(clauses) > 1 else clauses[0]
+                else:
+                    continue
+            except Exception:
+                continue
+
+            # Rename back to original variable space (step i → original)
+            interp_original = self._unrename_from_step(interp_at_i, i)
+            interp_original = z3.simplify(interp_original)
+
+            # Strengthen node i
+            old_formula = path[i].formula
+            strengthened = z3.simplify(z3.And(old_formula, interp_original))
+            path[i].formula = strengthened
+            path[i].interpolant = interp_original
+
+    # ── covering ──────────────────────────────────────────────────────
+
+    def _try_covering(self, tree: AbstractReachabilityTree,
+                      node: ARTNode) -> bool:
+        """Try to cover *node* by an existing node at the same location.
+
+        *node* is covered by *candidate* when
+        ``node.formula ⟹ candidate.formula`` (node's states ⊆ candidate's).
         """
         self.stats['covering_checks'] += 1
-        
-        candidates = tree.get_nodes_at_location(node.location)
-        
-        for candidate in candidates:
-            if candidate.id != node.id and not candidate.is_covered():
-                # Check if candidate covers node: node.formula → candidate.formula
-                if self._implies(node.formula, candidate.formula):
-                    tree.mark_covered(node, candidate)
-                    return True
-        
+
+        for cand in tree.get_nodes_at_location(node.location):
+            if cand.id == node.id or cand.is_covered():
+                continue
+            if self._implies(node.formula, cand.formula):
+                tree.mark_covered(node, cand)
+                return True
         return False
-    
-    def _implies(self, phi1: z3.BoolRef, phi2: z3.BoolRef) -> bool:
-        """Check if phi1 → phi2."""
-        solver = z3.Solver()
-        solver.set("timeout", 1000)
-        solver.add(phi1)
-        solver.add(z3.Not(phi2))
-        return solver.check() == z3.unsat
-    
-    def _rename_for_step(self, formula: z3.BoolRef, step: int) -> z3.BoolRef:
-        """Rename variables for step i."""
-        step_vars = [z3.Real(f"{v}_{step}") for v in [str(v) for v in self.variables]]
-        subs = list(zip(self.variables, step_vars))
-        return z3.substitute(formula, subs)
-    
-    def _rename_transition(self, step: int) -> z3.BoolRef:
-        """Rename transition relation for step i → i+1."""
-        step_vars = [z3.Real(f"{v}_{step}") for v in [str(v) for v in self.variables]]
-        step_vars_next = [z3.Real(f"{v}_{step + 1}") for v in [str(v) for v in self.variables]]
-        
-        subs = list(zip(self.variables, step_vars)) + \
-               list(zip(self.primed_variables, step_vars_next))
-        
-        return z3.substitute(self.transition, subs)
 
 
 # =============================================================================
@@ -862,8 +935,40 @@ def verify_with_impact(variables: List[z3.ArithRef],
                          timeout_ms: int = 60000,
                          verbose: bool = False) -> ImpactVerificationResult:
     """
-    Verify using IMPACT algorithm.
+    Verify using IMPACT algorithm (Lazy Abstraction with Interpolants).
     """
+    # ── Fast-path: if ¬error is an inductive invariant we can return SAFE
+    # without building the full ART.
+    try:
+        safety = z3.Not(error)
+        solver = z3.Solver()
+        solver.set("timeout", min(timeout_ms, 5000))
+        # Init → safety
+        solver.push()
+        solver.add(initial)
+        solver.add(error)
+        if solver.check() != z3.unsat:
+            solver.pop()
+        else:
+            solver.pop()
+            # safety ∧ Trans → safety'
+            safety_prime = z3.substitute(safety, list(zip(variables, primed_vars)))
+            solver.push()
+            solver.add(safety)
+            solver.add(transition)
+            solver.add(z3.Not(safety_prime))
+            if solver.check() == z3.unsat:
+                solver.pop()
+                return ImpactVerificationResult(
+                    result=ImpactResult.SAFE,
+                    tree=None,
+                    statistics={"fast_path": True},
+                    message="Inductive invariant found via fast-path IMPACT check",
+                )
+            solver.pop()
+    except Exception:
+        pass
+
     verifier = ImpactVerifier(
         variables, primed_vars, transition, initial, error,
         max_iterations, timeout_ms, verbose

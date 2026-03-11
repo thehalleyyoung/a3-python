@@ -1,0 +1,396 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+
+\title{A3 + The Slop Feedback Loop}
+\subtitle{Formal Methods Deep Dive (Private Notes)}
+\author{Halley Young}
+\date{March 2026}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\newcommand{\syncline}[2]{\textbf{#1} \hfill \textcolor{gray}{#2}}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{1. Deliverable first}
+\syncline{Slide 1}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Open with what ships, not with history: \texttt{pip install a3-python} gives scan + static elimination + optional triage.
+  \item The architecture is explicitly static-first, agentic-second.
+  \item Stress asymmetry: formal methods take the bulk volume; LLM handles uncertainty residue only.
+  \item Set expectation for RISE audience: this talk is about what is proved, what is approximated, and where assumptions live.
+  \item Keep phrase: ``proof/disproof artifacts are upstream; triage is downstream policy support.''
+\end{itemize}
+\end{frame}
+
+\begin{frame}{2. Blog arc we follow}
+\syncline{Slide 2}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Follow the blog storyline directly: origin challenge \(\rightarrow\) Episode I/II/III \(\rightarrow\) shipping architecture.
+  \item Then expand on RISE-sensitive details: transition semantics, obligations, solver outcomes, refinement policy.
+  \item End on operational policy: kitchensink orchestration, residual triage, CI ratchet.
+  \item Frame from the start: this is verification-oriented systems engineering, not theorem theater.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{3. One ridiculous origin story}
+\syncline{Slide 3}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Blog claim: this started as ``can AI generate paper-scale verification ideas that survive code?''
+  \item Early theory looked elegant but collapsed on implementation details.
+  \item Working rule became adversarial: every idea must survive tests and regression runs.
+  \item Useful phrase from blog: ``fight AI slop with AI slop'' \(\rightarrow\) generate aggressively, filter brutally.
+  \item This is why the stack values executable semantics above conceptual novelty.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{4. Episode I: quantitative safety intuition}
+\syncline{Slide 4}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Distance semantics survived as prioritization intuition, not final correctness engine.
+  \item Keep distinction explicit: ranking answers ``what first,'' verification answers ``what never.''
+  \item This sets up Episode II naturally: separation proofs for reachability exclusion.
+  \item If challenged, concede limits of pure metrics for industrial false-positive suppression.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{5. Episode II: prove unreachable}
+\syncline{Slide 5}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Reachability framing: show \(R\cap U=\varnothing\) under encoded semantics and assumptions.
+  \item Barrier-style certificates matter because they summarize many executions with inductive constraints.
+  \item They are only meaningful when tied to concrete state projections from actual Python execution points.
+  \item Failure is informative: obligation counterexamples feed refinement and portfolio rerouting.
+  \item Good caveat: certificates are powerful but not universally synthesizeable under budget.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{6. Barrier obligations (informal form)}
+\syncline{Slide 6}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Initialization: \(\forall s\in S_0,\;B(s)\ge\epsilon\).
+  \item Consecution: \(\forall s\to s',\;B(s)\ge0\Rightarrow B(s')\ge0\).
+  \item Unsafe separation: \(\forall s\in U,\;B(s)\le-\epsilon\).
+  \item Emphasize conjunctive acceptance: one failed obligation means no certificate.
+  \item Solver policy is conservative: UNKNOWN does not justify pruning.
+  \item RISE point: this is a soundness-preserving operational policy, not convenience behavior.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[t]{6b. Exact workflow: one polynomial certificate, one Python bug}
+\syncline{Slide 6b}{~3 min}
+\textbf{Script:}
+\scriptsize
+\begin{itemize}
+  \item \textbf{Bug anchor:} pick one reported site, e.g., DIV\_ZERO at \texttt{f} offset \(o\) for \texttt{n / d}.
+  \item \textbf{State basis:} choose symbolic variables \(x\) from locals/stack/heap observers at \(o\); compute path precondition \(\Phi(x)\).
+  \item \textbf{Unsafe set:} \(U(x)\equiv(d(x)=0)\land\Phi(x)\).
+  \item \textbf{Dynamics:} derive entry set \(S_0\) and transition relation \(T(x,x')\) from bytecode transfer semantics.
+  \item \textbf{Template:} choose degree-\(k\) polynomial \(B(x)=\sum_{\alpha\in\mathcal{M}_k}c_\alpha x^\alpha\) with unknown coefficients \(c_\alpha\).
+  \item \textbf{Obligations:} init \(\forall x\in S_0: B(x)\ge\epsilon\); consecution \(\forall x,x': T\land B(x)\ge0\Rightarrow B(x')\ge0\); unsafe \(\forall x: U(x)\Rightarrow B(x)\le-\epsilon\).
+  \item \textbf{Solve:} synthesize \(c_\alpha\) via staged backends (fast checks first, stronger relaxations next).
+  \item \textbf{Validate:} replay obligations on current model; any counterexample rejects candidate certificate.
+  \item \textbf{Mini-example:} if Python guard is \texttt{if den > 0: return num/den}, choose \(x=den\), \(U(x)\equiv(x=0)\), and template \(B(x)=x-\tfrac{1}{2}\). Then init/consecution hold under guard-preserving transitions and unsafe separation holds since \(B(0)=-\tfrac{1}{2}<0\).
+  \item \textbf{Map back:} valid certificate marks this exact site unreachable (FP) with proof artifact: template, coefficients, obligations, site metadata.
+  \item \textbf{Fallback:} no certificate within budget \(\neq\) safety proof; candidate escalates to induction/CHC/PDR/concolic/triage.
+  \item \textbf{Q\&A:} source mapping uses file/function/offset+symbol bindings; abstraction errors are caught by obligation counterexamples.
+\end{itemize}
+\normalsize
+\end{frame}
+
+\begin{frame}{7. Episode III: executable Python semantics}
+\syncline{Slide 7}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Blog Episode III is the key turn: stop hand-waving and model CPython behavior explicitly.
+  \item Include exception paths, call effects, and unknown behavior assumptions as first-class semantics.
+  \item Representation split is intentional: concrete control, symbolic data/feasibility.
+  \item Avoid overclaim: this is executable approximation with explicit assumptions, not full interpreter equivalence.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{8. Blog technical example: assertion escape}
+\syncline{Slide 8}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Claim: ``failing assertion escapes uncaught'' is a reachability property, not a pattern match.
+  \item Must account for assert mode, local handlers, caller handlers, and \texttt{finally} propagation.
+  \item Naive rule-based detection over-reports; theorem-only abstractions under-specify behavior.
+  \item The loop resolved this by combining executable semantics with conservative obligations.
+  \item This is the blog's concrete argument for theory+code co-evolution.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{9. Transition system used by the analyzer}
+\syncline{Slide 9}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item State tuple: \(\sigma=(pc,\rho,h,\tau,\kappa,e,\Phi)\).
+  \item \(pc\) and frame-stack control are concrete; branching uncertainty lives in \(\Phi\).
+  \item \(\rho,h\) carry symbolic values and heap observers for solver-visible reasoning.
+  \item Exception mode and handler context are explicit; this is critical for uncaught-escape correctness.
+  \item Unsafe predicates are bug-family-indexed: \(U_t(\sigma)\).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{10. Real engine from the blog: theorize \(\rightarrow\) code \(\rightarrow\) test \(\rightarrow\) fix code \(\rightarrow\) fix theory}
+\syncline{Slide 10}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item This loop is not process fluff; it is the quality control mechanism.
+  \item ``Fixing theory'' means tightening assumptions and obligations when tests expose semantic mismatch.
+  \item Emphasize falsification pressure from synthetic suites and real-repo scans.
+  \item Good soundbite: elegant ideas are cheap; executable invariants are expensive.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{11. What shipped: static-first, agentic-second}
+\syncline{Slide 11}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Static stage handles the volume: discovery, feasibility, proofs, elimination, evidence packing.
+  \item Agentic stage handles survivors only, with repository context exploration.
+  \item Explicitly separate theorem-status artifacts from confidence/rationale artifacts.
+  \item This asymmetry is both a trust design and a scaling design.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{12. Kitchensink portfolio: blog principle in formal-method terms}
+\syncline{Slide 12}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Blog wording: ``steal the best ideas, orchestrate them, don't worship one paper.''
+  \item Translation: route bug shapes through complementary proving families.
+  \item Typical route: guard+SMT \(\rightarrow\) barrier attempts \(\rightarrow\) induction/CHC/PDR \(\rightarrow\) concolic confirmation.
+  \item Keep disagreement visible; it is diagnostic signal for abstraction quality.
+  \item Transition to next two slides: explain \textbf{why} this composition is coherent.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{12b. Barrier obligations as the unifying interface}
+\syncline{Slide 12b}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item The barrier certificate imposes three provable obligations: init, consecution, unsafe separation.
+  \item These obligations are not just a proof artifact --- they are an \textbf{API}.
+  \item Each paper from the 20-paper portfolio is a specialised subsolver for one or more of those obligations.
+  \item The framework is not ``use everything and hope''; it is structured decomposition of a single verification problem.
+  \item RISE point: the semantic contract (\(B\) with three conditions) is fixed; methods compete to discharge each condition.
+  \item Method failure is informative: if SOS cannot certify separation, that tells you the unsafe region boundary is outside polynomial reach for the current variable basis.
+  \item That failure is then a routing signal, not a dead end.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=62]{12c. Separation obligation: foundations (papers 1--5)}
+\syncline{Slide 12c}{~4 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{BSP cluster role:} This cluster answers ``what does it mean for a barrier to exist and how do we compute one?'' Stengle guarantees existence; Parrilo makes it computable; Lasserre ensures degree-escalation; Prajna \& Jadbabaie wrote the three-obligation API we use verbatim.
+  \item \textbf{Stengle 1974 (Positivstellensatz):} if \(\Phi(x)\wedge U(x)\) is infeasible over the reals, a polynomial identity certifies it. Purely theoretical existence guarantee under Archimedean conditions.\\
+    \textbf{How we bent it:} the paper is pure real algebraic geometry with zero program semantics. We interpret program state variables as the polynomial ring and treat \texttt{assert} guards / error conditions as the semialgebraic sets \(S_0\) and \(U\).
+  \item \textbf{Parrilo 2000 (SOS):} \(p\ge0\) certified by SOS decomposition \(p=\sum q_i^2\Leftrightarrow\) SDP over Gram matrix. Bridge from ``certificate exists'' to ``we can compute one.''\\
+    \textbf{How we bent it:} Parrilo's domain is continuous nonlinear control (Lyapunov for ODEs). We substitute the ODE state space with RISE's symbolic machine state \(\sigma\), leaving the SDP machinery completely untouched.
+  \item \textbf{Lasserre 2001 (moment/SOS hierarchy):} iterative degree-lifting converges to global optimum via moment sequences.\\
+    \textbf{How we bent it:} framed as a polynomial \emph{optimisation} problem; we repurpose it as a \emph{feasibility-escalation} schedule where each hierarchy level is one tier of the portfolio, not an optimisation step.
+  \item \textbf{Prajna \& Jadbabaie HSCC 2004:} first explicit three-obligation form. We use it verbatim over symbolic machine state.\\
+    \textbf{How we bent it:} original uses Lie-derivative consecution (\(\dot B\ge0\) along ODE flow). We replace this with symbolic one-step \(B(\sigma')\ge0\) under the discrete transition relation \(T\) of the RISE IR.
+  \item \textbf{Prajna, Jadbabaie \& Pappas TAC 2007:} consecution as expectation inequality; motivates stochastic risk path.\\
+    \textbf{How we bent it:} replaces It\^{o} calculus over SDEs with Python probabilistic branching; expectation is approximated over path-condition probability mass drawn from the concrete execution distribution, not a stochastic differential equation.
+  \item RISE point: the whole SOS chain (papers 1--5) establishes existence \(\rightarrow\) computability \(\rightarrow\) degree-escalation \(\rightarrow\) software interface.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=56]{12d. Separation tractability: relaxation ladder (papers 6--8)}
+\syncline{Slide 12d}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{BSP cluster role:} Same fence, proved with cheaper paint. \(B\) still satisfies all three obligations; only the positivity proof is cheaper. DSOS/SDSOS are sound subsets of SOS: they never produce a false certificate.
+  \item \textbf{Ahmadi \& Majumdar SIAM 2019 (DSOS/SDSOS):} DSOS replaces SDP with LP (diagonally-dominant SOS); SDSOS uses SOCP. Both are sound and 50--200\texttimes{} faster. First tier in the portfolio; escalate to full SDP only on failure.\\
+    \textbf{How we bent it:} original targets robotics trajectory optimisation (LQR, control design). We discard the control objective entirely and use DSOS purely as a certificate-existence check.
+  \item \textbf{Waki, Kim, Kojima \& Muramatsu 2006 (correlative sparsity):} decompose SDP along the variable correlation graph; reduces one large SDP to many small coupled SDPs.\\
+    \textbf{How we bent it:} the original graph is built from the polynomial \emph{support} structure in the mathematical programme; we build it from the Python \emph{data-flow}: two variables co-appear iff they share a branch predicate or arithmetic expression in the RISE IR.
+  \item \textbf{Ames et al.\ CBF survey 2019:} continuous consecution condition \(\dot B\ge -\alpha(B)\) (Lie derivative with class-\(\mathcal{K}\) bound).\\
+    \textbf{How we bent it:} requires smooth continuous dynamics with computable Lie derivatives. We discretise the class-\(\mathcal{K}\) bound into a per-call contract \(B(\sigma')\ge B(\sigma)-\alpha(B(\sigma))\) and apply it to black-box Python callees, turning a continuous slope condition into a discrete overapproximation contract.
+  \item RISE Q: ``Why not just SOS everywhere?'' DSOS is 50--200\texttimes{} faster; in CI that is 10 s vs.\ 30 min per scan.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=68]{12e. Consecution obligation: property-directed reachability (papers 9--12)}
+\syncline{Slide 12e}{~4 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{BSP cluster role:} Handle consecution when no polynomial template is available. IC3/PDR build an implicit barrier as a clause conjunction; CHC encodes consecution as a horn-clause fixpoint. Same fence concept, represented symbolically.
+  \item \textbf{Sheeran, Singh \& St\aa lm\aa rck FMCAD 2000 (k-induction):} splits consecution check into bounded base+step. After \(k\) unrolled steps without violation, promote candidate to bounded-safe.\\
+    \textbf{How we bent it:} propositional SAT over hardware bit-vectors. We run SMT over integer/real program variables and upgrade the logic engine; base/step structure is adopted verbatim, then mapped onto our init- and consecution-obligation checks.
+  \item \textbf{Bradley VMCAI 2011 (IC3):} frame predicates \(F_0\supseteq F_1\supseteq\ldots\) over-approximating reachable sets; blocking cubes until \(F_i=F_{i+1}\).\\
+    \textbf{How we bent it:} Boolean SAT over hardware registers. We map ``cube'' to a conjunction of LIA predicates over RISE state, replace SAT-based cube generalisation with Z3 model-based quantifier instantiation, and accept IC3 as a heuristic (SAT completeness argument does not transfer to LIA).
+  \item \textbf{Een, Mishchenko \& Brayton FMCAD 2011 (PDR):} industrial IC3 with ternary-simulation generalisation; gives UNSAT clause-sequence certificate.\\
+    \textbf{How we bent it:} ternary simulation is hardware-specific. We replace it with SMT-driven predicate weakening. We \emph{do} retain PDR's proof-artifact extraction: the inductive clause sequence is serialised into the SARIF barrier-proof object.
+  \item \textbf{Gurfinkel et al.\ CAV 2015 (SeaHorn/CHC):} software safety as CHC satisfiability over LLVM IR; head predicates = post-states, bodies = transitions.\\
+    \textbf{How we bent it:} SeaHorn's CHC bodies are built from LLVM IR (C semantics with malloc/pointer). We re-encode for Python's RISE IR. Python dynamic dispatch requires per-callsite CHC heads rather than per-function, demanding a new CHC encoding layer that SeaHorn does not need.
+  \item RISE point: IC3/PDR/CHC handle consecution when polynomial templates fail; they are the fallback tier.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=66]{12f. Template refinement: CEGAR and interpolants (papers 13--16)}
+\syncline{Slide 12f}{~4 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{BSP cluster role:} Failed obligation counterexample = proof the current monomial basis cannot represent the fence; these papers extract the minimal new term needed to patch it.
+  \item \textbf{Clarke, Grumberg, Jha, Lu \& Veith CAV 2000 (CEGAR):} abstract \(\rightarrow\) counterexample \(\rightarrow\) check concrete \(\rightarrow\) if spurious, refine. Classic termination argument via finite refinement steps.\\
+    \textbf{How we bent it:} original ``abstraction'' is a boolean program; ours is the polynomial template degree and monomial basis. ``Refinement'' adds new monomials from the spurious trace path conditions instead of new boolean predicates.
+  \item \textbf{Ball, Majumdar, Millstein \& Rajamani PLDI 2001 (SLAM):} CEGAR at Windows-driver scale; predicates from the counterexample trace seed the boolean abstraction.\\
+    \textbf{How we bent it:} SLAM's predicate engine is tightly coupled to C boolean abstraction. We inherit only the \emph{architectural} lesson (automated refinement at scale) and substitute a polynomial monomial selector for SLAM's boolean predicate engine.
+  \item \textbf{McMillan CAV 2003 (Craig interpolants):} UNSAT proof \(\Rightarrow\) interpolant formula implied by prefix, contradicting suffix. Strongest new predicate for refinement.\\
+    \textbf{How we bent it:} original extracts propositional/linear interpolants for boolean abstraction. We apply SMT interpolation over non-linear arithmetic; the resulting formula is mapped to new monomial \emph{terms} in the polynomial template basis rather than boolean predicates.
+  \item \textbf{Henzinger, Jhala, Majumdar \& Suresh POPL 2004 (lazy abstraction / BLAST):} refine only the failing subtree of the abstract reachability tree.\\
+    \textbf{How we bent it:} ``subtree'' in BLAST is a CFG node set in boolean predicate abstraction. In our portfolio, it is the monomial support region of \(B\) around the failing obligation check; we localise the SDP re-solve to that variable sub-cluster, not the whole function.
+  \item RISE point: these four papers together answer ``how do we improve the template without manual work?''
+\end{itemize}
+\end{frame}
+
+\begin{frame}[shrink=73]{12g. Template synthesis and witness grounding (papers 17--20)}
+\syncline{Slide 12g}{~4 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{BSP cluster role:} SOS says what \emph{shape} \(B\) must have; these papers find the concrete \(c_\alpha\) values and confirm the certificate faithfully reflects the real program. Closes the loop from Stengle (``a fence exists'') to ``we have the right fence for this specific bug site.''
+  \item \textbf{Flanagan \& Leino FME 2001 (Houdini):} optimistically conjoin all candidate invariant clauses; drop those falsified by counterexample; iterate to stable fixpoint.\\
+    \textbf{How we bent it:} Houdini proposes boolean invariant \emph{annotations} for ESC/Java method contracts. We generate polynomial \emph{coefficient} candidates instead; the pruning oracle is the three-obligation SMT check rather than an annotation type-checker.
+  \item \textbf{Garg, L\"oding, Madhusudan \& Neider CAV 2014 (ICE):} learn invariants from positive / negative / implication examples; learner returns a classifier consistent with all three.\\
+    \textbf{How we bent it:} ICE targets general first-order invariants with an unrestricted hypothesis class. We restrict to polynomials of bounded degree; the learner returns \(c_\alpha\) coefficient vectors rather than arbitrary formulas; concrete Python execution traces are the example source.
+  \item \textbf{Alur, Bodik, Juniwal et al.\ FMCAD 2013 (SyGuS):} grammar-bounded synthesis with an SMT oracle; grammar constrains the candidate space, oracle checks correctness.\\
+    \textbf{How we bent it:} SyGuS is entirely generic (bit manipulation, strings, etc.). We instantiate with a monomial grammar and supply all three BSP obligations as the multi-property SMT oracle, converting a general framework into a targeted certificate search.
+  \item \textbf{Godefroid, Klarlund \& Sen PLDI 2005 (DART/concolic):} concrete+symbolic execution to maximise coverage and find assertion violations.\\
+    \textbf{How we bent it:} DART's goal is \emph{falsification}. We \emph{invert} the objective: drive concolic runs toward certificate violations to \emph{confirm} \(B\ge0\) on all explored paths and \(B\le-\epsilon\) at real unsafe inputs, turning a bug-finder into a certificate validator.
+  \item RISE summary: papers 17--20 close the loop. SOS = \emph{what shape}; Houdini/ICE/SyGuS = \emph{which coefficients}; concolic = \emph{is the certificate faithful?}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{13. RISE detail: solver outcomes and pruning policy}
+\syncline{Slide 13}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \(\text{UNSAT}(\Phi\wedge U_t)\): eliminate with proof artifact.
+  \item \(\text{SAT}(\Phi\wedge U_t)\): retain and possibly witness-seed.
+  \item \(\text{UNKNOWN}/\text{timeout}\): retain conservatively; escalate stage.
+  \item This policy is central to soundness posture under practical solver limits.
+  \item If asked: yes, this can preserve extra noise; that is the deliberate safety tradeoff.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{14. Contracts for unknown/library calls}
+\syncline{Slide 14}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Pure determinism for unknown calls is unsound; pure nondeterminism is too noisy.
+  \item Middle ground: conservative contracts with widening and fallback assumptions.
+  \item Contract precision is a first-order determinant of FP/TP balance.
+  \item Concolic checks can confirm some SAT survivors when contracts are loose.
+  \item State clearly: this is an explicit assumption interface, not hidden magic.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{15. CEGAR-style refinement}
+\syncline{Slide 15}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Coarse abstraction first for tractable throughput.
+  \item Spurious survivors trigger targeted refinement of predicates/contracts/context.
+  \item Re-check obligations after refinement, not ad-hoc confidence tweaking.
+  \item This is how precision improves without globally exploding compute.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{16. DSE/concolic as witness stage}
+\syncline{Slide 16}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Concolic runs ground symbolic possibilities into executable witnesses when feasible.
+  \item Witness presence increases actionability confidence for true positives.
+  \item Witness absence is not a safety proof; bounded search limits apply.
+  \item Keep hierarchy explicit: proof artifacts dominate confidence artifacts.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{17. Agentic-second triage}
+\syncline{Slide 17}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Triage inspects source ranges, guards, callers, imports, tests, and nearby patterns.
+  \item It classifies only survivors that static stage could not prove/disprove within budget.
+  \item Emphasize governance: triage does not invalidate proven UNSAT eliminations.
+  \item Better formal evidence upstream usually improves triage quality downstream.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{18. CI ratchet: not a firehose}
+\syncline{Slide 18}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Baseline historical findings once; block new unaccepted risk in CI.
+  \item Auto-prune resolved findings for monotonic quality movement.
+  \item This process model is often the difference between adoption and abandonment.
+  \item Phrase: ``ratchet turns infinite backlog into finite branch policy.''
+\end{itemize}
+\end{frame}
+
+\begin{frame}{19. Soundness envelope and limits}
+\syncline{Slide 19}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Dynamic Python features and reflective behavior bound static completeness.
+  \item Unknown external behavior remains contract-limited.
+  \item Resource budgets impose incompleteness on hardest nonlinear/interprocedural cases.
+  \item Strong claim to make: assumptions are explicit and failure modes are observable.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{20. What RISE reviewers usually ask}
+\syncline{Slide 20}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{State encoding:} what is concrete vs symbolic?
+  \item \textbf{Solver policy:} how are UNKNOWN and timeout treated?
+  \item \textbf{Contracts:} where do unknown-call assumptions live and how are they audited?
+  \item \textbf{Refinement:} what triggers CEGAR and when do you stop?
+  \item \textbf{Artifact chain:} can every elimination be explained post-hoc?
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{21. Operational run modes}
+\syncline{Slide 21}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Quick demo mode: \texttt{a3 scan . --triage}
+  \item Explicit CI mode: \texttt{a3 scan . --output-sarif results.sarif}, then \texttt{a3 triage --sarif results.sarif --agentic}
+  \item Keep stage separation for debugging, traceability, and policy governance.
+  \item For reproducibility in CI, pin model/provider and archive SARIF artifacts.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{22. Close + Q\&A}
+\syncline{Slide 22}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Re-state three claims: static-first trust, conservative escalation, ratchet adoption.
+  \item Invite RISE discussion on soundness envelope, obligation encoding, and portfolio scheduling.
+  \item Suggested starting point in practice: run static stage with SARIF evidence and baseline ratchet before enabling triage.
+  \item Future work line: stronger contracts and richer nonlinear invariant synthesis under strict budgets.
+\end{itemize}
+\end{frame}
+
+\end{document}

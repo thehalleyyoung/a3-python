@@ -199,6 +199,13 @@ class SymbolicMachineState:
     resource_leak_detected: bool = False
     iterator_invalidation_reached: bool = False
     
+    # Track exception fork nesting depth to prevent cascading exception forks.
+    # Incremented each time an exception path is forked from a CALL contract.
+    # When this exceeds MAX_EXCEPTION_FORK_DEPTH, no more exception forks are
+    # created (the success path still runs).  This prevents exponential path
+    # explosion from handler bodies that make more CALL instructions.
+    exception_fork_depth: int = 0
+    
     # ========================================================================
     # INTRAPROCEDURAL ANALYSIS INTEGRATION
     # Guard tracking per barrier-certificate-theory.tex §7
@@ -526,40 +533,68 @@ class SymbolicVM:
         r = self.solver.check()
         return r == z3.sat or r == z3.unknown
     
+    @staticmethod
+    def make_default_builtins():
+        """Return (builtins_dict, func_names_dict) populated with Python builtins."""
+        builtins = {}
+        # Exception types (hash-based IDs for CHECK_EXC_MATCH)
+        exception_types_list = [
+            'AssertionError', 'ZeroDivisionError', 'TypeError', 'ValueError',
+            'IndexError', 'KeyError', 'AttributeError', 'NameError',
+            'RuntimeError', 'RecursionError', 'FileNotFoundError', 'PermissionError',
+            'IsADirectoryError', 'OSError', 'IOError', 'ImportError', 'ModuleNotFoundError',
+            'StopIteration', 'StopAsyncIteration', 'GeneratorExit', 'NotImplementedError',
+            'BaseException', 'Exception', 'SystemExit', 'UnboundLocalError',
+            'OverflowError', 'ArithmeticError', 'LookupError', 'UnicodeError',
+            'UnicodeDecodeError', 'UnicodeEncodeError', 'ConnectionError',
+            'TimeoutError', 'EOFError', 'MemoryError',
+        ]
+        for exc_name in exception_types_list:
+            exc_id = -1000 - abs(hash(exc_name)) % 10000
+            exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(exc_id))
+            exc_val._exception_type = exc_name
+            builtins[exc_name] = exc_val
+
+        # Builtin functions
+        builtin_funcs = [
+            # Core type constructors
+            'int', 'float', 'complex', 'bool', 'str', 'bytes', 'bytearray',
+            'list', 'tuple', 'dict', 'set', 'frozenset', 'object',
+            'type', 'slice', 'memoryview',
+            # Numeric / math helpers
+            'abs', 'round', 'pow', 'divmod', 'sum', 'max', 'min',
+            # Sequence / iteration helpers
+            'len', 'range', 'enumerate', 'zip', 'map', 'filter',
+            'sorted', 'reversed', 'iter', 'next', 'all', 'any',
+            # String / repr helpers
+            'repr', 'ascii', 'chr', 'ord', 'hex', 'oct', 'bin', 'format',
+            'hash', 'id',
+            # Attribute / object helpers
+            'getattr', 'setattr', 'delattr', 'hasattr', 'callable',
+            'isinstance', 'issubclass', 'super', 'property',
+            'staticmethod', 'classmethod',
+            # I/O and misc
+            'print', 'input', 'open',
+            'globals', 'locals', 'vars', 'dir',
+            'exec', 'eval', 'compile', 'breakpoint', '__import__',
+        ]
+        func_names = {}
+        for func_name in builtin_funcs:
+            stable_id = -200 - len(builtins)
+            func_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(stable_id))
+            builtins[func_name] = func_val
+            func_names[stable_id] = func_name
+            func_names[id(func_val)] = func_name
+
+        return builtins, func_names
+
     def load_code(self, code: types.CodeType) -> SymbolicPath:
         """
         Initialize symbolic execution with a code object.
         
         Returns initial symbolic path.
         """
-        # Initialize builtins with common exception types as symbolic values
-        # IMPORTANT: Use consistent IDs based on exception name hash for CHECK_EXC_MATCH to work
-        builtins = {}
-        exception_types_list = ['AssertionError', 'ZeroDivisionError', 'TypeError', 'ValueError',
-                         'IndexError', 'KeyError', 'AttributeError', 'NameError',
-                         'RuntimeError', 'RecursionError', 'FileNotFoundError', 'PermissionError',
-                         'IsADirectoryError', 'OSError', 'IOError', 'ImportError', 'ModuleNotFoundError',
-                         'StopIteration', 'StopAsyncIteration', 'GeneratorExit', 'NotImplementedError',
-                         'BaseException', 'Exception', 'SystemExit']
-        for exc_name in exception_types_list:
-            # Use hash-based ID so same exception name always gets same ID
-            exc_id = -1000 - abs(hash(exc_name)) % 10000
-            exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(exc_id))
-            exc_val._exception_type = exc_name
-            builtins[exc_name] = exc_val
-        
-        # Add builtin functions as symbolic references
-        # We'll look up their contracts when they're called
-        builtin_funcs = ['len', 'abs', 'int', 'str', 'max', 'min', 'sum',
-                        'isinstance', 'issubclass', 'range', 'list', 'dict',
-                        'tuple', 'set', 'bool', 'float', 'type', 'print', 'globals', 'locals',
-                        'chr', 'setattr', 'open']
-        func_names = {}
-        for func_name in builtin_funcs:
-            # Create a symbolic function object
-            func_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-200 - len(builtins)))
-            builtins[func_name] = func_val
-            func_names[id(func_val)] = func_name
+        builtins, func_names = self.make_default_builtins()
         
         # Initialize heap early for string allocation
         heap = SymbolicHeap()
@@ -714,38 +749,41 @@ class SymbolicVM:
         exception_before = state.exception  # None, or the exception type string
         had_exception_before = exception_before is not None
         
-        # ITERATION 414: Fix infinite loop when exception persists
-        # If there's already an unhandled exception, don't try to execute more instructions
+        # If there's already an unhandled exception, dispatch to handler.
+        # Following the CPython 3.11 model: unwind stack, push exception value
+        # onto stack, clear state.exception, jump to handler.  This allows
+        # PUSH_EXC_INFO to read the exception from the stack, and subsequent
+        # handler body instructions execute with a clean exception state.
         if had_exception_before:
-            # If a catch guard is established for this exception, we're inside
-            # the handler body — continue executing normally.
-            if hasattr(state, 'has_catch_guard') and state.has_catch_guard(state.exception):
-                pass  # Inside handler body, continue executing
+            # Look for exception handler (any depth)
+            handler_info = self._get_exception_handler_info(code, instruction.offset, any_depth=True)
+            if handler_info is not None:
+                handler_offset, handler_depth, handler_lasti = handler_info
+                # Unwind operand stack to the specified depth
+                if len(frame.operand_stack) > handler_depth:
+                    frame.operand_stack = frame.operand_stack[:handler_depth]
+                if handler_lasti:
+                    frame.operand_stack.append(
+                        SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
+                    )
+                # Push exception value onto stack (CPython model)
+                exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
+                exc_val._exception_type = state.exception
+                frame.operand_stack.append(exc_val)
+                # Establish catch guard and clear state.exception
+                state.set_guard("catch", state.exception)
+                state.exception = None
+                # Jump to exception handler
+                frame.instruction_offset = handler_offset
+                path.trace.append(f"  -> EXCEPTION {exception_before}, jumping to handler at {handler_offset}")
+                # Update tracking
+                exception_before = None
+                had_exception_before = False
             else:
-                # Look for exception handler (any depth)
-                handler_info = self._get_exception_handler_info(code, instruction.offset, any_depth=True)
-                if handler_info is not None:
-                    handler_offset, handler_depth, handler_lasti = handler_info
-                    # Unwind operand stack to the specified depth
-                    if len(frame.operand_stack) > handler_depth:
-                        frame.operand_stack = frame.operand_stack[:handler_depth]
-                    if handler_lasti:
-                        frame.operand_stack.append(
-                            SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
-                        )
-                    # Jump to exception handler
-                    frame.instruction_offset = handler_offset
-                    path.trace.append(f"  -> EXCEPTION {state.exception}, jumping to handler at {handler_offset}")
-                    # Establish g_catch guard for this exception type
-                    state.set_guard("catch", state.exception)
-                    # Update tracking so we can detect new exceptions after handler
-                    exception_before = state.exception
-                    had_exception_before = False
-                else:
-                    # No handler found - this path is done, halt to prevent infinite loop
-                    state.halted = True
-                    path.trace.append(f"  -> UNHANDLED EXCEPTION: {state.exception} (halting)")
-                    return [path]
+                # No handler found - this path is done, halt to prevent infinite loop
+                state.halted = True
+                path.trace.append(f"  -> UNHANDLED EXCEPTION: {state.exception} (halting)")
+                return [path]
         
         try:
             # ================================================================
@@ -862,6 +900,36 @@ class SymbolicVM:
             self._track_guard_patterns(state, frame, instruction)
             
             # ================================================================
+            # SPECULATIVE CATCH GUARD: If a new exception was raised by this
+            # instruction AND a handler exists for it, pre-set the catch guard.
+            # This prevents the analyzer's per-step bug check from flagging
+            # caught exceptions as bugs before the handler dispatch runs
+            # (which normally happens at the start of the NEXT step).
+            # Also check parent frames (caller's try/except) for interprocedural
+            # exception handling (e.g., callee raises, caller catches).
+            # ================================================================
+            exception_is_new = (state.exception is not None and not had_exception_before)
+            exception_changed = (state.exception is not None and had_exception_before
+                                 and state.exception != exception_before)
+            if exception_is_new or exception_changed:
+                found_handler = False
+                # Check current frame first
+                handler_info = self._get_exception_handler_info(frame.code, instruction.offset)
+                if handler_info is not None:
+                    found_handler = True
+                else:
+                    # Check parent frames (caller's try/except)
+                    for parent_frame in reversed(state.frame_stack[:-1]):
+                        parent_handler = self._get_exception_handler_info(
+                            parent_frame.code, parent_frame.instruction_offset
+                        )
+                        if parent_handler is not None:
+                            found_handler = True
+                            break
+                if found_handler:
+                    state.set_guard("catch", state.exception)
+            
+            # ================================================================
             # RELATIONAL CASE PATH FORKING: Handle nondeterministic contracts
             # ================================================================
             if hasattr(state, 'fork_relational_cases') and state.fork_relational_cases:
@@ -947,6 +1015,7 @@ class SymbolicVM:
             # ================================================================
             # EXCEPTION PATH FORKING: Handle may_raise from contracts
             # ================================================================
+            MAX_EXCEPTION_FORK_DEPTH = 1  # Allow at most 1 level of exception forking
             if hasattr(state, 'fork_exception_types') and state.fork_exception_types:
                 # Capture fork info BEFORE clearing (needed for trace messages)
                 fork_func_name = getattr(state, 'fork_function_name', 'unknown')
@@ -960,6 +1029,12 @@ class SymbolicVM:
                 if hasattr(state, 'fork_case_name'):
                     del state.fork_case_name
                 
+                # Skip exception forking if we're already too deep in exception paths
+                if state.exception_fork_depth >= MAX_EXCEPTION_FORK_DEPTH:
+                    # Don't create more exception forks — just continue on
+                    # the success path to avoid exponential path explosion
+                    return [path]
+                
                 # Create forked paths for each exception type
                 exception_paths = []
                 for exc_type in fork_exc_types:
@@ -970,6 +1045,7 @@ class SymbolicVM:
                     import copy
                     exc_state = copy.deepcopy(state)
                     exc_state.exception = exc_type
+                    exc_state.exception_fork_depth += 1  # Track nesting depth
                     
                     # Mark specific bug types
                     if exc_type == "ValueError":
@@ -995,9 +1071,14 @@ class SymbolicVM:
                             exc_frame.operand_stack.append(
                                 SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
                             )
-                        # Jump to exception handler and establish catch guard
+                        # Push exception value onto stack (CPython model)
+                        exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
+                        exc_val._exception_type = exc_type
+                        exc_frame.operand_stack.append(exc_val)
+                        # Jump to exception handler, set catch guard, clear exception
                         exc_frame.instruction_offset = handler_offset
                         exc_state.set_guard("catch", exc_type)
+                        exc_state.exception = None  # Exception is on the stack now
                         fork_desc = f"  -> FORK: {exc_type} from {fork_func_name} (handled at {handler_offset}, stack depth {handler_depth})"
                     else:
                         fork_desc = f"  -> FORK: {exc_type} from {fork_func_name} (unhandled)"
@@ -1068,11 +1149,26 @@ class SymbolicVM:
                         frame.operand_stack.append(
                             SymbolicValue(ValueTag.INT, z3.IntVal(instruction.offset))
                         )
+                    # Push exception value onto stack (CPython model)
+                    exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
+                    exc_val._exception_type = state.exception
+                    frame.operand_stack.append(exc_val)
                     # Jump to exception handler
                     frame.instruction_offset = handler_offset
                     path.trace.append(f"  -> EXCEPTION {state.exception}, jumping to handler at {handler_offset} (stack depth {handler_depth})")
-                    # Establish g_catch guard for this exception type
-                    state.set_guard("catch", state.exception)
+                    # Set catch guard only on the PRIMARY execution path
+                    # (exception_fork_depth == 0).  On exception fork paths
+                    # (already inside a handler body), secondary exceptions
+                    # are real bugs that should NOT be suppressed.
+                    # Example: DIV_ZERO/tn_03 — primary path, ZeroDivisionError
+                    #   caught by except clause → set catch guard → SAFE ✓
+                    # Example: UNINIT_MEMORY/tp_04 — exception fork path,
+                    #   UnboundLocalError in ValueError handler → no catch
+                    #   guard → detected as BUG ✓
+                    if state.exception_fork_depth == 0:
+                        state.set_guard("catch", state.exception)
+                    # Clear state.exception — it's now on the stack
+                    state.exception = None
                 else:
                     # No handler, exception propagates
                     # Mark this as unhandled and halt execution
@@ -6100,20 +6196,29 @@ class SymbolicVM:
                 state.exception = "InfeasiblePath"
         
         elif opname == "PUSH_EXC_INFO":
-            # Python 3.11+: PUSH_EXC_INFO pushes (prev_exc, new_exc)
-            # prev_exc is the previous exception (None if none), new_exc is the current one
-            if state.exception:
-                # Create the exception value with proper type info
+            # Python 3.11+: PUSH_EXC_INFO
+            # CPython model: TOS has exception value (pushed by handler dispatch).
+            # PUSH_EXC_INFO saves prev_exc_info, then stack becomes:
+            #   [prev_exc, exc_val]
+            # where exc_val was already on TOS.
+            #
+            # Our handler dispatch pushes exc_val to TOS and clears
+            # state.exception.  PUSH_EXC_INFO inserts prev_exc below TOS.
+            if frame.operand_stack:
+                exc_val = frame.operand_stack[-1]  # exc already on TOS
+                prev_exc = SymbolicValue.none()
+                frame.operand_stack.insert(len(frame.operand_stack) - 1, prev_exc)
+            elif state.exception:
+                # Fallback: if no exc on stack but state.exception set
+                # (legacy path — shouldn't happen with new dispatch model)
                 if state.exception in frame.builtins:
                     exc_val = frame.builtins[state.exception]
                 else:
                     exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
                     exc_val._exception_type = state.exception
-                
-                # Push prev_exc (simplified as None) and current exception
                 prev_exc = SymbolicValue.none()
-                frame.operand_stack.append(prev_exc)   # prev_exc
-                frame.operand_stack.append(exc_val)     # current exc
+                frame.operand_stack.append(prev_exc)
+                frame.operand_stack.append(exc_val)
             frame.instruction_offset = self._next_offset(frame, instr)
         
         elif opname == "CHECK_EXC_MATCH":
@@ -6153,21 +6258,24 @@ class SymbolicVM:
             frame.instruction_offset = self._next_offset(frame, instr)
         
         elif opname == "RERAISE":
-            # Re-raise the current exception
-            # argval indicates how many values to pop before re-raising
-            nargs = instr.argval
-            for _ in range(nargs):
-                if frame.operand_stack:
-                    frame.operand_stack.pop()
+            # Re-raise the current exception (CPython 3.11 model).
+            # RERAISE always pops ONE item from TOS — the exception value.
+            # The oparg controls lasti peeking (for exception groups), but
+            # does not affect the number of items popped.
             
-            # Exception should already be set in state
-            # If not, this is an error
-            if not state.exception:
-                state.exception = "RuntimeError"  # RERAISE with no active exception
+            # Pop exception value from TOS
+            exc_val = None
+            if frame.operand_stack:
+                exc_val = frame.operand_stack.pop()
             
-            # RERAISE acts like raising an exception — dispatch to handler
-            # in the exception table.  Without this, the path gets stuck at
-            # the RERAISE offset in an infinite loop.
+            # Recover exception type from the popped value
+            if exc_val and hasattr(exc_val, '_exception_type') and exc_val._exception_type:
+                state.exception = exc_val._exception_type
+            elif not state.exception:
+                # No exception type available — use RuntimeError as fallback
+                state.exception = "RuntimeError"
+            
+            # Dispatch to exception handler in the exception table
             handler_info = self._get_exception_handler_info(
                 frame.code, instr.offset, any_depth=True
             )
@@ -6180,14 +6288,17 @@ class SymbolicVM:
                     frame.operand_stack.append(
                         SymbolicValue(ValueTag.INT, z3.IntVal(instr.offset))
                     )
+                # Push exception value onto stack (CPython model)
+                re_exc_val = SymbolicValue(ValueTag.OBJ, z3.IntVal(-2))
+                re_exc_val._exception_type = state.exception
+                frame.operand_stack.append(re_exc_val)
+                # Clear state.exception (now on stack) and jump
+                state.exception = None
                 frame.instruction_offset = handler_offset
-                # Do NOT set catch guard here — RERAISE means the current
-                # handler did NOT handle the exception.  The outer handler
-                # (e.g., finally clause / bare except) will decide.
             else:
-                # No handler in this frame — don't advance instruction pointer.
-                # The path will be terminated by explore_bounded or the caller
-                # will pop the frame.
+                # No handler in this frame — leave state.exception set.
+                # Don't advance instruction pointer — explore_bounded or
+                # the caller frame will handle the propagation.
                 pass
         
         elif opname == "NOP":

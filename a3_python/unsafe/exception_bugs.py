@@ -614,6 +614,10 @@ def is_unsafe_exception(state, exception_type: ExceptionBugType) -> bool:
     if exc == "InfeasiblePath":
         return False
     
+    # Internal VM errors — not real Python exceptions
+    if exc in ("StackUnderflow", "StackOverflow_internal"):
+        return False
+    
     # Check if exception is caught by a handler (catch guard)
     # If g_catch(exception_type) is established, the exception is handled
     if hasattr(state, 'has_catch_guard') and state.has_catch_guard(exc):

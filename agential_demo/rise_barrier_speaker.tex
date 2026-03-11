@@ -1,0 +1,639 @@
+% =============================================================================
+%  RISE Talk: Connecting the Dots — Barrier Synthesis for Python
+%  SPEAKER DECK (detailed notes, synced slide-for-slide with presenter deck)
+% =============================================================================
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true, frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false,
+}
+
+\title{Connecting the Dots}
+\subtitle{Speaker Notes — RISE Deep Dive}
+\author{}
+\date{RISE}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\newcommand{\syncline}[2]{\textbf{#1} \hfill \textcolor{gray}{#2}}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 0 — The Question (Voevodsky + Bjorner)
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{The Prompt That Started Everything}
+\syncline{Presenter slide 0}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Open with the literal origin story. This was not a clever retrospective framing --- it was the \emph{actual prompt} typed into ChatGPT at the start of this project.
+  \item Read the prompt aloud verbatim: ``Produce mathematics at the level of Vladimir Voevodsky, Fields Medal-winning, foundation-shaking work but directed toward something the legendary Nikolaj Bj\o rner (co-creator of Z3) could actually use?''
+  \item \textbf{Voevodsky} context (one sentence): Fields Medal 2002, inventor of Univalent Foundations / homotopy type theory --- the kind of mathematics that rewrites the foundations of all of mathematics.
+  \item \textbf{Bj\o rner} context (one sentence): principal architect of Z3, the world's most widely used SMT solver, a tool that \emph{actually runs} in production at Microsoft, Amazon, and every major verification team.
+  \item The ask was intentionally absurd: foundations-of-math caliber rigor, practical solver-level utility. We expected slop.
+  \item Pause here. Say: ``The AI generated dozens of ideas. Most were slop. One thread survived.''
+  \item That surviving thread is what this talk is about: Hilbert (1900) $\to$ Stengle (1974) $\to$ Parrilo (2000) $\to$ Prajna (2004) $\to$ our system.
+  \item Key rhetorical beat: ``We didn't plan this lineage. An AI traced it for us. Then we spent two years turning the trace into a working system.''
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 1 — Five Random Dots
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Five ``Random'' Dots}
+\syncline{Presenter slide 1}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Open with the intellectual punchline: this project connects 126 years of seemingly unrelated math. Hilbert (1900), Stengle (1974), Parrilo (2000), Prajna (2004), and then 20 verification techniques we ``stole.''
+  \item Frame the talk as an origin story: how did a Python bug finder end up rooted in Hilbert's 17th Problem?
+  \item Key phrase: ``Each of these dots was a different field. Pure math, real algebraic geometry, control theory, formal verification. Nobody planned this thread.''
+  \item Set the audience expectation: we'll walk through each dot, then show how the barrier obligations turned a paper zoo into a coherent portfolio, and then show contracts (PyTorch) composing with the framework.
+  \item If challenged on novelty: the novelty is not in any single paper --- it's in the \textbf{integration discipline} that bent 20 methods into three obligations over Python bytecode.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 2 — Hilbert's 17th Problem
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Dot 1: Hilbert's 17th Problem (1900)}
+\syncline{Presenter slide 2}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Start historically. 1900, International Congress of Mathematicians. Hilbert poses 23 problems. Problem 17: is every non-negative polynomial a sum of squares of rational functions?
+  \item Answered YES by Artin in 1927. The answer is constructive: if $p(x) \ge 0$ for all $x$, then $p$ can be written as $\sum (q_i/r_i)^2$.
+  \item This is \textbf{pure} mathematics. No one is thinking about programs, robots, or software verification.
+  \item But the implication is enormous: \textbf{non-negativity has a finite algebraic certificate}. If something is always positive, you can \emph{prove} it with algebra.
+  \item This is the seed of everything we do. When we later want to prove ``this program variable is never zero at this division,'' we are implicitly asking Hilbert's question about a polynomial encoding of the program state.
+  \item Anecdote: Hilbert thought this would be a quick problem. It took 27 years to prove and 100+ years to become computationally useful.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 3 — Stengle
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Dot 2: Stengle's Positivstellensatz (1974)}
+\syncline{Presenter slide 3}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item 74 years after Hilbert, Stengle generalizes to \textbf{semialgebraic sets}: regions defined by polynomial inequalities ($\ge$, $=$, $\le$).
+  \item The Positivstellensatz says: if a system of polynomial inequalities has no solution, there is a finite algebraic identity (a ``certificate'') proving infeasibility.
+  \item In our language: if the set $\{x : g_1(x) \ge 0, \ldots, g_m(x) \ge 0\}$ is empty, there exist polynomials $s_i, t_j$ such that a specific algebraic identity shows the emptiness.
+  \item This is the \textbf{existence guarantee} for barrier certificates. If safe states and unsafe states don't overlap, a polynomial fence $B$ separating them \emph{must exist} (under mild conditions).
+  \item Still no programs, still no computers. Stengle is doing real algebraic geometry.
+  \item Key phrase for RISE: ``Stengle tells us that if the bug is genuinely unreachable, we are \emph{guaranteed} a proof exists. The question becomes: can we \emph{find} it?''
+  \item How we bent it: we map Python program state variables to the polynomial ring. Guard conditions like \texttt{if x > 0} and error conditions like \texttt{den == 0} become the semialgebraic sets $S_0$ and $U$. Stengle's theorem applies over these mapped sets.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 4 — Parrilo / SOS / Control Theory
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Dot 3: Parrilo's SOS Programming (2000)}
+\syncline{Presenter slide 4}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item This is the jump into \textbf{control theory}. Pablo Parrilo's PhD thesis at Caltech.
+  \item Stengle says a certificate exists. But how do you \emph{find} it? That's an infinite-dimensional search.
+  \item Parrilo's insight: restrict to \textbf{sum-of-squares} (SOS) polynomials. A polynomial $p(x) = \sum q_i(x)^2$ is automatically non-negative. Checking if $p$ has an SOS decomposition is equivalent to checking if a \textbf{Gram matrix} is positive semidefinite --- which is a semidefinite program (SDP).
+  \item SDPs have polynomial-time interior-point algorithms. Suddenly, the existential question (``does a certificate exist?'') becomes an optimization problem (``solve this SDP for the coefficients'').
+  \item Parrilo's domain was Lyapunov stability for ODEs: prove that a dynamical system (robot, circuit, aircraft) stays in a safe region. The SOS machinery computes Lyapunov functions.
+  \item How we bent it: Parrilo's state space is continuous ODE states ($\dot{x} = f(x)$). We substitute with Python's symbolic machine state $\sigma = (pc, \rho, h, \tau, \kappa, e, \Phi)$. The SDP solver doesn't care what the variables \emph{mean} --- it just solves for coefficients.
+  \item Key phrase: ``Hilbert's 1900 question became a tractable optimization problem in 2000.''
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 5 — Prajna / Barrier Certificates
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Dot 4: Prajna's Barrier Certificates (HSCC 2004)}
+\syncline{Presenter slide 5}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item This is the jump from \textbf{control theory to verification}. Prajna and Jadbabaie, HSCC 2004.
+  \item Lyapunov functions prove \emph{stability} (system converges to an equilibrium). Barrier functions prove \emph{safety} (system never enters a bad region). Different question, same SOS machinery.
+  \item Prajna wrote down three explicit obligations that a barrier function $B$ must satisfy:
+  \begin{enumerate}
+    \item \textbf{Init:} $\forall s \in S_0: B(s) \ge \epsilon$ (barrier is positive at start)
+    \item \textbf{Consecution:} $B(s) \ge 0 \Rightarrow B(s') \ge 0$ (barrier stays non-negative along transitions)
+    \item \textbf{Separation:} $\forall s \in U: B(s) \le -\epsilon$ (barrier is negative on unsafe states)
+  \end{enumerate}
+  \item If all three hold, no execution path can cross from $S_0$ to $U$. The unsafe states are provably unreachable.
+  \item This is \emph{the} paradigm we use. Every other paper in the portfolio is a specialized solver for one or more of these obligations.
+  \item How we bent it: Prajna uses Lie-derivative consecution ($\dot{B} \ge 0$ along the ODE flow). We replace this with symbolic one-step consecution: $B(\sigma') \ge 0$ under the discrete transition relation $T$ derived from Python bytecode semantics.
+  \item Key insight for RISE: the three obligations are not just a proof structure --- they are an \textbf{API}. Any method that can discharge one obligation is composable with any method that discharges another.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 6 — The Theft
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Dot 5: The 20 Techniques We Stole}
+\syncline{Presenter slide 6}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item With the barrier interface in hand, every verification technique becomes a specialized subsolver.
+  \item SOS/SDP solves init and separation. IC3/PDR solves consecution. CEGAR refines the template when it fails. Houdini proposes coefficient candidates. Concolic confirms with real executions.
+  \item The framework isn't ``use everything and hope.'' It's structured decomposition: each method either \textbf{validates} an obligation, \textbf{refutes} a candidate, or \textbf{narrows the template space}.
+  \item Failure is informative: if SOS can't certify separation, that tells you the unsafe boundary is outside polynomial reach for the current variable basis. That failure is a routing signal, not a dead end.
+  \item Transition to the next slides: ``Now let me show you the connection from Hilbert to Python in one picture, then we'll dig into why this matters practically.''
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 7 — Connecting the Dots
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Connecting the Dots}
+\syncline{Presenter slide 7}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the visual: 1900 (pure math) $\to$ 1974 (certificates) $\to$ 2000 (computable via SOS) $\to$ 2004 (verification API) $\to$ 2024--2026 (Python portfolio).
+  \item Each transition looked unreasonable at the time. Hilbert $\to$ Stengle took 74 years. Stengle $\to$ Parrilo required a new field (SDP optimization). Parrilo $\to$ Prajna required reinterpreting stability as safety. Prajna $\to$ us required replacing ODE dynamics with Python bytecode transitions.
+  \item The punchline: ``126 years of seemingly unrelated work. Each dot was a different field. Together they form a complete Python bug-finding pipeline.''
+  \item RISE-specific: stress that this is not revisionist history. We did not plan this thread. The AI generated candidate ideas, and the surviving ones turned out to trace this lineage. The connection was discovered, not designed.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 8 — Why a New Theoretical Basis?
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Why a New Theoretical Basis?}
+\syncline{Presenter slide 8}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Anticipate the obvious question: ``Existing verification methods work. Abstract interpretation, model checking, SMT solving --- why not just use them?''
+  \item Answer: each works well \textbf{in isolation}. The problem is \textbf{composition}. Abstract interpretation has no standard API for combining with IC3. SMT solving produces models but not structured proof artifacts. Model checking hits state explosion on numeric programs.
+  \item What barrier theory adds is \textbf{not one more method}. It's the \textbf{interface} that lets all methods cooperate.
+  \item Three obligations = three questions. Any method that answers one of those questions is composable with any method that answers another. This is why we can have SOS handling separation, IC3 handling consecution, and CEGAR handling refinement, all working on the \emph{same} certificate $B$.
+  \item Failure routing: when SOS fails on separation, that's informative data for CEGAR. When IC3 fails on consecution, that's a signal to try CHC. Each failure maps to a \emph{specific} obligation that tells you what to try next.
+  \item Auditable proof objects: every elimination comes with template + coefficients + checked obligations + site metadata. You can replay it. It doesn't hallucinate.
+  \item Key phrase: ``Barrier theory isn't one more verification method. It's the composition API we were missing.''
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 9 — The Unifying Interface (diagram)
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{The Unifying Interface}
+\syncline{Presenter slide 9}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the diagram: three obligation boxes at the bottom (Init, Consecution, Separation), with methods feeding into each one from above.
+  \item SOS/SDP and DSOS handle Init and Separation (polynomial positivity/negativity checks).
+  \item IC3/PDR, CHC/Spacer, and k-induction handle Consecution (``does $B$ stay non-negative along transitions?'').
+  \item CEGAR, Interpolants, Houdini/ICE handle refinement when obligations fail (``how do we improve the template?'').
+  \item Stress: composition is \textbf{structural}, not ad hoc. Every method serves the same three-obligation contract. This is what turns a paper zoo into a coherent verification pipeline.
+  \item RISE point: if someone asks ``but what about method X?'' --- the answer is always ``which obligation does it discharge?'' If it discharges one, it slots in. If it doesn't, it's not useful here.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 10 — Why Barriers Beat the Status Quo
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Why Barriers Beat the Status Quo}
+\syncline{Presenter slide 10}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Three-column comparison: Linters (fast, no proofs, 80--95\% FP rate), Testing/Fuzzing (finds bugs but can never prove absence, $2^{64}$ inputs), Barrier certs (mathematical proof, path-sensitive, handles loops, eliminates silently).
+  \item On real repos: 99\% of candidate bugs proven unreachable. Only $\sim$1\% survive for triage.
+  \item The operational value is not ``we have a cool theorem.'' It's ``developers see 3 findings instead of 300, and the 3 are real.''
+  \item If asked about false negatives: barrier certificates are one-sided. If we prove something unreachable, that's sound. If we \emph{can't} prove it, we keep the candidate conservatively. We never drop something we can't prove safe.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 11 — Proof Not Confidence
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Proof, Not Confidence}
+\syncline{Presenter slide 11}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the comparison table. The key rows:
+  \item ``Proves absence'': only barrier certificates give you this. LLM triage gives confidence scores; linters give pattern matches. Neither is a proof.
+  \item ``Auditable artifact'': the barrier certificate is a proof object: polynomial template, coefficients, which obligations were checked, solver outcome for each. You can replay it independently.
+  \item ``Handles loops'': this is where pattern matchers and LLMs fundamentally fail. A loop may have a complex invariant that protects a dangerous operation. Only inductive reasoning (barrier consecution) can capture this.
+  \item ``Scales to CI'': with DSOS as first tier, barrier checks take seconds per function. This is CI-compatible. Full SOS escalation is reserved for hard cases.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 12 — Concrete Example
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}[fragile]{Concrete Example: DIV\_ZERO with Polynomial Barrier}
+\syncline{Presenter slide 12}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the \texttt{safe\_divide} example step by step.
+  \item State variable: $x = b$ (the denominator). This is the only variable relevant to the division safety.
+  \item Unsafe set: $U = \{x : x = 0\}$. If $x = 0$ at the division, we crash.
+  \item Guard: the \texttt{if b != 0} check means the division is only reachable when $x \neq 0$.
+  \item Template choice: $B(x) = x - 1/2$. This is a degree-1 polynomial.
+  \item Check obligations:
+  \begin{enumerate}
+    \item Init: after the guard, for integers, $|x| \ge 1$, so $B(x) \ge 1/2 > 0$. \checkmark
+    \item Consecution: $x$ is not modified between the guard and the division, so $B$ is preserved. \checkmark
+    \item Separation: $B(0) = -1/2 < 0$. The barrier is negative at the unsafe point. \checkmark
+  \end{enumerate}
+  \item All three hold $\Rightarrow$ DIV\_ZERO is provably unreachable. This finding is eliminated as an FP with a proof artifact.
+  \item Emphasize: ``This is Hilbert $\to$ Stengle $\to$ Parrilo $\to$ Prajna, instantiated on one Python function. The 126-year thread works.''
+  \item If asked about more complex examples: for multi-variable cases, the polynomial has cross-terms and degree $> 1$. SOS synthesizes the coefficients via SDP. The principle is identical.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 13 — Visual Fence
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{The Polynomial Fence, Visually}
+\syncline{Presenter slide 13}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Quick visual reinforcement. The barrier $B(x) = x - 1/2$ is a line crossing zero at $x = 1/2$.
+  \item Safe region (where $B \ge 0$): $x \ge 1/2$. This is where guarded code executes.
+  \item Unsafe point ($x = 0$): $B(0) = -1/2 < 0$. Separated by the fence.
+  \item No execution can cross from safe to unsafe without $B$ going through zero --- and consecution guarantees $B$ never drops below zero on valid transitions.
+  \item This is the geometric intuition for barrier certificates. In higher dimensions, the fence is a surface; the principle is the same.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SLIDE 14 — 20 Papers Overview
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{The Portfolio: 20 Papers, One Framework}
+\syncline{Presenter slide 14}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Overview slide. Six layers, each serving the barrier framework:
+  \item \textbf{Layer 1} (Foundations): Stengle, Parrilo, Lasserre, Sparse SOS --- mathematical existence and computability.
+  \item \textbf{Layer 2} (Core): Prajna hybrid/stochastic barriers, SOS safety checker, SOSTOOLS --- the three-obligation API.
+  \item \textbf{Layer 3} (Speed): DSOS/SDSOS, sparsity, CBF contracts --- making it fast enough for CI.
+  \item \textbf{Layer 4} (Consecution): k-induction, IC3/PDR, CHC --- handling consecution when polynomial templates fail.
+  \item \textbf{Layer 5} (Refinement): CEGAR, SLAM, interpolants, lazy abstraction --- improving templates when obligations fail.
+  \item \textbf{Layer 6} (Synthesis): Houdini, ICE, SyGuS, DART --- proposing coefficients and grounding with real executions.
+  \item Transition: ``Let me now walk through each paper and show exactly how we bent it.''
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  PAPERS 1-4: FOUNDATIONS
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{\#1 Stengle 1974 --- Positivstellensatz}
+\syncline{Presenter slide 15}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Already covered in Dot 2. Quick recap: ``If safe $\cap$ unsafe $= \varnothing$, a polynomial fence exists.''
+  \item Barrier role: theoretical bedrock. We \emph{know} a proof exists before searching.
+  \item How we bent it: pure real algebraic geometry with no program semantics. We map program state variables to the polynomial ring; interpret guards and error conditions as semialgebraic sets.
+  \item For RISE: this is the completeness guarantee (under Archimedean conditions on the variable domains).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#2 Parrilo 2000 --- SOS via SDP}
+\syncline{Presenter slide 16}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Already covered in Dot 3. ``Fence exists $\to$ solve for coefficients via SDP.''
+  \item The SDP doesn't care that our variables are Python locals instead of ODE states.
+  \item Key detail: monomial basis is derived from symbolic state projections at the bug site, not from global algebraic variable sets. This keeps the SDP small.
+  \item How we bent it: Parrilo's domain is Lyapunov for continuous nonlinear control. We substitute with discrete symbolic machine state $\sigma$.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#3 Lasserre 2001 --- Moment/SOS Hierarchy}
+\syncline{Presenter slide 17}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Originally a polynomial \emph{optimization} framework using moment-SOS duality.
+  \item We repurpose as a \emph{feasibility-escalation} schedule: degree-2 first, then degree-4 if needed, etc.
+  \item Each level is a portfolio tier, not an optimization step. Convergence guarantee means no degree ceiling stops us permanently.
+  \item How we bent it: optimization $\to$ feasibility check; escalation is budget-controlled.
+  \item Practical note: in practice, degree-2 or degree-4 suffices for $>90\%$ of Python bug sites.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#4 Sparse SOS (Waki et al., 2006)}
+\syncline{Presenter slide 18}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Critical for scalability. A Python function might have 10--20 local variables. Without sparsity, the SDP has $\binom{n+d}{d}^2$ entries --- intractable.
+  \item Waki et al.\ show: decompose along the variable correlation graph. Variables that never co-appear in constraints can be factored into separate sub-SDPs.
+  \item How we bent it: original graph from polynomial support structure; we build from Python data-flow. Two variables co-appear iff they share a branch predicate or arithmetic expression.
+  \item Result: many small SDPs instead of one huge one. Makes barrier synthesis tractable for real functions.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  PAPERS 5-8: BARRIER CORE
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{\#5 Prajna \& Jadbabaie, HSCC 2004}
+\syncline{Presenter slide 19}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Already covered in Dot 4. The three-obligation API: Init, Consecution, Separation.
+  \item This is the paradigm. Every other paper serves these three conditions.
+  \item How we bent it: Lie-derivative consecution ($\dot{B} \ge 0$ along ODE flow) $\to$ symbolic one-step $B(\sigma') \ge 0$ under discrete transition relation $T$.
+  \item RISE insight: the obligations are not just proof structure --- they are a \textbf{composition API}. Any method that discharges one obligation is composable with any method that discharges another.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#6 Prajna et al., TAC 2007 --- Stochastic Barriers}
+\syncline{Presenter slide 20}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Extends barriers to stochastic systems. Consecution becomes $\mathbb{E}[B(s') \mid s] \ge 0$.
+  \item How we bent it: replaces It\^{o} calculus over stochastic differential equations with Python probabilistic branching. Expectation is computed over path-condition probability mass.
+  \item Practical use: risk-aware scoring for paths with inherent non-determinism (e.g., random initialization, hash-dependent branching).
+  \item This is the only part of the framework that produces probabilistic rather than deterministic verdicts.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#7--8 SOS Safety + SOSTOOLS}
+\syncline{Presenter slide 21}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \#7 (SOS Safety): fast feasibility pre-check. ``Can \emph{any} $B$ separate these regions?'' If not, skip expensive synthesis entirely.
+  \item \#8 (SOSTOOLS): engineering framework --- configurable degree, variable selection, parametric template interface. Production plumbing.
+  \item Both serve to make SOS synthesis practical and configurable for CI throughput.
+  \item These are ``unglamorous but essential'' papers. They turn the math into software.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  PAPERS 9-11: SPEED & SCALE
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{\#9 DSOS/SDSOS (Ahmadi \& Majumdar, 2019)}
+\syncline{Presenter slide 22}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Key CI performance paper. ``Same fence, cheaper paint.''
+  \item DSOS uses LP (linear program) instead of SDP. SDSOS uses SOCP (second-order cone).
+  \item Both are \emph{sound subsets} of SOS: DSOS $\subset$ SDSOS $\subset$ SOS $\subset$ nonneg. polys. They never certify something false. They may miss valid certificates that SOS would find.
+  \item 50--200$\times$ faster in practice. In CI, that's 10 seconds vs.\ 30 minutes per repo scan.
+  \item Portfolio strategy: DSOS first. If DSOS fails, try SDSOS. If SDSOS fails, escalate to full SOS/SDP.
+  \item How we bent it: originally robotics trajectory optimization. We discard the control objective entirely; use DSOS purely as a certificate-existence check.
+  \item RISE Q\&A: ``Why not just SOS everywhere?'' Answer: DSOS at CI speed lets us run on every push. SOS would require nightly-only analysis.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#10 CBF Survey (Ames et al., 2019)}
+\syncline{Presenter slide 23}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Control Barrier Functions: continuous consecution as $\dot{B} \ge -\alpha(B)$ (Lie derivative with class-$\mathcal{K}$ bound).
+  \item This motivates how we handle unknown/library calls. If we can't analyze a function's internals, we treat it like a ``black-box dynamics'' with a contract bounding how much $B$ can decrease.
+  \item How we bent it: smooth continuous dynamics with computable Lie derivatives $\to$ discrete per-call contract $B(\sigma') \ge B(\sigma) - \alpha(B(\sigma))$ for black-box Python callees.
+  \item This is the theoretical bridge to the contracts section later in the talk.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#11 Correlative Sparsity in Practice}
+\syncline{Presenter slide 24}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Visual: dense SDP (all variables coupled) vs.\ sparse (many small SDPs from variable clusters).
+  \item Variables in different branches rarely interact. This is \emph{especially} true in Python where functions tend to have independent local computations.
+  \item Quick stat: for a 15-variable function, sparse decomposition typically produces 4--6 sub-SDPs of 2--4 variables each, instead of one 15-variable SDP.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  PAPERS 12-14: CONSECUTION SOLVERS
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{\#12 k-Induction (Sheeran et al., 2000)}
+\syncline{Presenter slide 25}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item When polynomial templates are low quality, k-induction is a fallback consecution checker.
+  \item Base: does any path of length $\le k$ violate $B \ge 0$? Step: assuming the last $k$ steps maintained $B \ge 0$, does one more step maintain it?
+  \item How we bent it: original is propositional SAT over hardware bit-vectors. We run SMT over integer/real program variables. Same base/step structure, different logic engine.
+  \item Practical use: effective for bounded loops where the induction depth $k$ matches the loop bound.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#13 IC3 (Bradley, 2011)}
+\syncline{Presenter slide 26}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Builds the barrier \emph{implicitly} as a conjunction of learned clauses (frame predicates).
+  \item Each ``blocked cube'' is one constraint preventing unsafe states from being reachable at time step $i$.
+  \item How we bent it: Boolean SAT over hardware registers $\to$ LIA predicates over Python state. SAT-based cube generalization $\to$ Z3 model-based quantifier instantiation.
+  \item Key caveat for RISE: IC3's completeness argument does not transfer from SAT to LIA. We accept IC3 as a \emph{heuristic} consecution solver, not a complete one.
+  \item PDR (E\'en et al., 2011) is the industrial-scale version; we serialize its inductive clause sequence into the SARIF proof artifact.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#14 CHC/Spacer (Gurfinkel et al., 2015)}
+\syncline{Presenter slide 27}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Software safety as Constrained Horn Clauses. CHC solving \emph{is} consecution written interprocedurally.
+  \item Head predicates = post-states; body clauses = transitions + summaries. Tighter function summaries = smaller CHC bodies = cheaper solving.
+  \item How we bent it: SeaHorn targets C/LLVM. We re-encode for Python's transition system. Python dynamic dispatch requires per-callsite CHC heads rather than per-function --- a new encoding layer SeaHorn doesn't need.
+  \item This is how barrier certificates work \emph{across function boundaries}: interprocedural summaries are CHC predicates tied to barrier obligations at call boundaries.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  PAPERS 15-18: REFINEMENT
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{\#15 CEGAR (Clarke et al., 2000)}
+\syncline{Presenter slide 28}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Failed obligation = gap in the fence. CEGAR: find the gap, add monomials to the template basis, re-solve.
+  \item How we bent it: original ``abstraction'' is a boolean program; ours is the polynomial template degree and monomial basis. ``Refinement'' adds monomials from spurious trace path conditions instead of boolean predicates.
+  \item Termination: finite refinement steps (bounded by monomial basis size and degree cap).
+  \item This is the workhorse refinement loop. Most barriers that fail on the first attempt succeed after 1--2 CEGAR rounds.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#16 SLAM (Ball et al., 2001)}
+\syncline{Presenter slide 29}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item SLAM = CEGAR at Windows driver scale. Proved this approach works in \textbf{real software} (not just toy examples).
+  \item We take the \emph{architectural} lesson: automated fence-gap patching scales. We substitute SLAM's boolean predicate engine with a polynomial monomial selector.
+  \item Key RISE point: if SLAM worked at Windows driver scale with boolean predicates, polynomial templates over Python state should be equally tractable.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#17 Craig Interpolants (McMillan, 2003)}
+\syncline{Presenter slide 30}{~1.5 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Given an UNSAT proof of a spurious trace, extract a Craig interpolant: a formula implied by the prefix and contradicting the suffix. This is the \emph{tightest possible} new predicate for refinement.
+  \item How we bent it: original extracts propositional/linear interpolants for boolean abstraction. We apply SMT interpolation over non-linear arithmetic and map the formula to new monomial terms in the polynomial template.
+  \item The interpolant is derived directly from the failed obligation's UNSAT core. This means refinement is \emph{optimal}: we add exactly the minimal new monomial needed.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#18 Lazy Abstraction (Henzinger et al., 2004)}
+\syncline{Presenter slide 31}{~1 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Don't rebuild the entire $B$ when one part fails. Surgically patch only the template branch that broke.
+  \item How we bent it: ``subtree'' in BLAST is a CFG node set in boolean predicate abstraction. In our portfolio, it's the monomial support region of $B$ around the failing obligation check. We localize the SDP re-solve to that variable sub-cluster.
+  \item Practical impact: refinement cost is proportional to the failure, not the program. A failing check in one branch doesn't require re-solving the barrier for the entire function.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  PAPERS 19-20: SYNTHESIS & GROUNDING
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{\#19 Houdini + ICE}
+\syncline{Presenter slide 32}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{Houdini (Flanagan \& Leino, 2001):} Start with many candidate coefficient configurations. Prune by counterexample. Fixpoint = widest valid $B$. How we bent: Houdini proposes boolean annotations for ESC/Java; we generate polynomial coefficient candidates. Pruning oracle = three-obligation SMT check.
+  \item \textbf{ICE (Garg et al., 2014):} Learn barrier from three kinds of examples: positive (safe states), negative (unsafe states), implication (transition edges). The program's own behavior shapes the fence. How we bent: ICE targets general first-order invariants; we restrict to bounded-degree polynomials and the learner returns $c_\alpha$ coefficient vectors.
+  \item Both solve the ``who proposes $c_\alpha$?'' gap that pure SOS leaves open.
+  \item Key: SOS says \emph{what shape} $B$ must have; Houdini/ICE say \emph{which coefficients}.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{\#20 SyGuS + DART/Concolic}
+\syncline{Presenter slide 33}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \textbf{SyGuS (Alur et al., 2013):} Template family = grammar. Three obligation checks = oracle. Formalizes our coefficient search. How we bent: SyGuS is generic (strings, bits); we instantiate with a monomial grammar and the three BSP obligations as multi-property SMT oracle.
+  \item \textbf{DART/Concolic (Godefroid et al., 2005):} Concrete + symbolic execution. How we bent: DART's goal is \emph{falsification} (find bugs). We \emph{invert} it to \emph{confirmation}: drive concolic runs toward certificate violations to validate $B \ge 0$ on all explored paths and $B \le -\epsilon$ at real unsafe states.
+  \item Together: SyGuS = formal framework for the search; concolic = ground truth for the certificate.
+  \item RISE summary of papers 17--20: SOS = what shape; Houdini/ICE/SyGuS = which coefficients; concolic = is the certificate faithful?
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  CONTRACTS
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Contracts: How PyTorch Meets Barriers}
+\syncline{Presenter slide 34}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Transition: ``We've shown the theory and the portfolio. Now: what happens when the analyzer hits a function it can't analyze --- like \texttt{torch.cosine\_similarity()}?''
+  \item Walk through the example:
+  \begin{enumerate}
+    \item Without contract: \texttt{sim} could be anything $\to$ \texttt{score} could be anything $\to$ $0$ might be in range $\to$ false alarm.
+    \item With contract: \texttt{sim} $\in [-1,1]$ $\to$ \texttt{score} $\in [-4,-2]$ $\to$ $0 \notin [-4,-2]$ $\to$ provably safe.
+  \end{enumerate}
+  \item The contract is a \textbf{barrier constraint on library outputs}. It constrains what the library function can produce, and that constraint propagates through interval algebra to all downstream operations.
+  \item Connect back to CBF survey (\#10): the contract is the discrete analogue of the class-$\mathcal{K}$ slope bound. It says ``this call can decrease $B$ by at most this much.''
+  \item Soundness principle: $\text{Sem}_f \subseteq R_f$. The contract must \emph{over-approximate} actual behavior. More conservative is always safe; less conservative is unsound (forbidden).
+  \item Default is ``havoc'' (allow everything). Refinement only with justification (spec, source analysis, or DSE validation).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Contracts Are Barrier Constraints on Library Outputs}
+\syncline{Presenter slide 35}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the visual pipeline: Contract $\to$ Interval algebra $\to$ Barrier check.
+  \item Key formula: consecution with contracts becomes $B(s) \ge 0 \wedge T_\text{prog}(s,s') \wedge C_\text{library}(s,s') \Rightarrow B(s') \ge 0$.
+  \item The library contract $C$ plugs directly into the consecution obligation. This is not ad hoc --- it's the same three-obligation framework with library behavior modeled as transition constraints.
+  \item Better contracts $\to$ tighter intervals $\to$ more bugs proven unreachable $\to$ less noise.
+  \item Contract quality is a first-order determinant of FP/TP balance. Too weak $\to$ more UNKNOWN survivors. Unsound $\to$ invalid proofs (forbidden).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PyTorch Contract Examples}
+\syncline{Presenter slide 36}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the table of PyTorch contracts.
+  \item \texttt{torch.rand}: output $\in [0, 1)$. This excludes negative values from all downstream computations.
+  \item \texttt{torch.zeros}: output exactly $= 0$. Known constant.
+  \item \texttt{torch.arange(start, end, step)}: precondition $\text{step} \neq 0$ --- if step could be zero, this \textbf{flags} DIV\_ZERO. The contract itself catches the bug.
+  \item \texttt{cosine\_similarity}: output $\in [-1, 1]$. Tight enough for interval propagation to prove many downstream operations safe.
+  \item \texttt{view(*shape)}: shape-preserving with precondition $\prod(\text{shape}) = \text{numel}$. Enables shape safety reasoning.
+  \item 1,500+ lines of PyTorch contracts total. Each is a barrier constraint that composes through interval algebra.
+  \item The contracts use a \texttt{DimSource} enum to track where dimensions come from: literal constants, function arguments, argument shapes, or computed expressions. This enables semantic shape tracking.
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  FINAL
+% ═══════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{What Actually Shipped}
+\syncline{Presenter slide 37}{~2 min}
+\textbf{Script:}
+\begin{itemize}
+  \item \texttt{pip install a3-python}. Two stages:
+  \item Static stage (bulk): bytecode analysis, Z3 symbolic execution, barrier certificate proofs. 67 bug types. 99\% of candidates eliminated with proof artifacts.
+  \item Agentic stage (residue): multi-turn LLM tool-use. Reads files, searches for guards, checks callers and tests. Only inspects the $\sim$1\% that survived static analysis. Zero API keys needed in CI (uses \texttt{GITHUB\_TOKEN}).
+  \item Design principle: proof artifacts are upstream; LLM judgment is downstream. The LLM never overrides a proven elimination.
+  \item CI integration: \texttt{a3 init . --copilot} generates GitHub Actions workflows. Every push triggers scan $\to$ triage $\to$ baseline ratchet $\to$ SARIF upload.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Meta-Lesson}
+\syncline{Presenter slide 38}{~3 min}
+\textbf{Script:}
+\begin{itemize}
+  \item Walk through the timeline: 1900, 1974, 2000, 2004, 2024--2026.
+  \item Each transition looked unreasonable. Pure math $\to$ algebraic geometry $\to$ control theory $\to$ verification $\to$ Python. Five different fields.
+  \item The AI generated candidate ideas across months. Most were wrong. The survivors traced this lineage --- the connection was \emph{discovered}, not designed.
+  \item Five key points:
+  \begin{enumerate}
+    \item Hilbert asked if non-negative polynomials are sums of squares (1900).
+    \item Stengle proved infeasibility has algebraic certificates (1974).
+    \item Parrilo made this computable with SDPs --- for control theory (2000).
+    \item Prajna wrote three barrier obligations --- for verification (2004).
+    \item We stole 20 techniques, bent them into those three obligations, and applied them to Python bytecode (2024--2026).
+  \end{enumerate}
+  \item Closing phrase: ``The dots were always there. We just drew the line.''
+  \item From Hilbert's 17th Problem to your CI pipeline. 126 years. Questions?
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Close + Q\&A}
+\syncline{Presenter slide 39}{open}
+\textbf{Expected questions:}
+\begin{itemize}
+  \item \textbf{State encoding:} what is concrete vs.\ symbolic? Answer: PC and frame-stack are concrete; locals/stack/heap observers are symbolic Z3 terms.
+  \item \textbf{Solver policy:} how are UNKNOWN and timeout treated? Answer: kept conservatively; candidate escalates to next portfolio tier.
+  \item \textbf{Contracts:} where do unknown-call assumptions live? Answer: in a typed contract registry (\texttt{contracts/*.py}); auditable, versioned, tested.
+  \item \textbf{Refinement:} what triggers CEGAR and when do you stop? Answer: obligation failure triggers it; stop on proof, witness, or budget boundary.
+  \item \textbf{Artifact chain:} can every elimination be explained? Answer: yes --- template, coefficients, obligations, solver outcomes, site metadata, all in SARIF.
+  \item \textbf{Completeness:} Python dynamism limits full completeness. Explicit assumptions, observable failure modes.
+  \item \textbf{Comparison to Infer/Semgrep:} Infer uses separation logic (heap focus); Semgrep uses pattern matching (no proofs). Neither has a portfolio composition API.
+\end{itemize}
+\end{frame}
+
+\end{document}

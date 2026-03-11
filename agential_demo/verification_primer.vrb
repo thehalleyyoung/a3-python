@@ -1,0 +1,12 @@
+\frametitle{143. Concolic execution step by step}
+\begin{enumerate}
+  \item Start with some concrete input (e.g.\ \(x=0, y=1\)) and symbolic variables \((\alpha, \beta)\)
+  \item Execute concretely: \(x=0\) takes the false branch of \texttt{if x > 0}
+  \item Record path condition: \(\Phi = (\alpha \le 0)\)
+  \item \textbf{Negate last constraint}: \(\alpha > 0\) --- ask solver for model: \(x = 1\)
+  \item Re-run with \(x=1\): now takes the true branch; new path condition \(\Phi = (\alpha > 0)\)
+  \item Continue negating branches to explore the full path tree systematically
+\end{enumerate}
+\begin{itemize}
+  \item Each iteration discovers a new path; solver generates the input that triggers it
+\end{itemize}

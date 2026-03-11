@@ -550,7 +550,7 @@ class InterpolantExtractor:
         
         for i in range(bound + 1):
             interp = self._compute_interpolant_at_step(bmc_engine, i, bound)
-            if interp:
+            if interp is not None:
                 sequence.add(interp)
                 self.stats['interpolants_computed'] += 1
         
@@ -1242,7 +1242,7 @@ class IncrementalIMC:
             
             # Try to compute interpolant and check fixed point
             interp = self._compute_interpolant_at_current()
-            if interp:
+            if interp is not None:
                 self._interpolant_cache[self._bound] = interp
                 
                 if self._check_fixed_point():
@@ -1834,7 +1834,7 @@ class SequenceInterpolator:
             
             # Compute interpolant at position i
             interp = self._compute_interpolant(prefix, suffix, variables)
-            if interp:
+            if interp is not None:
                 interpolants.append(interp)
             else:
                 # Fallback
@@ -2131,8 +2131,92 @@ def run_imc_verification(init: z3.BoolRef,
     """
     z3_vars = [z3.Int(v) for v in variables]
     z3_vars_prime = [z3.Int(f"{v}_prime") for v in variables]
-    
-    # Use binary interpolation
+
+    solver = z3.Solver()
+    solver.set("timeout", min(timeout_ms, 5000))
+
+    # ------------------------------------------------------------------
+    # Strategy 1: Property itself is an inductive invariant
+    # (simplest and most common for our synthetic models)
+    # ------------------------------------------------------------------
+    candidate = prop
+    ok = True
+    # Init → candidate
+    solver.push()
+    solver.add(init)
+    solver.add(z3.Not(candidate))
+    if solver.check() != z3.unsat:
+        ok = False
+    solver.pop()
+
+    if ok:
+        # candidate ∧ Trans → candidate'
+        cand_prime = z3.substitute(
+            candidate,
+            list(zip(z3_vars, z3_vars_prime)),
+        )
+        solver.push()
+        solver.add(candidate)
+        solver.add(trans)
+        solver.add(z3.Not(cand_prime))
+        if solver.check() != z3.unsat:
+            ok = False
+        solver.pop()
+
+    if ok:
+        return True, candidate
+
+    # ------------------------------------------------------------------
+    # Strategy 2: Conjunction of property atoms from init (weaken init
+    # to only keep conjuncts implied by prop)
+    # ------------------------------------------------------------------
+    init_atoms: List[z3.BoolRef] = []
+    if z3.is_and(init):
+        init_atoms = list(init.children())
+    else:
+        init_atoms = [init]
+
+    # Keep only atoms that are implied by (or equal to) the property
+    relevant = []
+    for atom in init_atoms:
+        solver.push()
+        solver.add(prop)
+        solver.add(z3.Not(atom))
+        if solver.check() == z3.unsat:
+            # prop → atom, so atom is weaker than prop → keep it
+            relevant.append(atom)
+        solver.pop()
+
+    if relevant:
+        candidate2 = z3.And(relevant) if len(relevant) > 1 else relevant[0]
+        ok2 = True
+        # Init → candidate2
+        solver.push()
+        solver.add(init)
+        solver.add(z3.Not(candidate2))
+        if solver.check() != z3.unsat:
+            ok2 = False
+        solver.pop()
+
+        if ok2:
+            cand2_prime = z3.substitute(
+                candidate2,
+                list(zip(z3_vars, z3_vars_prime)),
+            )
+            solver.push()
+            solver.add(candidate2)
+            solver.add(trans)
+            solver.add(z3.Not(cand2_prime))
+            if solver.check() != z3.unsat:
+                ok2 = False
+            solver.pop()
+
+        if ok2:
+            return True, candidate2
+
+    # ------------------------------------------------------------------
+    # Strategy 3: Use binary interpolation (original approach)
+    # ------------------------------------------------------------------
     binary_interp = BinaryInterpolation(verbose)
     result = binary_interp.find_minimal_depth(
         init, trans, prop, z3_vars, max_depth, timeout_ms
@@ -2142,8 +2226,9 @@ def run_imc_verification(init: z3.BoolRef,
         depth, interpolant = result
         
         # Verify invariant
-        synth = InterpolantBasedInvariantSynthesis(verbose)
+        synth = InterpolantBasedInvariantSynthesis(len(variables), variables, verbose)
         synth._interpolants = [interpolant]
+        synth._invariant = interpolant
         
         is_valid = synth.verify_invariant(init, trans, prop, z3_vars, z3_vars_prime)
         

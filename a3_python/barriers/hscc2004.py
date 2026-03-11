@@ -368,3 +368,38 @@ def _conditional_nonzero_barrier(
         variables=[variable_name],
     )
 
+
+# ============================================================================
+# Non-loop HSCC'04 barrier (Paper #1)
+# ============================================================================
+
+@dataclass(frozen=True)
+class NonLoopBarrierProof:
+    """HSCC'04 barrier proof for non-loop guarded division."""
+    site_offset: int
+    divisor_var: str
+    guard_condition: str
+
+
+def prove_nonloop_guarded_div_zero(code_obj) -> list[NonLoopBarrierProof]:
+    """
+    Prove that division-by-zero sites in non-loop code are unreachable because
+    a dominating ``if var != 0:`` guard ensures the divisor is non-zero.
+
+    This extends Paper #1 (HSCC'04 barrier certificates) to straight-line code.
+    The "barrier" degenerates to a simple guard implication, but the proof
+    structure (guard ∧ hazard = ∅) is identical.
+    """
+    from .sos_safety import prove_nonloop_guarded_hazards
+
+    nl_proofs = prove_nonloop_guarded_hazards(code_obj)
+    return [
+        NonLoopBarrierProof(
+            site_offset=p.site_offset,
+            divisor_var=p.variable,
+            guard_condition=f"{p.guard_lhs} {p.guard_op} {p.guard_rhs}",
+        )
+        for p in nl_proofs
+        if p.bug_type == "DIV_ZERO"
+    ]
+

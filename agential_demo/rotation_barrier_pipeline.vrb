@@ -1,0 +1,35 @@
+\frametitle{Stage 5: SMT Obligations (Z3 Discharge)}
+\begin{block}{What A3 sends to Z3: three negated queries (should all be UNSAT)}
+\end{block}
+
+\vspace{0.3em}
+\footnotesize
+\textbf{Obligation 1 --- Init} (should be UNSAT):
+\begin{align*}
+  \exists\, x, y \in \mathbb{R}:\quad
+  & x^2 + y^2 \ge 1 \;\wedge\; (x^2 + y^2 - 1) < 0
+\end{align*}
+\begin{center}
+\texttt{Z3 result: \textcolor{safe}{\textbf{unsat}}} \quad $\Rightarrow$ \textcolor{safe}{\faCheck\; PASS}
+\end{center}
+
+\vspace{0.3em}
+\textbf{Obligation 2 --- Consecution} (should be UNSAT):
+\begin{align*}
+  \exists\, x, y:\quad
+  & x^2 + y^2 - 1 \ge 0 \;\wedge\;
+    \bigl(\tfrac{3}{5}x - \tfrac{4}{5}y\bigr)^2 + \bigl(\tfrac{4}{5}x + \tfrac{3}{5}y\bigr)^2 - 1 < 0
+\end{align*}
+\begin{center}
+\texttt{Z3 result: \textcolor{safe}{\textbf{unsat}}} \quad $\Rightarrow$ \textcolor{safe}{\faCheck\; PASS}
+\end{center}
+
+\vspace{0.3em}
+\textbf{Obligation 3 --- Separation} (should be UNSAT):
+\begin{align*}
+  \exists\, x, y:\quad
+  & x = 0 \;\wedge\; y = 0 \;\wedge\; (x^2 + y^2 - 1) \ge 0
+\end{align*}
+\begin{center}
+\texttt{Z3 result: \textcolor{safe}{\textbf{unsat}}} \quad $\Rightarrow$ \textcolor{safe}{\faCheck\; PASS}
+\end{center}
